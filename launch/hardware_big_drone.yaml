@@ -1,0 +1,57 @@
+session_name: docker_hardware_ground_robot
+windows:
+  - window_name: main
+    layout: tiled
+    shell_command_before:
+      - source ~/.bashrc
+    panes:
+      # Onboard Dynus
+      - shell_command:
+        - source ~/code/dynus_ws/install/setup.bash
+        - source ~/code/decomp_ws/install/setup.bash
+        - sleep 10 && ros2 launch dynus onboard_dynus.launch.py x:=0.0 y:=0.0 z:=0.0 yaw:=0 namespace:=BD01 use_obstacle_tracker:=false use_ground_robot:=false use_hardware:=true use_onboard_localization:=true depth_camera_name:=d455
+
+      # D455
+      - shell_command:
+        - source ~/code/realsense-ros_ws/install/setup.bash
+        - sleep 10 && ros2 launch realsense2_camera rs_d455_launch.py camera_namespace:=BD01
+
+      # Livox
+      - shell_command:
+        - source ~/code/livox_ws/install/setup.bash
+        - sleep 10 && ros2 launch livox_ros_driver2 run_MID360_launch.py namespace:=BD01
+
+      # DLIO
+      - shell_command:
+        - source ~/code/dynus_ws/install/setup.bash
+        - sleep 10 && ros2 launch direct_lidar_inertial_odometry dlio.launch.py namespace:=BD01
+      
+      # Mavros
+      - shell_command:
+        - ros2 launch mavros px4.launch 
+
+      # Mavros pose
+      - shell_command: 
+        - ros2 topic echo /mavros/local_position/pose
+      
+      # DLIO pose (should be same as mavros)
+      - shell_command: 
+        - sleep 10.0
+        - ros2 topic echo /BD01/dlio/odom_node/pose 
+
+      # Mavros interface 
+      - shell_command:
+        - source ~/code/dynus_ws/install/setup.bash
+        - source ~/code/mavros_ws/install/setup.bash
+        - sleep 10 && ros2 launch ros2_px4_stack dynus_mavros.launch.py
+
+      # Static TF
+      # - shell_command:
+      #   - source ~/code/dynus_ws/install/setup.bash
+      #   - ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 RR01/base_link RR01/d455_link
+
+      # RVIZ
+      # - shell_command:
+      #   - source ~/code/dynus_ws/install/setup.bash
+      #   - source ~/code/decomp_ws/install/setup.bash
+      #   - rviz2 rviz2 -d ~/code/dynus_ws/src/dynus/rviz/dynus_hw_ground_robot.rviz

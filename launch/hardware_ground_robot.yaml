@@ -1,0 +1,38 @@
+session_name: docker_hardware_ground_robot
+windows:
+  - window_name: main
+    layout: tiled
+    shell_command_before:
+      - source /home/swarm/.bashrc
+    panes:
+      # Onboard Dynus
+      - shell_command:
+        - source /home/swarm/code/dynus_ws/install/setup.bash
+        - source /home/swarm/code/decomp_ws/install/setup.bash
+        - sudo ufw disable && ros2 launch dynus onboard_dynus.launch.py x:=0.0 y:=0.0 z:=0.0 yaw:=0 namespace:=RR01 use_obstacle_tracker:=false use_ground_robot:=true use_hardware:=true use_onboard_localization:=true depth_camera_name:=d455
+
+      # D455
+      - shell_command:
+        - source /home/swarm/code/realsense-ros_ws/install/setup.bash
+        - sudo ufw disable && ros2 launch realsense2_camera rs_d455_launch.py
+
+      # Livox
+      - shell_command:
+        - source /home/swarm/code/livox_ws/install/setup.bash
+        - sudo ufw disable && ros2 launch livox_ros_driver2 run_MID360_launch.py
+
+      # DLIO
+      - shell_command:
+        - source /home/swarm/code/dynus_ws/install/setup.bash
+        - sudo ufw disable && ros2 launch direct_lidar_inertial_odometry dlio.launch.py
+
+      # Static TF
+      - shell_command:
+        - source /home/swarm/code/dynus_ws/install/setup.bash
+        - sudo ufw disable && ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 RR01/base_link RR01/d455_link
+
+      # RVIZ
+      # - shell_command:
+      #   - source /home/swarm/code/dynus_ws/install/setup.bash
+      #   - source /home/swarm/code/decomp_ws/install/setup.bash
+      #   - rviz2 rviz2 -d /home/swarm/code/dynus_ws/src/dynus/rviz/dynus_hw_ground_robot.rviz
