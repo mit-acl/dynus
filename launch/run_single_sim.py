@@ -36,7 +36,7 @@ def main():
             "  global_planner\n"
             "  multiagent_performance\n"
             "  path_push\n"
-            "  ACL_office\n"
+            "  XXXXX_office\n"
             "  ground_robot\n"
             "  multiagent_testing\n"
             "  empty_wo_ground\n"
@@ -66,7 +66,7 @@ def main():
         "global_planner": f"ros2 launch dynus onboard_dynus.launch.py x:=0.0 y:=0.0 z:=3.0 yaw:=0 namespace:=NX01 use_obstacle_tracker:=true depth_camera_name:=d435 env:={env_name}",
         "multiagent_performance": f"ros2 launch dynus onboard_dynus.launch.py x:=-50.0 y:=30.0 z:=2.0 yaw:=0 namespace:=NX01 use_obstacle_tracker:=false depth_camera_name:=d435 env:={env_name}",
         "path_push": f"ros2 launch dynus onboard_dynus.launch.py x:=0.0 y:=0.0 z:=3.0 yaw:=0 namespace:=NX01 use_obstacle_tracker:=true depth_camera_name:=d435 env:={env_name}",
-        "ACL_office": f"ros2 launch dynus onboard_dynus.launch.py x:=-5.0 y:=6.0 z:=1.0 yaw:=0 namespace:=NX01 use_obstacle_tracker:=true depth_camera_name:=d435 env:={env_name}",
+        "XXXXX_office": f"ros2 launch dynus onboard_dynus.launch.py x:=-5.0 y:=6.0 z:=1.0 yaw:=0 namespace:=NX01 use_obstacle_tracker:=true depth_camera_name:=d435 env:={env_name}",
         "ground_robot": f"ros2 launch dynus onboard_dynus.launch.py x:=0.0 y:=0.0 z:=1.0 yaw:=0 namespace:=NX01 use_ground_robot:=true depth_camera_name:=d435 env:={env_name}",
         "multiagent_testing": f"ros2 launch dynus onboard_dynus.launch.py x:=-5.0 y:=0.0 z:=2.0 yaw:=0 namespace:=NX01 use_obstacle_tracker:=true depth_camera_name:=d435 env:={env_name}",
         "empty_wo_ground": f"ros2 launch dynus onboard_dynus.launch.py x:=-35.0 y:=0.0 z:=2.5 yaw:=0 namespace:=NX01 use_obstacle_tracker:=true depth_camera_name:=d435 env:={env_name}",
@@ -89,7 +89,7 @@ def main():
     env_cmd = env_cmds[env_name]
 
     # Common setup command for both panes.
-    setup_cmd = "source /home/kkondo/code/dynus_ws/install/setup.bash; export ROS_DOMAIN_ID=7;"
+    setup_cmd = "source /home/XXXXXXX/code/dynus_ws/install/setup.bash; export ROS_DOMAIN_ID=7;"
 
     # use_dyn_obs
     if env_name in ["empty_wo_ground", "empty", "dynamic_debug"]:

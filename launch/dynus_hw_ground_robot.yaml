@@ -1,8 +1,8 @@
 # --------------------------------------------------------------------------
-# Copyright 2024, Kota Kondo, Aerospace Controls Laboratory
-# Massachusetts Institute of Technology
+# Copyright 2024, XXXXX XXXXX, XXXXXXXXX XXXXXXXX XXXXXXXXXXX
+# XXXXXXXX XXXXXXXXX XXXXXXXXXXXX
 # All Rights Reserved
-# Authors: Kota Kondo, et al.
+# Authors: XXXXX XXXXX, et al.
 # See LICENSE file for the license information
 # --------------------------------------------------------------------------
 
@@ -74,7 +74,7 @@ dynus_node:
 
         # Global planner benchmarking parameters
         use_benchmark: true                     # [-] Use global planner benchmarking
-        file_path: "/media/kkondo/T7/dynus/tro_paper/global_planner_benchmarking/csv/dgp/num_0.csv" # path to the file to save the data
+        file_path: "/media/XXXXXXX/T7/dynus/tro_paper/global_planner_benchmarking/csv/dgp/num_0.csv" # path to the file to save the data
         use_only_global_planner: false          # [-] Use only global planner for the benchmarking
 
         # Decomposition module parameters

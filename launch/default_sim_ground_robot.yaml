@@ -3,7 +3,7 @@ windows:
   - window_name: main
     layout: tiled
     shell_command_before:
-      - source /home/kkondo/code/dynus_ws/install/setup.bash # TODO: hard-coded path
+      - source /home/XXXXXXX/code/dynus_ws/install/setup.bash # TODO: hard-coded path
     panes:
       # base station
       - ros2 launch dynus base_dynus.launch.py use_dyn_obs:=false use_gazebo_gui:=false use_rviz:=true use_ground_robot:=true

@@ -1,47 +1,5 @@
 # DYNUS: Uncertainty-aware Trajectory Planner in Dynamic Unknown Environment #
 
-### **Submitted to the IEEE Transactions on Robotics (T-RO)**
-
-| **Static Forest** | **Dynamic Obstacles** |
-| ------------------------- | ------------------------- |
-<a target="_blank" href="https://youtu.be/SI8YbMS-wyw"><img src="./imgs/single_agent_static_forest.gif" width="350" height="193" alt="Static Forest"></a> | <a target="_blank" href="https://youtu.be/SI8YbMS-wyw"><img src="./imgs/single_agent_dynamic_obstacles.gif" width="350" height="193" alt="Static Forest"></a> |
-
-| **Office** | **Cave** |
-| ------------------------- | ------------------------- |
-<a target="_blank" href="https://youtu.be/SI8YbMS-wyw"><img src="./imgs/office.gif" width="350" height="193" alt="Static Forest"></a> | <a target="_blank" href="https://youtu.be/SI8YbMS-wyw"><img src="./imgs/cave.gif" width="350" height="193" alt="Static Forest"></a>
-
-| **Realistic Forest** | **Static Hardware** |
-| ------------------------- | ------------------------- |
-<a target="_blank" href="https://youtu.be/SI8YbMS-wyw"><img src="./imgs/single_agent_realistic_forest.gif" width="350" height="193" alt="Static Forest"></a> | <a target="_blank" href="https://youtu.be/SI8YbMS-wyw"><img src="./imgs/test31_ground_view.gif" width="350" height="193" alt="Static Forest"></a>
-
-| **Dynamic Hardware** | **Ground Robots Hardware** |
-| ------------------------- | ------------------------- |
-<a target="_blank" href="https://youtu.be/SI8YbMS-wyw"><img src="./imgs/dyn_sta_hw.gif" width="350" height="193" alt="Static Forest"></a> | <a target="_blank" href="https://youtu.be/SI8YbMS-wyw"><img src="./imgs/ground_robots_hw.gif" width="350" height="193" alt="Static Forest"></a>
-
-## Citation
-
-If you use this code in your research, please cite the following paper:
-
-<!-- ## Video
-
-YouTube video: [DYNUS: Uncertainty-aware Trajectory Planner in Dynamic Unknown Environment](https://youtu.be/SI8YbMS-wyw) -->
-
-<!-- ## For Multiagent Planners
-
-Robust MADER: 
-```bash
-@article{kondo2023robust,
-  title={Robust mader: Decentralized multiagent trajectory planner robust to communication delay in dynamic environments},
-  author={Kondo, Kota and Figueroa, Reinaldo and Rached, Juan and Tordesillas, Jesus and Lusk, Parker C and How, Jonathan P},
-  journal={IEEE Robotics and Automation Letters},
-  volume={9},
-  number={2},
-  pages={1476--1483},
-  year={2023},
-  publisher={IEEE}
-}
-``` -->
-
 ## General Setup
 
 DYNUS has been tested on both Docker and native installations on Ubuntu 22.04 with ROS 2 Humble.
@@ -57,7 +15,7 @@ DYNUS’s backend optimizer is powered by Gurobi, which requires a valid license
    ```bash
    mkdir -p ~/code/ws
    cd ~/code/ws
-   git clone https://github.com/kotakondo/dynus.git
+   git clone https://github.com/XXXXXXXXX/dynus.git
    cd dynus/docker
    ```
 
@@ -95,7 +53,7 @@ DYNUS’s backend optimizer is powered by Gurobi, which requires a valid license
    ```bash
    mkdir -p ~/code/ws
    cd ~/code/ws
-   git clone https://github.com/kotakondo/dynus.git
+   git clone https://github.com/XXXXXXXXX/dynus.git
    cd dynus
    ```
 
@@ -287,7 +245,7 @@ If you encounter any issues, please refer to the [Error Handling](#error-handlin
     ```
   - **Generate Flame Graph:**
     ```bash
-    cat /home/kkondo/code/dynus_ws/script.txt | ./stackcollapse-perf.pl | ./flamegraph.pl > flame.html
+    cat /home/XXXXXXX/code/dynus_ws/script.txt | ./stackcollapse-perf.pl | ./flamegraph.pl > flame.html
     ```
   - **View Flame Graph:**  
     Open `flame.html` in your browser (e.g., type the path in your browser).
@@ -410,7 +368,7 @@ If you encounter any issues, please refer to the [Error Handling](#error-handlin
 </details>
 
 <details>
-  <summary><b>(ACL Specific) Running a Large Scale Simulation on Lambda Machines</b></summary>
+  <summary><b>(XXXXX Specific) Running a Large Scale Simulation on Lambda Machines</b></summary>
 
   **Setup:**
   - Connect a monitor to the machine.

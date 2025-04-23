@@ -97,7 +97,7 @@
       <elevation>0</elevation>
       <heading_deg>0</heading_deg>
     </spherical_coordinates>
-    <model name='ACL_office_centered'>
+    <model name='XXXXX_office_centered'>
       <pose>8.45773 -9.64315 0 0 -0 0</pose>
       <link name='Wall_0'>
         <pose>-15.6747 10.5251 0 0 -0 1.5708</pose>
@@ -22575,7 +22575,7 @@
       <real_time>944 798273600</real_time>
       <wall_time>1736210386 285221632</wall_time>
       <iterations>93108</iterations>
-      <model name='ACL_office_centered'>
+      <model name='XXXXX_office_centered'>
         <pose>8.46852 -9.33941 0 0 -0 0</pose>
         <scale>1 1 1</scale>
         <link name='Wall_0'>
@@ -28026,14 +28026,14 @@
         <visual name='visual'>
           <geometry>
             <mesh>
-              <uri>/home/kkondo/.gazebo/models/backpack_blue/meshes/model.obj</uri>
+              <uri>/home/XXXXXXX/.gazebo/models/backpack_blue/meshes/model.obj</uri>
             </mesh>
           </geometry>
         </visual>
         <collision name='collision_0'>
           <geometry>
             <mesh>
-              <uri>/home/kkondo/.gazebo/models/backpack_blue/meshes/model.obj</uri>
+              <uri>/home/XXXXXXX/.gazebo/models/backpack_blue/meshes/model.obj</uri>
             </mesh>
           </geometry>
           <max_contacts>10</max_contacts>

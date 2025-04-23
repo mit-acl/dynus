@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
 # /* ----------------------------------------------------------------------------
-#  * Copyright 2024, Kota Kondo, Aerospace Controls Laboratory
-#  * Massachusetts Institute of Technology
+#  * Copyright 2024, XXXXX XXXXX, XXXXXXXXX XXXXXXXX XXXXXXXXXXX
+#  * XXXXXXXX XXXXXXXXX XXXXXXXXXXXX
 #  * All Rights Reserved
-#  * Authors: Kota Kondo, et al.
+#  * Authors: XXXXX XXXXX, et al.
 #  * See LICENSE file for the license information
 #  * -------------------------------------------------------------------------- */
 
@@ -78,9 +78,9 @@ class BenchmarkNode(Node):
         for algorithm in self.algorithms:
 
             # create directory for the algorithm
-            csv_folder_path = f"/media/kkondo/T7/dynus/tro_paper/{self.benchmark_types}/csv/{algorithm}"
-            bag_folder_path = f"/media/kkondo/T7/dynus/tro_paper/{self.benchmark_types}/bags/{algorithm}"
-            log_folder_path = f"/media/kkondo/T7/dynus/tro_paper/{self.benchmark_types}/logs/{algorithm}"
+            csv_folder_path = f"/media/XXXXXXX/T7/dynus/tro_paper/{self.benchmark_types}/csv/{algorithm}"
+            bag_folder_path = f"/media/XXXXXXX/T7/dynus/tro_paper/{self.benchmark_types}/bags/{algorithm}"
+            log_folder_path = f"/media/XXXXXXX/T7/dynus/tro_paper/{self.benchmark_types}/logs/{algorithm}"
             os.makedirs(csv_folder_path, exist_ok=True)
             os.makedirs(bag_folder_path, exist_ok=True)
             os.makedirs(log_folder_path, exist_ok=True)
@@ -121,12 +121,12 @@ class BenchmarkNode(Node):
         sleep(10)
         
         # Onboard
-        self.sim_process_onboard = subprocess.Popen(["ros2", "launch", "dynus", "onboard_dynus.launch.py", f"x:={start_x}", f"y:={start_y}", f"z:={self.goal_z}", "yaw:=0", "namespace:=NX01", f"use_obstacle_tracker:={self.use_dyn_obs}", f"data_file:=/media/kkondo/T7/dynus/tro_paper/{self.benchmark_types}/csv/{algorithm}/num_{self.current_run}.csv", f"global_planner:={algorithm}", "use_benchmark:=true", "depth_camera_name:=d435"], preexec_fn=os.setsid)
+        self.sim_process_onboard = subprocess.Popen(["ros2", "launch", "dynus", "onboard_dynus.launch.py", f"x:={start_x}", f"y:={start_y}", f"z:={self.goal_z}", "yaw:=0", "namespace:=NX01", f"use_obstacle_tracker:={self.use_dyn_obs}", f"data_file:=/media/XXXXXXX/T7/dynus/tro_paper/{self.benchmark_types}/csv/{algorithm}/num_{self.current_run}.csv", f"global_planner:={algorithm}", "use_benchmark:=true", "depth_camera_name:=d435"], preexec_fn=os.setsid)
         
         sleep(5)
 
         # Bag recording
-        self.sim_bag_record = subprocess.Popen(["python3", "/home/kkondo/code/dynus_ws/src/dynus/scripts/bag_record.py", "--bag_number", str(self.current_run), "--bag_path", f"/media/kkondo/T7/dynus/tro_paper/{self.benchmark_types}/bags/{algorithm}", "--agents", "['NX01']"], preexec_fn=os.setsid)
+        self.sim_bag_record = subprocess.Popen(["python3", "/home/XXXXXXX/code/dynus_ws/src/dynus/scripts/bag_record.py", "--bag_number", str(self.current_run), "--bag_path", f"/media/XXXXXXX/T7/dynus/tro_paper/{self.benchmark_types}/bags/{algorithm}", "--agents", "['NX01']"], preexec_fn=os.setsid)
 
         sleep(20)
         

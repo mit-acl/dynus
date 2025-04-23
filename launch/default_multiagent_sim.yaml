@@ -3,7 +3,7 @@ windows:
   - window_name: main
     layout: tiled
     shell_command_before:
-      - source /home/kkondo/code/dynus_ws/install/setup.bash # TODO: hard-coded path
+      - source /home/XXXXXXX/code/dynus_ws/install/setup.bash # TODO: hard-coded path
     panes:
       # base station
       - ros2 launch dynus base_dynus.launch.py use_dyn_obs:=false use_gazebo_gui:=false use_rviz:=true use_ground_robot:=false benchmark_name:=benchmark2
@@ -23,7 +23,7 @@ windows:
         # - ros2 launch dynus onboard_dynus.launch.py x:=-30.0 y:=0.0 z:=3.0 yaw:=0 namespace:=NX01 use_obstacle_tracker:=true depth_camera_name:=d435 # yaw benchmarking in empty space
         # - ros2 launch dynus onboard_dynus.launch.py x:=0.0 y:=0.0 z:=3.0 yaw:=0 namespace:=NX01 use_obstacle_tracker:=true depth_camera_name:=d435 # global planner benchmarking
         - ros2 launch dynus onboard_dynus.launch.py x:=-50.0 y:=20.0 z:=2.0 yaw:=0 namespace:=NX01 use_obstacle_tracker:=false depth_camera_name:=d435 # multiagent performance
-        # - ros2 launch dynus onboard_dynus.launch.py x:=-5.0 y:=6.0 z:=1.0 yaw:=0 namespace:=NX01 use_obstacle_tracker:=true depth_camera_name:=d435 # ACL_office
+        # - ros2 launch dynus onboard_dynus.launch.py x:=-5.0 y:=6.0 z:=1.0 yaw:=0 namespace:=NX01 use_obstacle_tracker:=true depth_camera_name:=d435 # XXXXX_office
         # - ros2 launch dynus onboard_dynus.launch.py x:=-45.0 y:=0.0 z:=0.0 yaw:=0 namespace:=NX01 use_ground_robot:=true # ground robot
       # - shell_command:
       #   - sleep 10

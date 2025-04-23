@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 
 # /* ----------------------------------------------------------------------------
-#  * Copyright 2024, Kota Kondo, Aerospace Controls Laboratory
-#  * Massachusetts Institute of Technology
+#  * Copyright 2024, XXXXX XXXXX, XXXXXXXXX XXXXXXXX XXXXXXXXXXX
+#  * XXXXXXXX XXXXXXXXX XXXXXXXXXXXX
 #  * All Rights Reserved
-#  * Authors: Kota Kondo, et al.
+#  * Authors: XXXXX XXXXX, et al.
 #  * See LICENSE file for the license information
 #  * -------------------------------------------------------------------------- */
 

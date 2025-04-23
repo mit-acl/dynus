@@ -106,7 +106,7 @@ def process_ros2_bag(bag_path, cylinders, drone_radius, topic, message_type_str)
 def main():
     if len(sys.argv) < 6:
         print("Usage: {} <forest_csv_path> <bag_folder> <drone_radius> <pos_topic_name> <message_type_str>".format(sys.argv[0]))
-        print("Example: python3 collision_checker.py /home/kkondo/data/easy_forest_obstacle_parameters.csv /media/kkondo/T7/dynus/tro_paper/global_planner_benchmarking/bags/dgp 0.1 /NX01/goal dynus_interfaces/msg/Goal")
+        print("Example: python3 collision_checker.py /home/XXXXXXX/data/easy_forest_obstacle_parameters.csv /media/XXXXXXX/T7/dynus/tro_paper/global_planner_benchmarking/bags/dgp 0.1 /NX01/goal dynus_interfaces/msg/Goal")
         sys.exit(1)
     
     forest_csv = sys.argv[1]

@@ -17,7 +17,7 @@ import time
 import csv
 import os
 
-CSV_PATH = "/home/kkondo/data/easy_forest_obstacle_parameters.csv"  # CSV file to record cylinder parameters
+CSV_PATH = "/home/XXXXXXX/data/easy_forest_obstacle_parameters.csv"  # CSV file to record cylinder parameters
 
 class GazeboCubeSpawner:
     def __init__(self, node: Node):

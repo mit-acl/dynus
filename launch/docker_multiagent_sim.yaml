@@ -27,7 +27,7 @@ windows:
         # - ros2 launch dynus onboard_dynus.launch.py x:=-50.0 y:=30.0 z:=2.0 yaw:=0 namespace:=NX01 use_obstacle_tracker:=false depth_camera_name:=d435 # multiagent performance (static forest3)
         - ros2 launch dynus onboard_dynus.launch.py x:=-50.0 y:=30.0 z:=2.0 yaw:=0 namespace:=NX01 use_obstacle_tracker:=true depth_camera_name:=d435 # multiagent performance (dynamic forest3)
         # - ros2 launch dynus onboard_dynus.launch.py x:=0.0 y:=0.0 z:=3.0 yaw:=0 namespace:=NX01 use_obstacle_tracker:=true depth_camera_name:=d435 # path push visulaization
-        # - ros2 launch dynus onboard_dynus.launch.py x:=-5.0 y:=6.0 z:=1.0 yaw:=0 namespace:=NX01 use_obstacle_tracker:=true depth_camera_name:=d435 # ACL_office
+        # - ros2 launch dynus onboard_dynus.launch.py x:=-5.0 y:=6.0 z:=1.0 yaw:=0 namespace:=NX01 use_obstacle_tracker:=true depth_camera_name:=d435 # XXXXX_office
         # - ros2 launch dynus onboard_dynus.launch.py x:=-45.0 y:=0.0 z:=0.0 yaw:=0 namespace:=NX01 use_ground_robot:=true # ground robot
         # - ros2 launch dynus onboard_dynus.launch.py x:=-5.0 y:=0.0 z:=2.0 yaw:=0 namespace:=NX01 use_obstacle_tracker:=true depth_camera_name:=d435 # multiagent testing
 

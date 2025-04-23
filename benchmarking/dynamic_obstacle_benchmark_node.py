@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
 # /* ----------------------------------------------------------------------------
-#  * Copyright 2024, Kota Kondo, Aerospace Controls Laboratory
-#  * Massachusetts Institute of Technology
+#  * Copyright 2024, XXXXX XXXXX, XXXXXXXXX XXXXXXXX XXXXXXXXXXX
+#  * XXXXXXXX XXXXXXXXX XXXXXXXXXXXX
 #  * All Rights Reserved
-#  * Authors: Kota Kondo, et al.
+#  * Authors: XXXXX XXXXX, et al.
 #  * See LICENSE file for the license information
 #  * -------------------------------------------------------------------------- */
 
@@ -68,8 +68,8 @@ class BenchmarkNode(Node):
     def run_simulation(self):
 
         # create directory for the algorithm
-        csv_folder_path = f"/media/kkondo/T7/dynus/tro_paper/{self.benchmark_types}/csv/{self.algorithm}"
-        bag_folder_path = f"/media/kkondo/T7/dynus/tro_paper/{self.benchmark_types}/bags/{self.algorithm}"
+        csv_folder_path = f"/media/XXXXXXX/T7/dynus/tro_paper/{self.benchmark_types}/csv/{self.algorithm}"
+        bag_folder_path = f"/media/XXXXXXX/T7/dynus/tro_paper/{self.benchmark_types}/bags/{self.algorithm}"
         os.makedirs(csv_folder_path, exist_ok=True)
         os.makedirs(bag_folder_path, exist_ok=True)
 
@@ -105,7 +105,7 @@ class BenchmarkNode(Node):
         sleep(5)
 
         # Bag recording
-        self.sim_bag_record = subprocess.Popen(["python3", "/home/kkondo/code/dynus_ws/src/dynus/scripts/bag_record.py", "--bag_number", str(self.current_run), "--bag_path", f"{bag_folder_path}/num_{self.current_run}", "--agents", "['NX01']"], preexec_fn=os.setsid)
+        self.sim_bag_record = subprocess.Popen(["python3", "/home/XXXXXXX/code/dynus_ws/src/dynus/scripts/bag_record.py", "--bag_number", str(self.current_run), "--bag_path", f"{bag_folder_path}/num_{self.current_run}", "--agents", "['NX01']"], preexec_fn=os.setsid)
 
         sleep(20)
         

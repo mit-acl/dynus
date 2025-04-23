@@ -3,7 +3,7 @@ import subprocess
 # The process to exclude (modify as needed for precision)
 EXCLUDE_PROCESS = (
     "/usr/share/code/chrome_crashpad_handler --monitor-self-annotation=ptype=crashpad-handler --no-rate-limit "
-    "--database=/home/kkondo/.config/Code/Crashpad --url=appcenter://code?aid=fba07a4d-84bd-4fc8-a125-9640fc8ce171"
+    "--database=/home/XXXXXXX/.config/Code/Crashpad --url=appcenter://code?aid=fba07a4d-84bd-4fc8-a125-9640fc8ce171"
     "&uid=41326c72-ab8c-4182-bbdc-a509e4058da4&iid=41326c72-ab8c-4182-bbdc-a509e4058da4&sid=41326c72-ab8c-4182-bbdc-a509e4058da4 "
     "--annotation=_companyName=Microsoft --annotation=_productName=VSCode --annotation=_version=1.95.3 "
     "--annotation=lsb-release=Ubuntu 22.04.5 LTS --annotation=plat=Linux --annotation=prod=Electron "

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
 # /* ----------------------------------------------------------------------------
-#  * Copyright 2024, Kota Kondo, Aerospace Controls Laboratory
-#  * Massachusetts Institute of Technology
+#  * Copyright 2024, XXXXX XXXXX, XXXXXXXXX XXXXXXXX XXXXXXXXXXX
+#  * XXXXXXXX XXXXXXXXX XXXXXXXXXXXX
 #  * All Rights Reserved
-#  * Authors: Kota Kondo, et al.
+#  * Authors: XXXXX XXXXX, et al.
 #  * See LICENSE file for the license information
 #  * -------------------------------------------------------------------------- */
 
@@ -80,9 +80,9 @@ class BenchmarkNode(Node):
             dynamic_or_static = 'dynamic' if self.use_dyn_obs else 'static'
 
             # create directory for the algorithm
-            csv_folder_path = f"/media/kkondo/T7/dynus/tro_paper/{self.benchmark_types}/{dynamic_or_static}/csv/{time_allocation_algorithm}"
-            bag_folder_path = f"/media/kkondo/T7/dynus/tro_paper/{self.benchmark_types}/{dynamic_or_static}/bags/{time_allocation_algorithm}"
-            log_folder_path = f"/media/kkondo/T7/dynus/tro_paper/{self.benchmark_types}/{dynamic_or_static}/logs/{time_allocation_algorithm}"
+            csv_folder_path = f"/media/XXXXXXX/T7/dynus/tro_paper/{self.benchmark_types}/{dynamic_or_static}/csv/{time_allocation_algorithm}"
+            bag_folder_path = f"/media/XXXXXXX/T7/dynus/tro_paper/{self.benchmark_types}/{dynamic_or_static}/bags/{time_allocation_algorithm}"
+            log_folder_path = f"/media/XXXXXXX/T7/dynus/tro_paper/{self.benchmark_types}/{dynamic_or_static}/logs/{time_allocation_algorithm}"
             os.makedirs(csv_folder_path, exist_ok=True)
             os.makedirs(bag_folder_path, exist_ok=True)
             os.makedirs(log_folder_path, exist_ok=True)
@@ -133,7 +133,7 @@ class BenchmarkNode(Node):
         sleep(5)
 
         # Bag recording
-        self.sim_bag_record = subprocess.Popen(["python3", "/home/kkondo/code/dynus_ws/src/dynus/scripts/bag_record.py", "--bag_number", str(self.current_run), "--bag_path", f"{bag_folder_path}/num_{self.current_run}", "--agents", "['NX01']"], preexec_fn=os.setsid)
+        self.sim_bag_record = subprocess.Popen(["python3", "/home/XXXXXXX/code/dynus_ws/src/dynus/scripts/bag_record.py", "--bag_number", str(self.current_run), "--bag_path", f"{bag_folder_path}/num_{self.current_run}", "--agents", "['NX01']"], preexec_fn=os.setsid)
 
         sleep(20)
         

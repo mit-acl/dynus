@@ -95,7 +95,7 @@ if __name__ == "__main__":
     # Create arguments for record_ros2_bag
     parser = argparse.ArgumentParser(description="Record a ROS2 bag")
     parser.add_argument("--bag_number", type=int, help="Bag number to record")
-    # parser.add_argument("--bag_path", type=str, help="Path to save the bag", default="/media/kkondo/T7/dynus/sim/multiagent")
+    # parser.add_argument("--bag_path", type=str, help="Path to save the bag", default="/media/XXXXXXX/T7/dynus/sim/multiagent")
     parser.add_argument("--bag_path", type=str, help="Path to save the bag", default="/home/swarm/data/dynus")
     # parser.add_argument("--agents", nargs="+", help="List of agents to record", default=["NX01", "NX02", "NX03"])
     parser.add_argument("--agents", nargs="+", help="List of agents to record", default=["BD01"])

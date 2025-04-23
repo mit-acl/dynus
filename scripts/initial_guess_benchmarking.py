@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 
 # /* ----------------------------------------------------------------------------
-#  * Copyright 2024, Kota Kondo, Aerospace Controls Laboratory
-#  * Massachusetts Institute of Technology
+#  * Copyright 2024, XXXXX XXXXX, XXXXXXXXX XXXXXXXX XXXXXXXXXXX
+#  * XXXXXXXX XXXXXXXXX XXXXXXXXXXXX
 #  * All Rights Reserved
-#  * Authors: Kota Kondo, et al.
+#  * Authors: XXXXX XXXXX, et al.
 #  * See LICENSE file for the license information
 #  * -------------------------------------------------------------------------- */
 
@@ -39,12 +39,12 @@ def benchmarking():
     combinations = list(itertools.product(static_obs1_start_x_list, static_obs2_start_x_list, dynamic_obs_height_list, dynamic_obs_empty_space_list, global_planners_list))
 
     # path to the data log file (needs to be the same as in dynus.yaml)
-    data_log_path = "/home/kkondo/code/dynus_ws/src/dynus/data/data.txt"
+    data_log_path = "/home/XXXXXXX/code/dynus_ws/src/dynus/data/data.txt"
 
     # run the benchmarking
     for static_obs1_start_x, static_obs2_start_x, dynamic_obs_height, dynamic_obs_empty_space, global_planner in combinations:
         
-        # writing the benchmakring parameters in "/home/kkondo/code/dynus_ws/src/dynus/data/data.txt"
+        # writing the benchmakring parameters in "/home/XXXXXXX/code/dynus_ws/src/dynus/data/data.txt"
         if global_planner == global_planners_list[0]:
             with open(data_log_path, "a") as f:
                 f.write("\n")

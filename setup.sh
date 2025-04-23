@@ -79,20 +79,20 @@ export LD_LIBRARY_PATH="${GUROBI_HOME}/lib"
 # Dynus and dependencies
 mkdir -p /home/${USER}/code/dynus_ws/src
 cd /home/${USER}/code/dynus_ws/src
-git https://github.com/kotakondo/dynus.git
-git clone https://github.com/kotakondo/dynus_interfaces.git
-git clone https://github.com/kotakondo/octomap_mapping.git
-git clone https://github.com/kotakondo/realsense_gazebo_plugin.git
-git clone https://github.com/kotakondo/livox_laser_simulation_ros2.git
-git clone https://github.com/kotakondo/octomap_rviz_plugins.git
-git clone https://github.com/kotakondo/gazebo_ros_pkgs.git
+git https://github.com/XXXXXXXXX/dynus.git
+git clone https://github.com/XXXXXXXXX/dynus_interfaces.git
+git clone https://github.com/XXXXXXXXX/octomap_mapping.git
+git clone https://github.com/XXXXXXXXX/realsense_gazebo_plugin.git
+git clone https://github.com/XXXXXXXXX/livox_laser_simulation_ros2.git
+git clone https://github.com/XXXXXXXXX/octomap_rviz_plugins.git
+git clone https://github.com/XXXXXXXXX/gazebo_ros_pkgs.git
 
 mkdir -p /home/${USER}/code/decomp_ws/src
 cd /home/${USER}/code/decomp_ws/src
-git clone https://github.com/kotakondo/DecompROS2.git
+git clone https://github.com/XXXXXXXXX/DecompROS2.git
 mkdir -p /home/${USER}/code/livox_ws/src
 cd /home/${USER}/code/livox_ws/src
-git clone https://github.com/kotakondo/livox_ros_driver2.git
+git clone https://github.com/XXXXXXXXX/livox_ros_driver2.git
 cd /home/${USER}/code
 git clone https://github.com/Livox-SDK/Livox-SDK2.git
 

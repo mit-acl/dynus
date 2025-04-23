@@ -1,6 +1,6 @@
 FROM ros:humble
 
-LABEL Maintainer="Kota Kondo <kkondo@mit.edu>" \
+LABEL Maintainer="XXXXX XXXXX <XXXX@XXX.edu>" \
       Description="Ubuntu 22.04, ROS2 humble for DYNUS"
 
 # Set environment variables
@@ -71,51 +71,51 @@ ENV LD_LIBRARY_PATH="${GUROBI_HOME}/lib"
 
 # Install DYNUS and dependencies
 ##########################################
-RUN mkdir -p /home/kkondo/code/dynus_ws/src
-WORKDIR /home/kkondo/code/dynus_ws/src
+RUN mkdir -p /home/XXXXXXX/code/dynus_ws/src
+WORKDIR /home/XXXXXXX/code/dynus_ws/src
 RUN git clone https://github.com/mit-acl/dynus.git
-WORKDIR /home/kkondo/code/dynus_ws/src/dynus
+WORKDIR /home/XXXXXXX/code/dynus_ws/src/dynus
 RUN git switch contingency
-WORKDIR /home/kkondo/code/dynus_ws/src
-RUN git clone https://kotakondo:${GIT_ACCESS_TOKEN}@github.com/kotakondo/dynus_interfaces.git
-RUN git clone https://github.com/kotakondo/octomap_mapping.git
-RUN git clone https://github.com/kotakondo/realsense_gazebo_plugin.git
-RUN git clone https://github.com/kotakondo/livox_laser_simulation_ros2.git
-RUN git clone https://github.com/kotakondo/octomap_rviz_plugins.git
-RUN git clone https://github.com/kotakondo/gazebo_ros_pkgs.git
-RUN git clone https://github.com/kotakondo/unitree-go2-ros2.git
-RUN mkdir -p /home/kkondo/code/decomp_ws/src
-WORKDIR /home/kkondo/code/decomp_ws/src
-RUN git clone https://github.com/kotakondo/DecompROS2.git
-RUN mkdir -p /home/kkondo/code/livox_ws/src
-WORKDIR /home/kkondo/code/livox_ws/src
-RUN git clone https://github.com/kotakondo/livox_ros_driver2.git
-WORKDIR /home/kkondo/code
+WORKDIR /home/XXXXXXX/code/dynus_ws/src
+RUN git clone https://XXXXXXXXX:${GIT_ACCESS_TOKEN}@github.com/XXXXXXXXX/dynus_interfaces.git
+RUN git clone https://github.com/XXXXXXXXX/octomap_mapping.git
+RUN git clone https://github.com/XXXXXXXXX/realsense_gazebo_plugin.git
+RUN git clone https://github.com/XXXXXXXXX/livox_laser_simulation_ros2.git
+RUN git clone https://github.com/XXXXXXXXX/octomap_rviz_plugins.git
+RUN git clone https://github.com/XXXXXXXXX/gazebo_ros_pkgs.git
+RUN git clone https://github.com/XXXXXXXXX/unitree-go2-ros2.git
+RUN mkdir -p /home/XXXXXXX/code/decomp_ws/src
+WORKDIR /home/XXXXXXX/code/decomp_ws/src
+RUN git clone https://github.com/XXXXXXXXX/DecompROS2.git
+RUN mkdir -p /home/XXXXXXX/code/livox_ws/src
+WORKDIR /home/XXXXXXX/code/livox_ws/src
+RUN git clone https://github.com/XXXXXXXXX/livox_ros_driver2.git
+WORKDIR /home/XXXXXXX/code
 RUN git clone https://github.com/Livox-SDK/Livox-SDK2.git
 
 # Build the workspace
 ##########################################
 ### for decomp
-WORKDIR /home/kkondo/code/decomp_ws
+WORKDIR /home/XXXXXXX/code/decomp_ws
 RUN . /opt/ros/humble/setup.sh && colcon build --packages-select decomp_util
-RUN . /home/kkondo/code/decomp_ws/install/setup.sh && . /opt/ros/humble/setup.sh && colcon build
+RUN . /home/XXXXXXX/code/decomp_ws/install/setup.sh && . /opt/ros/humble/setup.sh && colcon build
 
 ### for Livox-SDK2
-WORKDIR /home/kkondo/code/Livox-SDK2
+WORKDIR /home/XXXXXXX/code/Livox-SDK2
 RUN mkdir build
-WORKDIR /home/kkondo/code/Livox-SDK2/build
+WORKDIR /home/XXXXXXX/code/Livox-SDK2/build
 RUN cmake .. && make -j && sudo make install
 
 ### for livox_ros_driver2
-WORKDIR /home/kkondo/code/livox_ws/src/livox_ros_driver2
+WORKDIR /home/XXXXXXX/code/livox_ws/src/livox_ros_driver2
 RUN . /opt/ros/humble/setup.sh && ./build.sh humble
 
 ### for other packages
-WORKDIR /home/kkondo/code/dynus_ws
+WORKDIR /home/XXXXXXX/code/dynus_ws
 # (1) gurobi dependencies, (2) decomp dependencies, (3) livox dependencies for colcon build
 RUN . /opt/ros/humble/setup.sh && \
-    . /home/kkondo/code/decomp_ws/install/setup.sh && \
-    export CMAKE_PREFIX_PATH=/home/kkondo/code/livox_ws/install/livox_ros_driver2:/home/kkondo/code/decomp_ws/install/decomp_util && \
+    . /home/XXXXXXX/code/decomp_ws/install/setup.sh && \
+    export CMAKE_PREFIX_PATH=/home/XXXXXXX/code/livox_ws/install/livox_ros_driver2:/home/XXXXXXX/code/decomp_ws/install/decomp_util && \
     colcon build
 
 # Gazebo
@@ -128,7 +128,7 @@ RUN echo    'pcm.!default { \
 
 # For livox lidar
 # ENV LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/lib:/usr/local/include
-ENV LD_LIBRARY_PATH=/home/kkondo/code/livox_ws/install/livox_ros_driver2/lib:${LD_LIBRARY_PATH}:/usr/local/lib:/usr/local/include
+ENV LD_LIBRARY_PATH=/home/XXXXXXX/code/livox_ws/install/livox_ros_driver2/lib:${LD_LIBRARY_PATH}:/usr/local/lib:/usr/local/include
 
 # Alias
 RUN echo 'alias tks="tmux kill-server"' >> ~/.bashrc

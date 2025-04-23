@@ -4,7 +4,7 @@
   <name>dynus</name>
   <version>0.0.0</version>
   <description>Dynus: Fully Decentralized Uncertainty-aware Multiagent Trajectory Planner in Unknown Dynamic Environments</description>
-  <maintainer email="kkondo@mit.edu">Kota Kondo</maintainer>
+  <maintainer email="XXXX@XXX.edu">XXXXX XXXXX</maintainer>
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

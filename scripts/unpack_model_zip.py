@@ -35,6 +35,6 @@ def unpack_zip_files(directory):
 if __name__ == "__main__":
 
     # Specify the directory containing the ZIP files
-    # directory = '/home/kkondo/subt_models/zip_files'
-    directory = '/home/kkondo/Downloads/zips'
+    # directory = '/home/XXXXXXX/subt_models/zip_files'
+    directory = '/home/XXXXXXX/Downloads/zips'
     unpack_zip_files(directory)

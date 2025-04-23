@@ -6,7 +6,7 @@ extracts /tf messages, and checks if at any time the Euclidean distance between 
 less than the specified drone radius.
 
 Usage:
-   python3 dynamic_obstacle_collision_checker.py --num_obstacles 20 --bag_folder /media/kkondo/T7/dynus/tro_paper/yaw_optimization/benchmark2/bags/dynus --drone_radius 0.05
+   python3 dynamic_obstacle_collision_checker.py --num_obstacles 20 --bag_folder /media/XXXXXXX/T7/dynus/tro_paper/yaw_optimization/benchmark2/bags/dynus --drone_radius 0.05
 """
 
 import os

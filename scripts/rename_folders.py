@@ -27,5 +27,5 @@ def rename_files_in_directory(directory):
 
 if __name__ == "__main__":
     # Specify the directory containing the files
-    directory = "/home/kkondo/.gazebo/models"
+    directory = "/home/XXXXXXX/.gazebo/models"
     rename_files_in_directory(directory)

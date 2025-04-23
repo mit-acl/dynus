@@ -32,7 +32,7 @@ def generate_launch_description():
     use_obstacle_tracker_arg = DeclareLaunchArgument('use_obstacle_tracker', default_value='false', description='Flag to indicate whether to start the obstacle tracker node')
 
     # file name to store data
-    data_file_arg = DeclareLaunchArgument('data_file', default_value='/media/kkondo/T7/dynus/tro_paper/global_planner_benchmarking/dgp.csv', description='File name to store data')
+    data_file_arg = DeclareLaunchArgument('data_file', default_value='/media/XXXXXXX/T7/dynus/tro_paper/global_planner_benchmarking/dgp.csv', description='File name to store data')
 
     # global planner
     global_planner_arg = DeclareLaunchArgument('global_planner', default_value='dgp', description='Global planner to use')

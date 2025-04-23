@@ -9,7 +9,7 @@ from visualization_msgs.msg import Marker
 from builtin_interfaces.msg import Time as TimeMsg
 import argparse
 
-# example: ./offline_tf_visualization_bag_writer.py --input_bag /media/kkondo/T7/dynus/tro_paper/hardware/red_rover/old/test1 --output_bag /media/kkondo/T7/dynus/tro_paper/hardware/red_rover/old/test1_with_tf_viz --frames RR01/base_link --interval 1.0
+# example: ./offline_tf_visualization_bag_writer.py --input_bag /media/XXXXXXX/T7/dynus/tro_paper/hardware/red_rover/old/test1 --output_bag /media/XXXXXXX/T7/dynus/tro_paper/hardware/red_rover/old/test1_with_tf_viz --frames RR01/base_link --interval 1.0
 
 def create_marker(transform: TransformStamped, marker_id: int, stamp: TimeMsg) -> Marker:
     from geometry_msgs.msg import Point
