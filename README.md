@@ -4,19 +4,19 @@
 
 | **Static Forest** | **Dynamic Obstacles** |
 | ------------------------- | ------------------------- |
-<a target="_blank" href="https://youtu.be/i1d8di2Nrbs"><img src="./imgs/single_agent_static_forest.gif" width="350" height="193" alt="Static Forest"></a> | <a target="_blank" href="https://youtu.be/i1d8di2Nrbs"><img src="./imgs/single_agent_dynamic_obstacles.gif" width="350" height="193" alt="Static Forest"></a> |
+<a target="_blank" href="https://youtu.be/SI8YbMS-wyw"><img src="./imgs/single_agent_static_forest.gif" width="350" height="193" alt="Static Forest"></a> | <a target="_blank" href="https://youtu.be/SI8YbMS-wyw"><img src="./imgs/single_agent_dynamic_obstacles.gif" width="350" height="193" alt="Static Forest"></a> |
 
 | **Office** | **Cave** |
 | ------------------------- | ------------------------- |
-<a target="_blank" href="https://youtu.be/i1d8di2Nrbs"><img src="./imgs/office.gif" width="350" height="193" alt="Static Forest"></a> | <a target="_blank" href="https://youtu.be/i1d8di2Nrbs"><img src="./imgs/cave.gif" width="350" height="193" alt="Static Forest"></a>
+<a target="_blank" href="https://youtu.be/SI8YbMS-wyw"><img src="./imgs/office.gif" width="350" height="193" alt="Static Forest"></a> | <a target="_blank" href="https://youtu.be/SI8YbMS-wyw"><img src="./imgs/cave.gif" width="350" height="193" alt="Static Forest"></a>
 
 | **Realistic Forest** | **Static Hardware** |
 | ------------------------- | ------------------------- |
-<a target="_blank" href="https://youtu.be/i1d8di2Nrbs"><img src="./imgs/single_agent_realistic_forest.gif" width="350" height="193" alt="Static Forest"></a> | <a target="_blank" href="https://youtu.be/i1d8di2Nrbs"><img src="./imgs/test31_ground_view.gif" width="350" height="193" alt="Static Forest"></a>
+<a target="_blank" href="https://youtu.be/SI8YbMS-wyw"><img src="./imgs/single_agent_realistic_forest.gif" width="350" height="193" alt="Static Forest"></a> | <a target="_blank" href="https://youtu.be/SI8YbMS-wyw"><img src="./imgs/test31_ground_view.gif" width="350" height="193" alt="Static Forest"></a>
 
 | **Dynamic Hardware** | **Ground Robots Hardware** |
 | ------------------------- | ------------------------- |
-<a target="_blank" href="https://youtu.be/i1d8di2Nrbs"><img src="./imgs/dyn_sta_hw.gif" width="350" height="193" alt="Static Forest"></a> | <a target="_blank" href="https://youtu.be/i1d8di2Nrbs"><img src="./imgs/ground_robots_hw.gif" width="350" height="193" alt="Static Forest"></a>
+<a target="_blank" href="https://youtu.be/SI8YbMS-wyw"><img src="./imgs/dyn_sta_hw.gif" width="350" height="193" alt="Static Forest"></a> | <a target="_blank" href="https://youtu.be/SI8YbMS-wyw"><img src="./imgs/ground_robots_hw.gif" width="350" height="193" alt="Static Forest"></a>
 
 ## Citation
 
@@ -24,7 +24,7 @@ If you use this code in your research, please cite the following paper:
 
 <!-- ## Video
 
-YouTube video: [DYNUS: Uncertainty-aware Trajectory Planner in Dynamic Unknown Environment](https://youtu.be/i1d8di2Nrbs) -->
+YouTube video: [DYNUS: Uncertainty-aware Trajectory Planner in Dynamic Unknown Environment](https://youtu.be/SI8YbMS-wyw) -->
 
 <!-- ## For Multiagent Planners
 
