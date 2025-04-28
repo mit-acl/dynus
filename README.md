@@ -57,7 +57,7 @@ DYNUS’s backend optimizer is powered by Gurobi, which requires a valid license
    ```bash
    mkdir -p ~/code/ws
    cd ~/code/ws
-   git clone https://github.com/kotakondo/dynus.git
+   git clone https://github.com/mit-acl/dynus.git
    cd dynus/docker
    ```
 
@@ -95,7 +95,7 @@ DYNUS’s backend optimizer is powered by Gurobi, which requires a valid license
    ```bash
    mkdir -p ~/code/ws
    cd ~/code/ws
-   git clone https://github.com/kotakondo/dynus.git
+   git clone https://github.com/mit-acl/dynus.git
    cd dynus
    ```
 
