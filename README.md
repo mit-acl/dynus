@@ -22,11 +22,20 @@
 
 If you use this code in your research, please cite the following paper:
 
-<!-- ## Video
+```bash
+@article{kondo2025dynus,
+  title={DYNUS: Uncertainty-aware Trajectory Planner in Dynamic Unknown Environments},
+  author={Kondo, Kota and Peterson, Mason and Rober, Nicholas and Viso, Juan Rached and Jia, Lucas and Chen, Jialin and Merton, Harvey and How, Jonathan P},
+  journal={arXiv preprint arXiv:2504.16734},
+  year={2025}
+}
+```
 
-YouTube video: [DYNUS: Uncertainty-aware Trajectory Planner in Dynamic Unknown Environment](https://youtu.be/SI8YbMS-wyw) -->
+## Video
 
-<!-- ## For Multiagent Planners
+YouTube video: [DYNUS: Uncertainty-aware Trajectory Planner in Dynamic Unknown Environment](https://youtu.be/SI8YbMS-wyw)
+
+## For Multiagent Planners
 
 Robust MADER: 
 ```bash
@@ -40,7 +49,7 @@ Robust MADER:
   year={2023},
   publisher={IEEE}
 }
-``` -->
+```
 
 ## General Setup
 
