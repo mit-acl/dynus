@@ -22,7 +22,7 @@
 
 If you use this code in your research, please cite the following paper:
 
-```bash
+```
 @article{kondo2025dynus,
   title={DYNUS: Uncertainty-aware Trajectory Planner in Dynamic Unknown Environments},
   author={Kondo, Kota and Peterson, Mason and Rober, Nicholas and Viso, Juan Rached and Jia, Lucas and Chen, Jialin and Merton, Harvey and How, Jonathan P},
@@ -37,19 +37,7 @@ YouTube video: [DYNUS: Uncertainty-aware Trajectory Planner in Dynamic Unknown E
 
 ## For Multiagent Planners
 
-Robust MADER: 
-```bash
-@article{kondo2023robust,
-  title={Robust mader: Decentralized multiagent trajectory planner robust to communication delay in dynamic environments},
-  author={Kondo, Kota and Figueroa, Reinaldo and Rached, Juan and Tordesillas, Jesus and Lusk, Parker C and How, Jonathan P},
-  journal={IEEE Robotics and Automation Letters},
-  volume={9},
-  number={2},
-  pages={1476--1483},
-  year={2023},
-  publisher={IEEE}
-}
-```
+[Robust MADER: Decentralized and Asynchronous Multiagent Trajectory Planner Robust to Communication Delay](https://github.com/mit-acl/rmader)
 
 ## General Setup
 
