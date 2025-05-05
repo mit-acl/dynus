@@ -18,6 +18,10 @@
 | ------------------------- | ------------------------- |
 <a target="_blank" href="https://youtu.be/SI8YbMS-wyw"><img src="./imgs/dyn_sta_hw.gif" width="350" height="193" alt="Static Forest"></a> | <a target="_blank" href="https://youtu.be/SI8YbMS-wyw"><img src="./imgs/ground_robots_hw.gif" width="350" height="193" alt="Static Forest"></a>
 
+## Paper
+
+The paper is available on [arXiv](https://arxiv.org/abs/2504.16734).
+
 ## Citation
 
 If you use this code in your research, please cite the following paper:
