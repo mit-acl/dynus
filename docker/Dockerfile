@@ -75,7 +75,6 @@ RUN mkdir -p /home/kkondo/code/dynus_ws/src
 WORKDIR /home/kkondo/code/dynus_ws/src
 RUN git clone https://github.com/mit-acl/dynus.git
 WORKDIR /home/kkondo/code/dynus_ws/src/dynus
-RUN git switch contingency
 WORKDIR /home/kkondo/code/dynus_ws/src
 RUN git clone https://kotakondo:${GIT_ACCESS_TOKEN}@github.com/kotakondo/dynus_interfaces.git
 RUN git clone https://github.com/kotakondo/octomap_mapping.git
