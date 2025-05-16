@@ -3,6 +3,7 @@
 import subprocess
 import sys
 import argparse
+import getpass, sys
 
 def run_tmux(cmd):
     """Run a tmux command and exit if an error occurs."""
@@ -89,7 +90,8 @@ def main():
     env_cmd = env_cmds[env_name]
 
     # Common setup command for both panes.
-    setup_cmd = "source /home/kkondo/code/dynus_ws/install/setup.bash; export ROS_DOMAIN_ID=7;"
+    user = getpass.getuser()        # e.g. 'kkondo'
+    setup_cmd = f"source /home/{user}/code/dynus_ws/install/setup.bash; export ROS_DOMAIN_ID=7;"
 
     # use_dyn_obs
     if env_name in ["empty_wo_ground", "empty", "dynamic_debug"]:
