@@ -17,7 +17,7 @@ def get_ros_processes():
         result = subprocess.run(['ps', 'aux'], stdout=subprocess.PIPE, text=True)
         processes = result.stdout.splitlines()
         # return [line for line in processes if 'ros' in line and EXCLUDE_PROCESS not in line]
-        return [line for line in processes if 'ros' in line and 'Microsoft' not in line]
+        return [line for line in processes if ('ros' in line and 'Microsoft' not in line) or ('gazebo' in line)]
     except subprocess.CalledProcessError as e:
         print(f"Error executing ps aux: {e}")
         return []

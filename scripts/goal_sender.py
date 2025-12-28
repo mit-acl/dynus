@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # /* ----------------------------------------------------------------------------
-#  * Copyright 2024, Kota Kondo, Aerospace Controls Laboratory
+#  * Copyright 2025, Kota Kondo, Aerospace Controls Laboratory
 #  * Massachusetts Institute of Technology
 #  * All Rights Reserved
 #  * Authors: Kota Kondo, et al.
@@ -23,13 +23,13 @@ class GoalSender(Node):
         # Parameters
         ## Get the list of agents and corresponding goals
         self.list_agents = self.declare_parameter('list_agents', value=['NX01', 'NX02']).value
-        self.list_goals = self.declare_parameter('list_goals', value=['[1.0, 2.0]', '[3.0, 4.0]']).value
+        self.list_goals = self.declare_parameter('list_goals', value=['[2.0, 2.0]', '[-2.0, 2.0]']).value
 
         # Since the list_goals parameter is a list of strings, we need to parse it as a list of lists
         self.list_goals = [yaml.safe_load(goal) for goal in self.list_goals]
 
         ## Get the z value for the goals
-        self.default_goal_z = self.declare_parameter('default_goal_z', value=0.5).value
+        self.default_goal_z = self.declare_parameter('default_goal_z', value=3.0).value
 
         # Publisher
         self.pub_goals = {}

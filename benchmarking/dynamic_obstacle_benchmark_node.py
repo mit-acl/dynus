@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # /* ----------------------------------------------------------------------------
-#  * Copyright 2024, Kota Kondo, Aerospace Controls Laboratory
+#  * Copyright 2025, Kota Kondo, Aerospace Controls Laboratory
 #  * Massachusetts Institute of Technology
 #  * All Rights Reserved
 #  * Authors: Kota Kondo, et al.
@@ -25,17 +25,20 @@ class BenchmarkNode(Node):
         seed(1)
         
         # Global planner 
-        self.global_planner_algorithm = 'dgp'
+        self.global_planner_algorithm = 'sjps'
+        self.num_N = 4  # number of samples for the global planner
 
         # Benchmarking types
         self.benchmark_types = 'dynamic_obstacle'
-        self.algorithm = 'dynus'
+        self.algorithm = 'mighty'   # local planner algorithm
+        self.use_rviz = True       # Use RViz
+        self.env = "dynamic_forest" # "empty_wo_ground" "easy_forest" "medium_forest" "hard_forest" "dynamic_forest"
 
         # Use dynamic obstacles
         self.use_dyn_obs = True
 
         super().__init__('benchmark_node')
-        self.declare_parameter('iterations', 10)
+        self.declare_parameter('iterations', 5)
         self.iterations = self.get_parameter('iterations').value
         self.current_run = 0
 
@@ -52,8 +55,9 @@ class BenchmarkNode(Node):
         self.goal_reached = False
 
         # Goal and start positions range
-        start_x = -30.0
-        goal_x = 30.0
+        start_x = 0.0
+        goal_x = 110.0
+        self.start_goal_z = 2.0
         y_range = [0.0, 0.0]
 
         # Pre-generate start and goal positions for all iterations
@@ -68,13 +72,13 @@ class BenchmarkNode(Node):
     def run_simulation(self):
 
         # create directory for the algorithm
-        csv_folder_path = f"/media/kkondo/T7/dynus/tro_paper/{self.benchmark_types}/csv/{self.algorithm}"
-        bag_folder_path = f"/media/kkondo/T7/dynus/tro_paper/{self.benchmark_types}/bags/{self.algorithm}"
+        csv_folder_path = f"/media/kkondo/kota_elements/mighty/{self.benchmark_types}/csv/{self.algorithm}"
+        bag_folder_path = f"/media/kkondo/kota_elements/mighty/{self.benchmark_types}/bags/{self.algorithm}"
         os.makedirs(csv_folder_path, exist_ok=True)
         os.makedirs(bag_folder_path, exist_ok=True)
 
         # simulation loop
-        for i in range(self.iterations):
+        for i in range(4, self.iterations):
             self.current_run = i
             self.get_logger().info(f'Starting simulation {self.current_run}/{self.iterations}')
             self.start_simulation(self.global_planner_algorithm, csv_folder_path, bag_folder_path, self.algorithm)
@@ -95,23 +99,27 @@ class BenchmarkNode(Node):
         self.get_logger().info(f'Goal position: {goal_x}, {goal_y}')
 
         # Base
-        self.sim_process_base = subprocess.Popen(["ros2", "launch", "dynus", "base_dynus.launch.py", f"use_dyn_obs:={self.use_dyn_obs}", "use_gazebo_gui:=false", "use_rviz:=true"], preexec_fn=os.setsid)
+        self.sim_process_base = subprocess.Popen(["ros2", "launch", "mighty", "base_mighty.launch.py", f"use_dyn_obs:={self.use_dyn_obs}", "use_gazebo_gui:=false", f"use_rviz:={self.use_rviz}", f"env:={self.env}"], preexec_fn=os.setsid)
+
+        # ACL Mapper
+        self.acl_mapper_process = subprocess.Popen(["ros2", "launch", "global_mapper_ros", "global_mapper_node.launch.py"], preexec_fn=os.setsid)
 
         sleep(10)
         
         # Onboard
-        self.sim_process_onboard = subprocess.Popen(["ros2", "launch", "dynus", "onboard_dynus.launch.py", f"x:={start_x}", f"y:={start_y}", "z:=3.0", "yaw:=0", "namespace:=NX01", f"use_obstacle_tracker:={self.use_dyn_obs}", f"data_file:={csv_folder_path}/num_{self.current_run}.csv", f"global_planner:={global_planner_algorithm}", "use_benchmark:=true", "depth_camera_name:=d435"], preexec_fn=os.setsid)
+        self.sim_process_onboard = subprocess.Popen(["ros2", "launch", "mighty", "onboard_mighty.launch.py", f"x:={start_x}", f"y:={start_y}", f"z:={self.start_goal_z}", "yaw:=0", "namespace:=NX01", f"use_obstacle_tracker:={self.use_dyn_obs}", f"data_file:={csv_folder_path}/num_{self.current_run}.csv", f"global_planner:={global_planner_algorithm}", "use_benchmark:=true", f"num_N:={self.num_N}"], preexec_fn=os.setsid)
         
-        sleep(5)
+        time_to_sleep = 100 if self.env == "empty_wo_ground" else 50
+        sleep(time_to_sleep)
 
         # Bag recording
         self.sim_bag_record = subprocess.Popen(["python3", "/home/kkondo/code/dynus_ws/src/dynus/scripts/bag_record.py", "--bag_number", str(self.current_run), "--bag_path", f"{bag_folder_path}/num_{self.current_run}", "--agents", "['NX01']"], preexec_fn=os.setsid)
 
-        sleep(20)
+        sleep(10)
         
         # Goal
         # print("Sending goal")
-        self.sim_process_goal =  subprocess.Popen(["ros2", "launch", "dynus", "goal_sender.launch.py", "list_agents:=['NX01']", f"list_goals:=['[{goal_x}, {goal_y}]']", "default_goal_z:=3.0"], preexec_fn=os.setsid)
+        self.sim_process_goal =  subprocess.Popen(["ros2", "launch", "mighty", "goal_sender.launch.py", "list_agents:=['NX01']", f"list_goals:=['[{goal_x}, {goal_y}]']", f"default_goal_z:={self.start_goal_z}"], preexec_fn=os.setsid)
 
 
     def stop_simulation(self):
@@ -119,6 +127,8 @@ class BenchmarkNode(Node):
         # kill the ros2 processes
         os.killpg(os.getpgid(self.sim_process_base.pid), signal.SIGTERM)
         self.sim_process_base.wait()
+        os.killpg(os.getpgid(self.acl_mapper_process.pid), signal.SIGTERM)
+        self.acl_mapper_process.wait()
         os.killpg(os.getpgid(self.sim_process_onboard.pid), signal.SIGTERM)
         self.sim_process_onboard.wait()
         os.killpg(os.getpgid(self.sim_bag_record.pid), signal.SIGTERM)

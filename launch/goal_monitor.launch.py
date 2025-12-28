@@ -4,22 +4,33 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 def generate_launch_description():
-    return LaunchDescription([
-        # Declare launch arguments
-        DeclareLaunchArgument(
-            'goal_tolerance',
-            default_value='0.5',
-            description='Distance tolerance to consider a goal reached'
-        ),
-        # Node
-        Node(
-            package='dynus',  # Replace with your package name
-            executable='goal_monitor_node.py',  # Replace with your node executable
-            namespace='NX01',
-            name='goal_monitor_node',
-            output='screen',
-            parameters=[
-                {'goal_tolerance': LaunchConfiguration('goal_tolerance')},
-            ]
+    # tolerance arg
+    goal_tol_arg = DeclareLaunchArgument(
+        'goal_tolerance',
+        default_value='0.5',
+        description='Distance tolerance to consider a goal reached'
+    )
+    # list out the four namespaces you want
+    namespaces = ['NX01', 'NX02', 'NX03', 'NX04', 'NX05',
+                  'NX06', 'NX07', 'NX08', 'NX09', 'NX10']
+
+    # for each namespace, create one Node
+    nodes = []
+    for ns in namespaces:
+        nodes.append(
+            Node(
+                package='mighty',
+                executable='goal_monitor_node.py',
+                namespace=ns,
+                name='goal_monitor_node',  # this will live under /<ns>/goal_monitor_node
+                output='screen',
+                parameters=[{
+                    'goal_tolerance': LaunchConfiguration('goal_tolerance')
+                }]
+            )
         )
+
+    return LaunchDescription([
+        goal_tol_arg,
+        *nodes
     ])

@@ -81,9 +81,11 @@ def check_collision(agent_pos, cylinder, drone_radius=0.1):
     dy = agent_pos[1] - cylinder["y"]
     horizontal_dist = math.sqrt(dx*dx + dy*dy)
     allowed_dist = cylinder["radius"] + drone_radius
-    if horizontal_dist <= allowed_dist:
+    if horizontal_dist < allowed_dist:
         if 0 <= agent_pos[2] <= cylinder["height"]:
             penetration = allowed_dist - horizontal_dist
+            print("\033[91mCollision with cylinder {} at position ({:.2f}, {:.2f}, {:.2f}), penetration {:.8f} m\033[0m".format(
+                cylinder["id"], agent_pos[0], agent_pos[1], agent_pos[2], penetration))
             return (True, cylinder["id"], penetration)
     return (False, None, None)
 
@@ -117,9 +119,9 @@ def main():
     
     cylinders = load_forest_parameters(forest_csv)
     
-    # In ROS 2, a bag is a folder. List all directories in bag_folder.
-    bag_paths = [os.path.join(bag_folder, d) for d in os.listdir(bag_folder)
-                 if os.path.isdir(os.path.join(bag_folder, d))]
+    # add num_0 to num9 to at the end of the bag paths
+    # bag_paths = [os.path.join(bag_path, f"num_{i}/num_{i}") for i in range(10) for bag_path in glob.glob(bag_folder)]
+    bag_paths = [os.path.join(bag_path, f"num_{i}") for i in range(10) for bag_path in glob.glob(bag_folder)]
     bag_paths = sorted(bag_paths)
     
     results = []
@@ -128,14 +130,18 @@ def main():
         collision, collided_obstacle, penetration = process_ros2_bag(bag_path, cylinders, drone_radius, topic, message_type_str)
         if collision:
             status = "collision"
+            # print red
+            print("\033[91mCollision detected in bag: {}\033[0m".format(bag_path))
         else:
             status = "no collision"
             collided_obstacle = ""
             penetration = ""
+            # print green
+            print("\033[92mNo collision detected in bag: {}\033[0m".format(bag_path))
         results.append((os.path.basename(bag_path), status, collided_obstacle, penetration))
     
     # Write results to collision_check.csv.
-    output_csv = "collision_check.csv"
+    output_csv = f"{bag_folder}/collision_check.csv"
     with open(output_csv, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["bag_folder", "collision_status", "collided_obstacle", "penetration"])

@@ -91,6 +91,12 @@ namespace gazebo
       model_->SetWorldPose(pose);
 
       // --- Publish a TF transform ---
+      if (!publish_tf_)
+      {
+        // If publish_tf_ is false, skip TF broadcasting.
+        return;
+      }
+      
       geometry_msgs::msg::TransformStamped tf_msg;
       // Use the ROS2 node's clock for the header stamp.
       tf_msg.header.stamp = rosnode_->now();
@@ -113,9 +119,10 @@ namespace gazebo
     // Gazebo pointers.
     physics::ModelPtr model_;
     physics::WorldPtr world_;
-    double t_;
+    double t_ = 0.0;
     std::vector<expression_t> traj_compiled_;
     event::ConnectionPtr updateConnection;
+    bool publish_tf_ = false;
 
     // ROS2 node and TF broadcaster.
     rclcpp::Node::SharedPtr rosnode_;

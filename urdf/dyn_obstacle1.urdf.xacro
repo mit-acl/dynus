@@ -6,6 +6,7 @@
   <xacro:arg name="traj_x" default="sin(t)" />
   <xacro:arg name="traj_y" default="cos(t)" />
   <xacro:arg name="traj_z" default="2.0" />
+  <xacro:arg name="size" default="1.0" />
 
   <!-- Color definitions -->
   <material name="grey">
@@ -21,9 +22,14 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="$(find dynus)/meshes/obstacles/model4.dae" scale="1.0 1.0 1.0"/>
+        <mesh filename="$(find mighty)/meshes/obstacles/model4.dae" scale="$(arg size) $(arg size) $(arg size)" />
       </geometry>
     </visual>
+    <collision>
+      <geometry>
+        <box size="1.0 1.0 1.0"/>
+      </geometry>
+    </collision>
   </link>
 
   <!-- Disable gravity for the obstacle -->

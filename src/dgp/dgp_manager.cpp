@@ -1,5 +1,5 @@
 /* ----------------------------------------------------------------------------
- * Copyright 2024, Kota Kondo, Aerospace Controls Laboratory
+ * Copyright 2025, Kota Kondo, Aerospace Controls Laboratory
  * Massachusetts Institute of Technology
  * All Rights Reserved
  * Authors: Kota Kondo, et al.
@@ -10,7 +10,7 @@
 
 /// The type of map data Tmap is defined as a 1D array
 using Tmap = std::vector<char>;
-using namespace dynus;
+using namespace mighty;
 using namespace termcolor;
 
 typedef timer::Timer MyTimer;
@@ -19,12 +19,12 @@ DGPManager::DGPManager() {}
 
 void DGPManager::setParameters(const parameters &par)
 {
+
     // Get the parameter
     par_ = par;
 
     // Set the parameters
     res_ = par.res;
-    use_raw_path_ = par.use_raw_path;
     drone_radius_ = par.drone_radius;
     max_dist_vertexes_ = par.max_dist_vertexes;
     use_shrinked_box_ = par.use_shrinked_box;
@@ -33,36 +33,15 @@ void DGPManager::setParameters(const parameters &par)
     local_box_size_ = {static_cast<float>(par.local_box_size[0]), static_cast<float>(par.local_box_size[1]), static_cast<float>(par.local_box_size[2])};
 
     // shared pointer to the map util for actual planning
-    write_map_util_ = std::make_shared<dynus::VoxelMapUtil>(par.factor_dgp * par.res, par.x_min, par.x_max, par.y_min, par.y_max, par.z_min, par.z_max, par.inflation_dgp, par.free_inflation_dgp, par.octomap_res, par.alpha_cov, par_.dynamic_obstacle_base_inflation, par.max_dynamic_obstacle_inflation, par.map_buffer, par.use_lidar, par.use_depth_camera, par.use_free_space, par.use_z_axis_bottom_inflation, par.node_size_factor_for_occupied, par.node_size_factor_for_free);
+    map_util_ = std::make_shared<mighty::VoxelMapUtil>(par.factor_dgp * par.res, par.x_min, par.x_max, par.y_min, par.y_max, par.z_min, par.z_max, par.inflation_dgp);
 }
 
-void DGPManager::updateMapRes(double res)
-{
-    // Update the resolution
-    res_ = res;
-    write_map_util_->setResolution(res);
-}
-
-void DGPManager::updateMaxDistVertexes(double max_dist_vertexes)
-{
-    max_dist_vertexes_ = max_dist_vertexes;
-}
-
-void DGPManager::updateReadMapUtil()
-{
-    mtx_write_map_util_.lock();
-    mtx_read_map_util_.lock();
-    read_map_util_ = std::make_shared<dynus::VoxelMapUtil>(*write_map_util_);
-    mtx_read_map_util_.unlock();
-    mtx_write_map_util_.unlock();
-}
-
-void DGPManager::cleanUpPath(vec_Vecf<3>& path)
+void DGPManager::cleanUpPath(vec_Vecf<3> &path)
 {
     planner_ptr_->cleanUpPath(path);
 }
 
-void DGPManager::setupDGPPlanner(const std::string &global_planner, bool global_planner_verbose, double res, double v_max, double a_max, double j_max, int dgp_timeout_duration_ms)
+void DGPManager::setupDGPPlanner(const std::string &global_planner, bool global_planner_verbose, double res, double v_max, double a_max, double j_max, int dgp_timeout_duration_ms, double w_unknown, double w_align, double decay_len_cells, double w_side, int los_cells, double min_len, double min_turn)
 {
 
     // Get the parameters
@@ -74,13 +53,13 @@ void DGPManager::setupDGPPlanner(const std::string &global_planner, bool global_
     j_max_3d_ = Eigen::Vector3d(j_max, j_max, j_max);
 
     // Create the DGP planner
-    planner_ptr_ = std::unique_ptr<DGPPlanner>(new DGPPlanner(global_planner, global_planner_verbose, v_max, a_max, j_max, dgp_timeout_duration_ms));
+    planner_ptr_ = std::unique_ptr<DGPPlanner>(new DGPPlanner(global_planner, global_planner_verbose, v_max, a_max, j_max, dgp_timeout_duration_ms, w_unknown, w_align, decay_len_cells, w_side, los_cells, min_len, min_turn));
 
     // Create the map_util_for_planning
     // This is the beginning of the planning, so we fetch the map_util_ and don't update it for the entire planning process (updating while planning makes the planner slower)
-    mtx_read_map_util_.lock();
-    map_util_for_planning_ = std::make_shared<dynus::VoxelMapUtil>(*read_map_util_);
-    mtx_read_map_util_.unlock();
+    mtx_map_util_.lock();
+    map_util_for_planning_ = std::make_shared<mighty::VoxelMapUtil>(*map_util_);
+    mtx_map_util_.unlock();
 }
 
 void DGPManager::updateVmax(double v_max)
@@ -89,16 +68,6 @@ void DGPManager::updateVmax(double v_max)
     v_max_ = v_max;
     v_max_3d_ = Eigen::Vector3d(v_max, v_max, v_max);
     planner_ptr_->updateVmax(v_max);
-}
-
-void DGPManager::updateTrajs(const std::vector<dynTraj> &trajs)
-{
-    mtx_write_map_util_.lock();
-    write_map_util_->updateTrajs(trajs);
-    mtx_write_map_util_.unlock();
-
-    // Update the read_map_util_ with the write_map_util_
-    updateReadMapUtil();
 }
 
 void DGPManager::freeStart(Vec3f &start, double factor)
@@ -125,6 +94,82 @@ bool DGPManager::checkIfPointOccupied(const Vec3f &point)
     return map_util_for_planning_->isOccupied(point_int);
 }
 
+// Sample along [p0, p1] at a safe step to ensure we don't skip thin obstacles.
+// Uses the occupancy from the (already inflated) planning map.
+inline bool isSegmentFree(const mighty::VoxelMapUtil &map,
+                          const Vec3f &p0,
+                          const Vec3f &p1,
+                          const double sample_step)
+{
+    const Vec3f d = p1 - p0;
+    const double L = d.norm();
+    if (L <= 1e-6)
+        return true;
+
+    const Vec3f dir = d / L;
+    // March from start to end, including the goal voxel.
+    for (double s = 0.0; s <= L; s += sample_step)
+    {
+        const Vec3f q = p0 + s * dir;
+        const Veci<3> qi = map.floatToInt(q);
+        // if (!map.isFree(qi))
+        if (map.isOccupied(qi))
+            return false;
+    }
+    // Ensure exact endpoint is also checked (if s stepped past)
+    const Veci<3> q_end = map.floatToInt(p1);
+    // if (!map.isFree(q_end))
+    if (map.isOccupied(q_end))
+        return false;
+
+    return true;
+}
+
+// Greedily collapse a path into maximal collision-free segments.
+// This mirrors the "generate a long segment if it’s collision free" behavior.
+inline void collapseIntoLongSegments(const mighty::VoxelMapUtil &map,
+                                     double res,
+                                     vec_Vecf<3> &path_inout,
+                                     double sample_step = -1.0)
+{
+    if (path_inout.size() <= 2)
+        return;
+
+    const double step = (sample_step > 0.0) ? sample_step : 0.5 * res;
+
+    vec_Vecf<3> simplified;
+    simplified.reserve(path_inout.size());
+    simplified.push_back(path_inout.front()); // keep start
+
+    size_t anchor = 0;     // current segment start index
+    size_t j = anchor + 1; // candidate end
+
+    while (j < path_inout.size())
+    {
+        size_t last_good = anchor + 1;
+
+        // Extend j as far as LoS holds
+        while (j < path_inout.size() &&
+               isSegmentFree(map, path_inout[anchor], path_inout[j], step))
+        {
+            last_good = j;
+            ++j;
+        }
+
+        // Commit the farthest valid endpoint
+        simplified.push_back(path_inout[last_good]);
+
+        // Start next segment from there
+        anchor = last_good;
+        j = anchor + 1;
+    }
+
+    // Make sure we end exactly at the original goal
+    simplified.back() = path_inout.back();
+
+    path_inout.swap(simplified);
+}
+
 bool DGPManager::solveDGP(const Vec3f &start_sent, const Vec3f &start_vel, const Vec3f &goal_sent, double &final_g, double weight, double current_time, vec_Vecf<3> &path)
 {
     // Set start and goal
@@ -147,31 +192,7 @@ bool DGPManager::solveDGP(const Vec3f &start_sent, const Vec3f &start_vel, const
     // If there is a solution
     if (result)
     {
-        // Process path
-        if (use_raw_path_)
-        {
-            path = planner_ptr_->getRawPath(); // Get raw path
-        }
-        else
-        {
-            path = planner_ptr_->getPath();
-        }
-
-        // Add more vertices if necessary
-        dynus_utils::createMoreVertexes(path, max_dist_vertexes_);
-
-        if (path.size() > 1)
-        {
-            path[0] = start;
-            path[path.size() - 1] = goal; // Ensure path starts and ends at the correct points
-        }
-        else
-        { // Handle the case where start and goal are in the same voxel
-            vec_Vecf<3> tmp;
-            tmp.push_back(start);
-            tmp.push_back(goal);
-            path = tmp;
-        }
+        path = planner_ptr_->getPath();
     }
     else
     {
@@ -179,7 +200,10 @@ bool DGPManager::solveDGP(const Vec3f &start_sent, const Vec3f &start_vel, const
     }
 
     // Clean up path
-    // planner_ptr_->cleanUpPath(path);
+    planner_ptr_->cleanUpPath(path);
+
+    // // Add more vertices if necessary
+    mighty_utils::createMoreVertexes(path, max_dist_vertexes_);
 
     return result;
 }
@@ -226,38 +250,14 @@ void DGPManager::pushPathIntoFreeSpace(const vec_Vecf<3> &path, vec_Vecf<3> &fre
     }
 }
 
-inline bool DGPManager::checkIfPointFree(const Vec3f &point) const
+bool DGPManager::checkIfPointFree(const Vec3f &point) const
 {
     // Check if the point is free
     Veci<3> point_int = map_util_for_planning_->floatToInt(point);
     return map_util_for_planning_->isFree(point_int);
 }
 
-void DGPManager::getPpoints(const Vec3f& global_path_point, const Vec3f& static_push_point, Vec3f& p_point)
-{
-
-    // starting from static_push_point, we increase the distance by some amount until it detects a free point
-    double push_detection_dist = 0.1;
-    double total_dist = (global_path_point - static_push_point).norm();
-    Vec3f direction = (global_path_point - static_push_point).normalized();
-
-    // Initialize p_point
-    p_point = static_push_point;
-
-    // Get the direction
-    for (double dist = 0.0; dist < total_dist; dist += push_detection_dist)
-    {
-        Vec3f point = static_push_point + dist * direction;
-        if (checkIfPointFree(point))
-        {
-            // get p point (which is in occupied space)
-            p_point = point - push_detection_dist * direction;
-            break;
-        }
-    }
-}
-
-bool DGPManager::checkIfPointHasNonFreeNeighbour(const Vec3f& point) const
+bool DGPManager::checkIfPointHasNonFreeNeighbour(const Vec3f &point) const
 {
     // Check if the point has an occupied neighbour
     Veci<3> point_int = map_util_for_planning_->floatToInt(point);
@@ -267,50 +267,17 @@ bool DGPManager::checkIfPointHasNonFreeNeighbour(const Vec3f& point) const
 void DGPManager::getOccupiedCells(vec_Vecf<3> &occupied_cells)
 {
     // Get the occupied cells
-    mtx_read_map_util_.lock();
-    auto local_read_map_util = std::make_shared<dynus::VoxelMapUtil>(*read_map_util_);
-    mtx_read_map_util_.unlock();
-    occupied_cells = local_read_map_util->getOccupiedCloud();
+    mtx_map_util_.lock();
+    occupied_cells = map_util_->getOccupiedCloud();
+    mtx_map_util_.unlock();
 }
 
-void DGPManager::getOccupiedCellsForCvxDecomp(vec_Vecf<3> &occupied_cells, const vec_Vecf<3> &path, bool use_for_safe_path)
+void DGPManager::getFreeCells(vec_Vecf<3> &free_cells)
 {
-    // Get the occupied cells
-    // We use map_util_for_planning_ (whose start and goal positions are freed by setFreeVoxelAndSurroundings() in solveDGP())
-
-    if (!use_for_safe_path) // for whole trajectory planning
-    {
-        occupied_cells = map_util_for_planning_->getOccupiedCloud(path, local_box_size_);
-    }
-    else // for safe path planning
-    {
-        occupied_cells = map_util_for_planning_->getOccupiedCloudWithUnknownAsOccupied(path, local_box_size_);
-    }
-
-    // occupied_cells = map_util_for_planning_->getUninflatedStaticCloud(); // It will be inflated later using drone_bbox
-}
-
-void DGPManager::getDynamicOccupiedCellsForCvxDecompTemporal(vec_Vecf<3> &occupied_cells, const std::vector<double> &current_times, std::vector<double> times_elapsed_from_plan_start, const vec_Vecf<3> &path, bool use_for_safe_path)
-{
-    // Get the occupied cells
-    if (!use_for_safe_path) // for whole trajectory planning
-    {
-        occupied_cells = map_util_for_planning_->getDynamicCloudBasedOnTimesForCvxDecompTemporal(current_times, times_elapsed_from_plan_start, path, local_box_size_);
-    }
-    else
-    {
-        occupied_cells = map_util_for_planning_->getDynamicCloudBasedOnTimesForCvxDecompTemporalWithUnknownAsOccupied(current_times, times_elapsed_from_plan_start, path, local_box_size_);
-    }
-}
-
-void DGPManager::getDynamicOccupiedCellsForVis(vec_Vecf<3> &occupied_cells, vec_Vecf<3> &free_cells, vec_Vecf<3> &unknown_cells, double current_time)
-{
-    // Lock the mutex for map_util_
-    mtx_read_map_util_.lock();
-    auto local_read_map_util = std::make_shared<dynus::VoxelMapUtil>(*read_map_util_);
-    mtx_read_map_util_.unlock();
-    local_read_map_util->getDynamicCloudBasedOnTimeForVis(occupied_cells, free_cells, unknown_cells, current_time);
-
+    // Get the free cells
+    mtx_map_util_.lock();
+    free_cells = map_util_->getFreeCloud();
+    mtx_map_util_.unlock();
 }
 
 void DGPManager::getComputationTime(double &global_planning_time, double &dgp_static_jps_time, double &dgp_check_path_time, double &dgp_dynamic_astar_time, double &dgp_recover_path_time)
@@ -323,26 +290,71 @@ void DGPManager::getComputationTime(double &global_planning_time, double &dgp_st
     dgp_recover_path_time = planner_ptr_->getRecoverPathTime();
 }
 
-bool DGPManager::cvxEllipsoidDecomp(const state &A, const vec_Vecf<3> &path,
-                                      std::vector<LinearConstraint3D> &l_constraints,
-                                      vec_E<Polyhedron<3>> &poly_out,
-                                      bool use_for_safe_path)
+void DGPManager::getVecOccupied(vec_Vec3f &vec_o)
 {
+    mtx_vec_o_.lock();
+    vec_o = vec_o_;
+    mtx_vec_o_.unlock();
+}
 
-    // MyTimer cvx_decomp_timer(true);
+void DGPManager::updateVecOccupied(const vec_Vec3f &vec_o)
+{
+    mtx_vec_o_.lock();
+    vec_o_ = vec_o;
+    mtx_vec_o_.unlock();
+}
+
+void DGPManager::getVecUnknownOccupied(vec_Vec3f &vec_uo)
+{
+    mtx_vec_uo_.lock();
+    vec_uo = vec_uo_;
+    mtx_vec_uo_.unlock();
+}
+
+void DGPManager::updateVecUnknownOccupied(const vec_Vec3f &vec_uo)
+{
+    mtx_vec_uo_.lock();
+    vec_uo_ = vec_uo;
+    mtx_vec_uo_.unlock();
+}
+
+void DGPManager::insertVecOccupiedToVecUnknownOccupied()
+{
+    mtx_vec_uo_.lock();
+    mtx_vec_o_.lock();
+    vec_uo_.insert(vec_uo_.end(), vec_o_.begin(), vec_o_.end());
+    mtx_vec_o_.unlock();
+    mtx_vec_uo_.unlock();
+}
+
+bool DGPManager::cvxEllipsoidDecomp(const state &A, const vec_Vecf<3> &path,
+                                    std::vector<LinearConstraint3D> &l_constraints,
+                                    vec_E<Polyhedron<3>> &poly_out,
+                                    bool use_for_safe_path)
+{
 
     // Initialize result.
     bool result = true;
 
-    // Get static occupied cells.
-    vec_Vecf<3> occupied_static_cells;
-    getOccupiedCellsForCvxDecomp(occupied_static_cells, path, use_for_safe_path);    
-    ellip_decomp_util_.set_obs(occupied_static_cells);
+    // Get unknown occupied cells.
+    if (use_for_safe_path)
+    {
+        // If we are using the convex decomposition for safe paths, we include both unknown and occupied cells.
+        vec_Vecf<3> vec_uo;
+        getVecUnknownOccupied(vec_uo);
+        ellip_decomp_util_.set_obs(vec_uo);
+    }
+    else
+    {
+        // Otherwise, we only include occupied cells.
+        vec_Vecf<3> vec_o;
+        getVecOccupied(vec_o);
+        ellip_decomp_util_.set_obs(vec_o);
+    }
 
     // Set the local bounding box and z constraints.
     ellip_decomp_util_.set_local_bbox(Vec3f(local_box_size_[0], local_box_size_[1], local_box_size_[2]));
-    ellip_decomp_util_.set_z_min_and_max(par_.z_min + 2 * par_.drone_bbox[2],
-                                         par_.z_max - 2 * par_.drone_bbox[2]);
+    ellip_decomp_util_.set_z_min_and_max(par_.z_min, par_.z_max); // buffer for the drone size
 
     // Set the inflate distance.
     ellip_decomp_util_.set_inflate_distance(drone_radius_);
@@ -367,8 +379,8 @@ bool DGPManager::cvxEllipsoidDecomp(const state &A, const vec_Vecf<3> &path,
     // Flag to record if any thread finds an error.
     bool errorFound = false;
 
-    // Parallelize the constraint computation loop.
-    #pragma omp parallel for schedule(static)
+// Parallelize the constraint computation loop.
+#pragma omp parallel for schedule(static)
     for (int i = 0; i < static_cast<int>(numConstraints); i++)
     {
 
@@ -379,14 +391,13 @@ bool DGPManager::cvxEllipsoidDecomp(const state &A, const vec_Vecf<3> &path,
         // If either matrix A_ or vector b_ contains NaN, mark an error.
         if (cs.A_.hasNaN() || cs.b_.hasNaN())
         {
-            #pragma omp atomic write
+#pragma omp atomic write
             errorFound = true;
         }
         else
         {
             l_constraints[i] = cs;
         }
-
     }
 
     // If an error was detected, report and exit.
@@ -399,112 +410,28 @@ bool DGPManager::cvxEllipsoidDecomp(const state &A, const vec_Vecf<3> &path,
     // Return the computed polyhedra.
     poly_out = std::move(polys);
 
-    // std::cout << "cvxEllipsoidDecomp took " << cvx_decomp_timer.getElapsedMicros() / 1000.0 << " ms" << std::endl;
-
     return true;
 }
 
-
-bool DGPManager::cvxEllipsoidDecompTemporal(const state &A, const vec_Vecf<3> &path, std::vector<LinearConstraint3D> &l_constraints, vec_E<Polyhedron<3>> &poly_out, double current_time, const std::vector<double> &travel_times, bool use_for_safe_path)
+void DGPManager::updateMap(double wdx, double wdy, double wdz, const Vec3f &center_map, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr)
 {
 
-    // Initialize result
-    bool result = true;
+    // Get the current time to see the computation time for readmap
+    auto start_time = std::chrono::high_resolution_clock::now();
 
-    // Initialization
-    l_constraints.clear();
-    poly_out.clear();
+    mtx_map_util_.lock();
+    map_util_->readMap(pclptr, (int)wdx / res_, (int)wdy / res_, (int)wdz / res_, center_map, par_.z_min, par_.z_max, par_.inflation_dgp); // Map read
+    mtx_map_util_.unlock();
 
-    // Reserve memory to avoid repeated allocations
-    l_constraints.reserve(path.size());
-    poly_out.reserve(path.size());
+    // Get the elapsed time for reading the map
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    // std::cout << "Map read time: " << elapsed_time << " ms" << std::endl;
 
-    // Discretize the path and get the estimated time
-    Eigen::Vector3d next_point;
-    double delta_dist = max_dist_vertexes_;
-    double dist_to_goal;
-    double travel_time_start, travel_time_end;
-    state start, end;
-
-    // Set the local bounding box
-    // Only try to find cvx decomp in the Mikowsski sum of JPS and this box (I think) par_.drone_radius
-    ellip_decomp_util_.set_local_bbox(Vec3f(local_box_size_[0], local_box_size_[1], local_box_size_[2]));
-    ellip_decomp_util_.set_z_min_and_max(par_.z_min + 2* par_.drone_bbox[2], 
-                                         par_.z_max - 2* par_.drone_bbox[2]); // buffer for the drone size
-
-    // Set the inflate distance
-    ellip_decomp_util_.set_inflate_distance(drone_radius_);
-
-    // Add 0.0 to the first element of travel_times
-    std::vector<double> travel_times_with_start;
-    travel_times_with_start.push_back(0.0);
-    travel_times_with_start.insert(travel_times_with_start.end(), travel_times.begin(), travel_times.end());
-
-    // Generate accumulated travel times
-    std::vector<double> accumulated_travel_times;
-    accumulated_travel_times.push_back(travel_times_with_start[0] + current_time);
-    for (int i = 1; i < travel_times_with_start.size(); i++)
-    {
-        accumulated_travel_times.push_back(travel_times_with_start[i] + accumulated_travel_times[i - 1]);
-    }
-
-    // Sanity checks
-    assert(path.size() == travel_times.size() + 1); // travel_times do not include the first state's travel time (because it is 0)
-    assert(path.size() == travel_times_with_start.size());
-    assert(path.size() == accumulated_travel_times.size());
-
-    for (int i = 0; i < path.size() - 1; i++)
-    {
-
-        // Update the dynamic map
-        vec_Vecf<3> occupied_dynamic_cells;
-        getDynamicOccupiedCellsForCvxDecompTemporal(occupied_dynamic_cells, {accumulated_travel_times[i], accumulated_travel_times[i + 1]}, {travel_times_with_start[i], travel_times_with_start[i + 1]}, {path[i], path[i + 1]}, use_for_safe_path);
-        ellip_decomp_util_.set_obs(occupied_dynamic_cells);
-
-        // Find convex polyhedra for the current segment (path[i] to path[i+1])
-        ellip_decomp_util_.dilate({path[i], path[i + 1]}, result);
-        if (!result)
-            return false;
-
-        // Shrink polyhedra by the drone radius. NOT RECOMMENDED (leads to lack of continuity in path sometimes)
-        if (use_shrinked_box_)
-            ellip_decomp_util_.shrink_polyhedrons(shrinked_box_size_);
-
-        // Convert to inequality constraints Ax < b
-        auto polys = ellip_decomp_util_.get_polyhedrons();
-
-        // Get the constraints
-        const auto pt_inside = (path[i] + path[i + 1]) / 2;
-        LinearConstraint3D cs(pt_inside, polys[0].hyperplanes(), polys[0]);
-
-        // Check if A_ or b_ has NaN
-        if (cs.A_.hasNaN() || cs.b_.hasNaN())
-        {
-            std::cout << "A_ or b_ has NaN" << std::endl;
-            return false;
-        }
-
-        // Store the results
-        l_constraints.push_back(cs);
-        poly_out.insert(std::end(poly_out), std::begin(polys), std::end(polys));
-    }
-
-    return true;
-}
-
-void DGPManager::updateMapCallback(double wdx, double wdy, double wdz, const Vec3f &center_map, const Vec3f &start, const Vec3f &goal, double octmap_received_time, const std::shared_ptr<octomap::TimedOcTree>& lidar_octree, const std::shared_ptr<octomap::TimedOcTree>& depth_camera_octree) 
-{
-
-    mtx_write_map_util_.lock();
-    write_map_util_->updateMapCallback((int)wdx/res_, (int)wdy/res_, (int)wdz/res_, center_map, start, goal, octmap_received_time, lidar_octree, depth_camera_octree);
-    mtx_write_map_util_.unlock();
-
-    // Update the read_map_util_ with the write_map_util_
-    updateReadMapUtil();
-
-    // Map is initialized
     if (!map_initialized_)
+    {
         map_initialized_ = true;
+    }
 }
 
 bool DGPManager::isMapInitialized() const
@@ -512,37 +439,11 @@ bool DGPManager::isMapInitialized() const
     return map_initialized_;
 }
 
-void DGPManager::setOctomap(const std::shared_ptr<octomap::TimedOcTree> &octree, std::string octomap_name)
-{
-    // Set the ROI octomap
-    mtx_write_map_util_.lock();
-
-    if (octomap_name == "roi")
-    {
-        write_map_util_->updateROIOctree(octree);
-    }
-    else
-    {
-        std::cout << "Unknown octomap name: " << octomap_name << std::endl;
-    }
-
-    mtx_write_map_util_.unlock();
-
-    // Update the read_map_util_ with the write_map_util_
-    updateReadMapUtil();
-}
-
 void DGPManager::findClosestFreePoint(const Vec3f &point, Vec3f &closest_free_point)
 {
-    mtx_read_map_util_.lock();
-    auto local_read_map_util = std::make_shared<dynus::VoxelMapUtil>(*read_map_util_);
-    mtx_read_map_util_.unlock();
-    local_read_map_util->findClosestFreePoint(point, closest_free_point);
-}
-
-bool DGPManager::computeStaticPushPoints(const vec_Vecf<3> &path, double discretization_dist, Vecf<3> &mean_point, int num_lookahead_global_path_for_push)
-{
-    return map_util_for_planning_->computeStaticPushPoints(path, discretization_dist, mean_point, num_lookahead_global_path_for_push);
+    mtx_map_util_.lock();
+    map_util_->findClosestFreePoint(point, closest_free_point);
+    mtx_map_util_.unlock();
 }
 
 int DGPManager::countUnknownCells() const

@@ -1,390 +1,296 @@
+#!/usr/bin/env python3
+"""
+Single Source of Motion launch:
+- Spawns static obstacle models (no internal motion plugin; no traj_x/y/z expressions).
+- After spawning (or a fixed delay), starts dynamic_forest_node which:
+    * Publishes /trajs (DynTraj for planners)
+    * Updates Gazebo model poses (physical motion)
+"""
+
 import os
-import yaml
-import random
 from launch import LaunchDescription
+from launch.actions import (
+    DeclareLaunchArgument,
+    OpaqueFunction,
+    TimerAction
+)
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
-from launch.substitutions import Command
 from launch_ros.parameter_descriptions import ParameterValue
-from launch.actions import TimerAction
-from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, OpaqueFunction
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import Command
+import json
 
-def get_parameters():
-    """Get the parameters from the yaml file
+# Global variable
+_OBSTACLES_JSON_STORAGE = {}
+
+# ---------- Helpers ----------
+
+def _as_bool(context, name, default=False):
+    raw = LaunchConfiguration(name).perform(context)
+    if raw is None:
+        return default
+    s = raw.strip().lower()
+    if s == '':
+        return default
+    return s in ['true', '1', 'yes', 'on', 't']
+
+def _as(context, name, cast, default):
+    """
+    Safe retrieval & casting of a LaunchConfiguration.
+    If the argument is absent or empty, returns default; otherwise casts.
+    """
+    raw = LaunchConfiguration(name).perform(context)
+    if raw is None:
+        print(f"[dyn_obstacles] {name}=None -> default {default}")
+        return default
+    s = raw.strip()
+    if s == '':
+        print(f"[dyn_obstacles] {name}=<empty> -> default {default}")
+        return default
+    try:
+        return cast(s)
+    except ValueError:
+        raise RuntimeError(f"[dyn_obstacles] Argument '{name}' expected {cast.__name__}, got '{s}'")
+
+# Optional: flip to True for one‑time verbose dump
+DEBUG_DYN_OBS = False
+
+
+# ---------- Spawn Static Obstacles ----------
+
+def trefoil_expr_with_vel(x0, y0, z0, sx, sy, sz, offset, slower):
+    """
+    Return position and velocity expression strings for trefoil knot.
+
+    Args:
+        x0,y0,z0 : centers
+        sx,sy,sz : scale factors
+        offset   : phase offset
+        slower   : time scaling (bigger => slower)
 
     Returns:
-        dict : parameters from the yaml file
+        (x_str, y_str, z_str, vx_str, vy_str, vz_str)
     """
+    tt = f"t/{slower}+{offset}"
 
-    # Get the path to the parameters file
-    parameters_path = os.path.join(
-        get_package_share_directory('dynus'),
-        'config',
-        'dynus.yaml'
+    # Position
+    x_str = f"{sx/6.0}*(sin({tt})+2*sin(2*{tt}))+{x0}"
+    y_str = f"{sy/5.0}*(cos({tt})-2*cos(2*{tt}))+{y0}"
+    z_str = f"{(sz/2.0)}*(-sin(3*{tt}))+{z0}"
+
+    inv_slow = f"(1/{slower})"  # explicit to keep expression exact
+
+    # Velocity (derivatives)
+    vx_str = f"{sx/6.0}*{inv_slow}*(cos({tt})+4*cos(2*{tt}))"
+    vy_str = f"{sy/5.0}*{inv_slow}*(-sin({tt})+4*sin(2*{tt}))"
+    vz_str = f"-{3*sz/2.0}*{inv_slow}*cos(3*{tt})"
+
+    return x_str, y_str, z_str, vx_str, vy_str, vz_str
+
+def _spawn_static_block(context):
+    import random
+
+    num_obstacles   = _as(context, 'num_obstacles', int,   30)
+    x_min           = _as(context, 'x_min', float, 5.0)
+    x_max           = _as(context, 'x_max', float, 105.0)
+    y_min           = _as(context, 'y_min', float, -10.0)
+    y_max           = _as(context, 'y_max', float, 10.0)
+    z_min           = _as(context, 'z_min', float, 0.0)
+    z_max           = _as(context, 'z_max', float, 6.0)
+    slower_min      = _as(context, 'slower_min', float, 10.0)
+    slower_max      = _as(context, 'slower_max', float, 12.0)
+    spawn_interval  = _as(context, 'spawn_interval', float, 10.0)
+    seed            = _as(context, 'seed', int, 0)
+    use_sim_time    = _as_bool(context, 'use_sim_time', False)
+    urdf_xacro      = LaunchConfiguration('urdf_xacro').perform(context) or 'dyn_obstacle1.urdf.xacro'
+
+    scale_range = [[2.0, 5.0], [5.0, 10.0], [2.0, 4.0]]
+
+    offset_range = [0.0, 3.0] # [offset_min, offset_max]
+    slower_range = [slower_min, slower_max]
+
+    size = 1.0  # Default size for the obstacle
+
+    # set seed
+    random.seed(seed)
+
+    if DEBUG_DYN_OBS:
+        print("[dyn_obstacles][spawn] num_obstacles:", num_obstacles,
+              "seed:", seed, "spawn_interval:", spawn_interval)
+
+    urdf_path = os.path.join(get_package_share_directory('mighty'), 'urdf', urdf_xacro)
+
+    actions = []
+    obstacles_meta = []
+    for i in range(num_obstacles):
+        entity = f"obstacle_{i}"
+
+        x = x_min + (x_max - x_min) * random.random()
+        y = y_min + (y_max - y_min) * random.random()
+        z = z_min + (z_max - z_min) * random.random()
+
+        sx = scale_range[0][0] + (scale_range[0][1] - scale_range[0][0]) * random.random()
+        sy = scale_range[1][0] + (scale_range[1][1] - scale_range[1][0]) * random.random()
+        sz = scale_range[2][0] + (scale_range[2][1] - scale_range[2][0]) * random.random()
+        offset = random.uniform(*offset_range)
+        slower = random.uniform(*slower_range)
+
+        x_str, y_str, z_str, vx_str, vy_str, vz_str = trefoil_expr_with_vel(
+            x0=x, y0=y, z0=z, sx=sx, sy=sy, sz=sz,
+            offset=offset, slower=slower
         )
 
-    # Get the dict of parameters from the yaml file
-    with open(parameters_path, 'r') as file:
-        parameters = yaml.safe_load(file)
+        # for Gazebo
+        robot_description = ParameterValue(
+            Command([
+                'xacro ', urdf_path,
+                ' traj_x:=', x_str,
+                ' traj_y:=', y_str,
+                ' traj_z:=', z_str,
+                ' size:=', str(size),
+                ' namespace:=', entity
+            ]),
+            value_type=str
+        )
 
-    # Extract specific node parameters
-    parameters = parameters['dynus_node']['ros__parameters']
+        rsp = Node(
+            package='robot_state_publisher',
+            executable='robot_state_publisher',
+            name=f'{entity}_rsp',
+            output='screen',
+            parameters=[{
+                'robot_description': robot_description,
+                'use_sim_time': use_sim_time,
+                'frame_prefix': entity + '/'
+            }],
+            remappings=[('/robot_description', f'/{entity}/robot_description')]
+        )
 
-    return parameters
+        spawn = Node(
+            package='gazebo_ros',
+            executable='spawn_entity.py',
+            name=f'{entity}_spawn',
+            output='screen',
+            arguments=[
+                '-entity', entity,
+                '-topic', f'/{entity}/robot_description',
+                '-x', str(x), '-y', str(y), '-z', str(z)
+            ]
+        )
 
-def trefoil(x: float, y: float, z: float, scale_x: float, scale_y: float, scale_z: float, offset: float, slower: float):
-    """Generates a trefoil knot trajectory
+        actions.append(
+            TimerAction(
+                period=i * spawn_interval,
+                actions=[rsp, 
+                         TimerAction(period=0.3, actions=[spawn])]
+            )
+        )
 
-    Args:
-        x (float): obstacle's x position
-        y (float): obstacle's y position
-        z (float): obstacle's z position
-        scale_x (float): scale factor for x
-        scale_y (float): scale factor for y
-        scale_z (float): scale factor for z
-        offset (float): time offset for the trajectory
-        slower (float): time scaling factor - higher values make the obstacles move slower
+        # Pass parameters to dynamic_forest_node (where we publish DynTraj)
+        obstacles_meta.append({
+            "name": entity,
+            "x0": x, "y0": y, "z0": z,
+            "scale_x": sx, "scale_y": sy, "scale_z": sz,
+            "offset": offset, "slower": slower,
+            "traj_x": x_str, "traj_y": y_str, "traj_z": z_str,
+            "traj_vx": vx_str, "traj_vy": vy_str, "traj_vz": vz_str,
+            "size": size,
+        })
 
-    Returns:
-        str : x, y, z strings for the trefoil knot trajectory
-    """    
 
-    # Generate the trefoil knot trajectory
-    tt = 't/' + str(slower) + '+'
-    x_string = str(scale_x / 6.0) + '*(sin(' + tt + str(offset) + ')+2*sin(2*' + tt + str(offset) + '))' + '+' + str(x) 
-    y_string = str(scale_y / 5.0) + '*(cos(' + tt + str(offset) + ')-2*cos(2*' + tt + str(offset) + '))' + '+' + str(y) 
-    z_string = str(scale_z / 2.0) + '*(-sin(3*'+ tt +str(offset)+'))' + '+' + str(z)        
 
-    return x_string, y_string, z_string
+    # Save the metadata to a JSON file
+    # get the home directory of the user
+    print("Saving obstacles metadata to context.locals['obstacles_json']")
+    _OBSTACLES_JSON_STORAGE['obstacles_json'] = json.dumps(obstacles_meta)
 
-def line(x: float, y: float, z: float, scale_x: float, scale_y: float, scale_z: float, offset: float, slower: float):
-    """Generates a line trajectory
+    return actions
 
-    Args:
-        x (float): obstacle's x position
-        y (float): obstacle's y position
-        z (float): obstacle's z position
-        scale_x (float): scale factor for x
-        scale_y (float): scale factor for y
-        scale_z (float): scale factor for z
-        offset (float): time offset for the trajectory
-        slower (float): time scaling factor - higher values make the obstacles move slower
+# ---------- Launch dynamic_forest_node After Spawns ----------
 
-    Returns:
-        str : x, y, z strings for the line trajectory
-    """    
+def _maybe_launch_forest_node(context):
+    if not _as_bool(context, 'launch_forest_node', True):
+        return []
+    
+    print("maybe_launch_forest_node: launching dynamic_forest_node")
 
-    tt = 't/' + str(slower) + '+' + str(offset)
+    delay            = _as(context, 'forest_start_delay', float, 1.0)
+    total_num_obs    = _as(context, 'num_obstacles', int, 10)
+    dynamic_ratio    = _as(context, 'dynamic_ratio', float, 0.5)
+    publish_rate_hz  = _as(context, 'publish_rate_hz', float, 50.0)
+    seed             = _as(context, 'seed', int, 0)
+    publish_markers  = _as_bool(context, 'publish_markers', True)
+    publish_tf       = _as_bool(context, 'publish_tf', True)
 
-    x_string = str(scale_x) + '*sin(' + tt + ')' + '+' + str(x)
-    y_string = str(scale_y) + '*sin(' + tt + ')' + '+' + str(y)
-    z_string = str(scale_z) + '*sin(' + tt + ')' + '+' + str(z)
+    if DEBUG_DYN_OBS:
+        print("[dyn_obstacles][forest_node] delay:", delay,
+              "total_num_obs:", total_num_obs,
+              "ratio:", dynamic_ratio,
+              "rate:", publish_rate_hz)
 
-    return x_string, y_string, z_string
+    obstacles_json = _OBSTACLES_JSON_STORAGE.get('obstacles_json', '[]')
+
+    params = {
+        'obstacles_json': obstacles_json,
+        'use_external_obstacles_json': True,
+        'total_num_obs': total_num_obs,
+        'dynamic_ratio': dynamic_ratio,
+        'publish_rate_hz': publish_rate_hz,
+        'seed': seed,
+        'publish_markers': publish_markers,
+        'publish_tf': publish_tf,
+        'use_spawn_origins': False
+    }
+
+    forest_node = Node(
+        package='mighty',
+        executable='dynamic_forest_node',
+        name='dynamic_forest_trajs',
+        output='screen',
+        parameters=[params],
+        # prefix='xterm -e gdb -q -ex run --args', # gdb debugging
+    )
+
+    return [TimerAction(period=delay, actions=[forest_node])]
+
+
+# ---------- Main Launch Description ----------
 
 def generate_launch_description():
-    # Declare the benchmark_name argument
-    benchmark_name_arg = DeclareLaunchArgument(
-        'benchmark_name', default_value='default',
-        description='Name of the benchmark to configure dynamic obstacles.'
-    )
+    args = [
+        DeclareLaunchArgument('num_obstacles', default_value='100'),
+        DeclareLaunchArgument('seed', default_value='0'),
+        DeclareLaunchArgument('dynamic_ratio', default_value='0.5'),
+        DeclareLaunchArgument('publish_rate_hz', default_value='50.0'),
+        DeclareLaunchArgument('spawn_interval', default_value='0.1'),
+        DeclareLaunchArgument('forest_start_delay', default_value='3.0'),
+        DeclareLaunchArgument('launch_forest_node', default_value='true'),
+        DeclareLaunchArgument('publish_markers', default_value='true'),
+        DeclareLaunchArgument('publish_tf', default_value='true'),
+        DeclareLaunchArgument('use_sim_time', default_value='false'),
 
-    # Get the benchmark_name value
-    benchmark_name = LaunchConfiguration('benchmark_name')
+        # Spatial ranges
+        DeclareLaunchArgument('x_min', default_value='5.0'),
+        DeclareLaunchArgument('x_max', default_value='105.0'),
+        DeclareLaunchArgument('y_min', default_value='-5.0'),
+        DeclareLaunchArgument('y_max', default_value='5.0'),
+        DeclareLaunchArgument('z_min', default_value='1.0'),
+        DeclareLaunchArgument('z_max', default_value='5.0'),
 
-    # Path to URDF file
-    urdf_path = os.path.join(
-        get_package_share_directory('dynus'),
-        'urdf',
-        'dyn_obstacle1.urdf.xacro'
-    )
+        # Trajectory params
+        DeclareLaunchArgument('slower_min', default_value='4.0'),
+        DeclareLaunchArgument('slower_max', default_value='6.0'),
+        DeclareLaunchArgument('scale_global', default_value='1.0'),
 
-    # Launch description
-    ld = LaunchDescription([benchmark_name_arg])
+        # URDF
+        DeclareLaunchArgument('urdf_xacro', default_value='dyn_obstacle1.urdf.xacro'),
+    ]
 
-    # Add obstacles based on benchmark_name
-    ld.add_action(OpaqueFunction(function=lambda context: configure_obstacles(context, urdf_path)))
-
+    ld = LaunchDescription(args)
+    ld.add_action(OpaqueFunction(function=_spawn_static_block))
+    ld.add_action(OpaqueFunction(function=_maybe_launch_forest_node))
     return ld
 
-def configure_obstacles(context, urdf_path):
-    """
-    Configures obstacles based on the given benchmark_name.
-
-    Args:
-        context (LaunchContext): Context to access launch configuration values.
-        urdf_path (str): Path to the URDF file for the obstacles.
-
-    Returns:
-        list: List of actions to add to the launch description.
-    """
-    benchmark_name = context.launch_configurations['benchmark_name']
-    ld = LaunchDescription()
-
-    # random obstacles  
-    ld = generate_random_obstacle_ld(urdf_path)
-
-    # controlled obstacles
-    # ld = generate_controlled_obstacle_ld(urdf_path)
-
-    # controlled obstacles for yaw benchmark
-    # ld = generate_controlled_obstacle_for_yaw_benchmark_ld(urdf_path, benchmark_name)
-
-    # controlled obstacles for path push visulaization 
-    # ld = generate_controlled_obstacle_for_push_visualiation_ld(urdf_path, benchmark_name)
-
-    return ld.entities
-
-def generate_controlled_obstacle_ld(urdf_path: str):
-
-    # map_range = [[-40.0, 35.0], [-40.0, 35.0], [2.0, 5.0]] # [x_min, x_max], [y_min, y_max], [z_min, z_max]
-    map_range = [[-20.0, 20.0], [-5.0, 5.0], [2.0, 5.0]] # [x_min, x_max], [y_min, y_max], [z_min, z_max]
-    scale_range = [[8.0, 20.0], [8.0, 20.0], [0.0, 3.0]] # [scale_x_min, scale_x_max], [scale_y_min, scale_y_max], [scale_z_min, scale_z_max]
-    offset_range = [0.0, 2.0] # [offset_min, offset_max]
-    slower_range = [4.0, 7.0] # [slower_min, slower_max]
-
-    # Parameters
-    ld = LaunchDescription()
-    
-    # # Obstacle 0
-    # x = 3.0
-    # y = 0.0
-    # z = 2.0
-    # scale_x = 1.0
-    # scale_y = 2.0
-    # scale_z = 2.0
-    # offset = 0.0
-    # slower = 2.0
-    # ld = create_obstacle_ld(ld, x, y, z, scale_x, scale_y, scale_z, offset, slower, urdf_path, 'obstacle_0', 0)
-
-    # # Obstacle 1
-    # x = -1.0
-    # y = -1.0
-    # z = 3.0
-    # scale_x = 16.0
-    # scale_y = 0.0
-    # scale_z = 1.0
-    # offset = 1.0
-    # slower = 8.0
-    # ld = create_obstacle_ld(ld, x, y, z, scale_x, scale_y, scale_z, offset, slower, urdf_path, 'obstacle_1')
-
-    # # Obstacle 2
-    # x = 1.0
-    # y = 1.0
-    # z = 2.5
-    # scale_x = 17.0
-    # scale_y = 0.0
-    # scale_z = 1.0
-    # offset = 2.0
-    # slower = 6.0
-    # ld = create_obstacle_ld(ld, x, y, z, scale_x, scale_y, scale_z, offset, slower, urdf_path, 'obstacle_2')
-
-    # obstacle_num = 5
-
-    # for i in range(obstacle_num):
-    #     x = -20.0 + i * (40.0 / obstacle_num)
-    #     y = 0.0
-    #     z = 2.0
-    #     scale_x = 3.0
-    #     scale_y = 3.0
-    #     scale_z = 3.0
-    #     offset = round(offset_range[0] + (offset_range[1] - offset_range[0]) * random.random(), 2)
-    #     slower =  round(slower_range[0] + (slower_range[1] - slower_range[0]) * random.random(), 2)
-    #     namespace = 'obstacle_' + str(i)
-    #     ld = create_obstacle_ld(ld, x, y, z, scale_x, scale_y, scale_z, offset, slower, urdf_path, namespace, i)
-
-    return ld
-
-def generate_controlled_obstacle_for_push_visualiation_ld(urdf_path: str, benchmark_name: str):
-    """
-    Generate a list of obstacles arranged in a specific pattern for a yaw benchmark.
-
-    Args:
-        urdf_path (str): The path to the URDF file for the obstacles.
-
-    Returns:
-        LaunchDescription: The launch description with the configured obstacles.
-    """
-
-    ld = LaunchDescription()
-
-    # Determine the position based on the pattern
-    x = 4.0
-    y = 0.0
-    z = 3.0
-
-    # Scales
-    scale_x = 0.0
-    scale_y = 4.0
-    scale_z = 0.0
-
-    # Get random values for the obstacle
-    offset = 0.0
-    slower = 4.0
-
-
-    # Create a new obstacle and add it to the LaunchDescription
-    ld = create_obstacle_ld(ld, x, y, z, scale_x, scale_y, scale_z, offset, slower, urdf_path, 'obstacle_0', 0)
-
-    return ld
-
-def generate_controlled_obstacle_for_yaw_benchmark_ld(urdf_path: str, benchmark_name: str):
-    """
-    Generate a list of obstacles arranged in a specific pattern for a yaw benchmark.
-
-    Args:
-        urdf_path (str): The path to the URDF file for the obstacles.
-
-    Returns:
-        LaunchDescription: The launch description with the configured obstacles.
-    """
-
-    # Parameters for obstacle generation
-    x_limit = 25.0  # Max x range
-    y_limit = 5.0   # Max y range
-    x_increment = 5.0  # Increment in x direction
-    num_obstacles = 10  # Number of obstacles to generate
-    # Constant z
-    z = 3.0
-    # Random z value between 0 to 6
-    randomized_z = []
-    for i in range(num_obstacles):
-        randomized_z.append(round(random.uniform(0.0, 6.0), 2))
-    scale_x, scale_y, scale_z = 3.0, 3.0, 3.0  # Constant scale
-    offset_range = [0.0, 10.0] # [offset_min, offset_max]
-    slower_range = [3.0, 7.0] # [slower_min, slower_max]
-    
-    # Initialize the LaunchDescription
-    ld = LaunchDescription()
-
-    # generate random offset and slower values 
-    random.seed(0)   
-    
-    if benchmark_name == 'benchmark1':
-
-        # Generate obstacles in the specified pattern (benchmark 1)
-        for i in range(num_obstacles):
-            # Determine the position based on the pattern
-            x = -x_limit + i * x_increment
-            y = -y_limit if i % 2 == 0 else y_limit
-
-            # Get random values for the obstacle
-            offset = round(offset_range[0] + (offset_range[1] - offset_range[0]) * random.random(), 2)
-            slower = round(slower_range[0] + (slower_range[1] - slower_range[0]) * random.random(), 2)
-
-            # Create a new obstacle and add it to the LaunchDescription
-            ld = create_obstacle_ld(ld, x, y, z, scale_x, scale_y, scale_z, offset, slower, urdf_path, f'obstacle_{i}', i)
-
-    elif benchmark_name == 'benchmark2':
-
-        # Generate obstacles in the specified pattern (benchmark 2)
-        for i in range(num_obstacles):
-            # Determine the position based on the pattern
-            x = -x_limit + i * x_increment
-            y = -y_limit if i % 4 == 0 else (y_limit if i % 4 == 2 else -y_limit + y_limit)
-
-            # Get random values for the obstacle
-            offset = round(offset_range[0] + (offset_range[1] - offset_range[0]) * random.random(), 2)
-            slower = round(slower_range[0] + (slower_range[1] - slower_range[0]) * random.random(), 2)
-            
-            # Create a new obstacle and add it to the LaunchDescription
-            ld = create_obstacle_ld(ld, x, y, randomized_z[i], scale_x, scale_y, scale_z, offset, slower, urdf_path, f'obstacle_{i}', i)
-
-    return ld
-
-
-def generate_random_obstacle_ld(urdf_path: str):
-
-    # # Seed the random number generator
-    # random.seed(3)
-
-    # # Parameters
-    # num_obstacles = 2
-    # map_range = [[-7.0, -3.5], [-2.0, 2.0], [1.5, 2.5]] # [x_min, x_max], [y_min, y_max], [z_min, z_max]
-    # scale_range = [[0.5, 0.5], [0.5, 0.5], [0.5, 0.5]] # [scale_x_min, scale_x_max], [scale_y_min, scale_y_max], [scale_z_min, scale_z_max]
-    # offset_range = [0.0, 2.0] # [offset_min, offset_max]
-    # slower_range = [3.0, 5.0] # [slower_min, slower_max]
-
-    # for five dynamic obstacles
-    # Seed the random number generator
-    random.seed(0)
-
-    # Parameters
-    # urdf_path = os.path.join(get_package_share_directory('dynus'), 'urdf', 'dyn_obstacle1.urdf.xacro')
-    num_obstacles = 20
-    # map_range = [[-40.0, 35.0], [-40.0, 35.0], [2.0, 5.0]] # [x_min, x_max], [y_min, y_max], [z_min, z_max]
-    # map_range = [[-40.0, 30.0], [-30.0, 30.0], [1.0, 4.0]] # [x_min, x_max], [y_min, y_max], [z_min, z_max]
-    map_range = [[-20.0, 20.0], [-5.0, 5.0], [2.0, 6.0]] # Global planner Benchmarking
-    scale_range = [[2.0, 4.0], [2.0, 4.0], [0.0, 2.0]] # [scale_x_min, scale_x_max], [scale_y_min, scale_y_max], [scale_z_min, scale_z_max]
-    offset_range = [0.0, 2.0] # [offset_min, offset_max]
-    slower_range = [4.0, 6.0] # [slower_min, slower_max]
-    
-    # parameters = get_parameters()
-    
-    # Create multiple nodes randomly
-    ld = LaunchDescription()
-    for i in range(num_obstacles):
-
-        # Get random values for the obstacle
-        # x = round(map_range[0][0] + (map_range[0][1] - map_range[0][0]) * random.random(), 2)
-        x = map_range[0][0] + (map_range[0][1] - map_range[0][0]) / num_obstacles * i
-        y = round(map_range[1][0] + (map_range[1][1] - map_range[1][0]) * random.random(), 2)
-        z = round(map_range[2][0] + (map_range[2][1] - map_range[2][0]) * random.random(), 2)
-        scale_x = round(scale_range[0][0] + (scale_range[0][1] - scale_range[0][0]) * random.random(), 2)
-        scale_y = round(scale_range[1][0] + (scale_range[1][1] - scale_range[1][0]) * random.random(), 2)
-        scale_z = round(scale_range[2][0] + (scale_range[2][1] - scale_range[2][0]) * random.random(), 2)
-        offset = round(offset_range[0] + (offset_range[1] - offset_range[0]) * random.random(), 2)
-        slower = round(slower_range[0] + (slower_range[1] - slower_range[0]) * random.random(), 2)
-        namespace = 'obstacle_' + str(i)
-
-        # Create obstacle launch description
-        ld = create_obstacle_ld(ld, x, y, z, scale_x, scale_y, scale_z, offset, slower, urdf_path, namespace, i)
-
-    return ld
-
-def create_obstacle_ld(ld, x: float, y: float, z: float, scale_x: float, scale_y: float, scale_z: float, offset: float, slower: float, urdf_path: str, namespace: str, idx: int):
-
-    # Create the trefoil knot trajectory
-    traj_x, traj_y, traj_z = trefoil(x, y, z, scale_x, scale_y, scale_z, offset, slower)
-
-    # Create the line trajectory
-    # traj_x, traj_y, traj_z = line(x, y, z, scale_x, scale_y, scale_z, offset, slower)
-
-    # Robot state publisher node
-    ld.add_action(
-        TimerAction( # This is added to spawn obstacles one by one - otherwise the computation is too heavy and cannot spawn all obstacles
-            period=idx*0.5,
-            actions=[Node(
-                package='robot_state_publisher',
-                executable='robot_state_publisher',
-                name='robot_state_publisher',
-                output='screen',
-                namespace=namespace,
-                parameters=[{
-                    'robot_description': ParameterValue(Command(['xacro ', urdf_path, ' traj_x:=', traj_x,
-                                                                    ' traj_y:=', traj_y, ' traj_z:=', traj_z,
-                                                                    ' namespace:=', namespace]), value_type=str),
-                    'use_sim_time': False,
-                    'frame_prefix': namespace + '/',
-                }])]
-        )
-    )
-
-    # Spawn entity node for Gazebo
-    # Get the start position and yaw from the parameters
-    ld.add_action(
-        TimerAction(
-            period=idx*0.5,
-            actions=[Node(
-                package='gazebo_ros',
-                executable='spawn_entity.py',
-                name='spawn_entity',
-                output='screen',
-                namespace=namespace,
-                arguments=['-topic', 'robot_description', '-entity', namespace, '-x', str(x), '-y', str(y), '-z', str(z)],
-                )]
-        )
-    )
-
-    return ld
+if __name__ == '__main__':
+    generate_launch_description()

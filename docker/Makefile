@@ -1,7 +1,15 @@
-build: 
-	docker build -t dynus:1 .
+# at the top of your Makefile
+.PHONY: build
+build:
+	docker build \
+	  -t mighty .
 
-run-sim:
+.PHONY: build-no-cache
+build-no-cache:
+	docker build \
+	--build-arg DUMMY=`date +%s` -t mighty .
+
+run:
 	xhost + && docker run  -it \
 				--gpus all \
 				--env="NVIDIA_DRIVER_CAPABILITIES=all" \
@@ -10,5 +18,4 @@ run-sim:
 				--network=host \
 				--env="DISPLAY" \
 				--env="QT_X11_NO_MITSHM=1" \
-				--volume=${PWD}/gurobi.lic:/opt/gurobi/gurobi.lic:ro \
-				--rm dynus:1
+				--rm mighty
