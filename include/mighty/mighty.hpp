@@ -22,7 +22,7 @@
 #include "mighty/mighty_type.hpp"
 #include <mighty/utils.hpp>
 #include "dgp/dgp_manager.hpp"
-#include <mighty/lbfgs_solver.hpp>
+#include <mighty/gurobi_solver.hpp>
 
 enum
 {
@@ -114,13 +114,13 @@ public:
   void getGlobalPath(vec_Vecf<3> &global_path);
   void getOriginalGlobalPath(vec_Vecf<3> &original_global_path); 
   void getFreeGlobalPath(vec_Vecf<3> &free_global_path);
-  bool generateLocalTrajectory(const state &local_A, double A_time, vec_Vec3f &global_path, double &initial_guess_computation_time, double &local_traj_computation_time, std::shared_ptr<lbfgs::SolverLBFGS> &whole_traj_solver_ptr);
+  bool generateLocalTrajectory(const state &local_A, double A_time, vec_Vec3f &global_path, double &initial_guess_computation_time, double &local_traj_computation_time);
   void resetData();
   void retrieveData(double &final_g, double &global_planning_time, double &dgp_static_jps_time, double &dgp_check_path_time, double &dgp_dynamic_astar_time, double &dgp_recover_path_time, double &cvx_decomp_time, double &initial_guess_computation_time, double &local_traj_computatoin_time, double &safety_check_time, double &safe_paths_time, double &yaw_sequence_time, double &yaw_fitting_time);
   void retrievePolytopes(vec_E<Polyhedron<3>> &poly_out_whole, vec_E<Polyhedron<3>> &poly_out_safe);
   void retrieveGoalSetpoints(std::vector<state> &goal_setpoints);
   void retrieveListSubOptGoalSetpoints(std::vector<std::vector<state>> &list_subopt_goal_setpoints);
-  void retrieveCPs(std::vector<Eigen::Matrix<double, 3, 6>> &cps);
+  void retrieveCPs(std::vector<Eigen::Matrix<double, 3, 4>> &cps);
   bool generateGlobalPath(vec_Vecf<3> &global_path, double current_time, double last_replaning_computation_time);
   bool pushPath(vec_Vecf<3> &global_path, vec_Vecf<3> &free_global_path, double current_time);
   bool planLocalTrajectory(vec_Vecf<3> &global_path);
@@ -130,22 +130,20 @@ public:
   void applyInitiPoseInverseTransform(PieceWisePol &pwp);
   void updateMap(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_map, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_unk);
   void updateOccupancyMap(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_map);
-  void getPiecewiseQuinticPol(PieceWiseQuinticPol &pwp);
+  void getPieceWisePol(PieceWisePol &pwp);
   
 private:
   // Parameters
   parameters par_;                                                       // Parameters of the planner
   DGPManager dgp_manager_;                                               // DGP Manager
   std::vector<LinearConstraint3D> safe_corridor_polytopes_whole_;        // Polytope (Linear) constraints for whole trajectory
-  std::shared_ptr<lbfgs::SolverLBFGS> whole_traj_solver_ptr_;            // L-BFGS solver pointer for the whole trajectory
+  std::shared_ptr<SolverGurobi> whole_traj_solver_ptr_;            // L-BFGS solver pointer for the whole trajectory
   std::vector<std::shared_ptr<dynTraj>> trajs_;                          // Dynamic trajectory
   Eigen::Vector3d v_max_3d_;                                             // Maximum velocity
   Eigen::Vector3d a_max_3d_;                                             // Maximum acceleration
   Eigen::Vector3d j_max_3d_;                                             // Maximum jerk
   double v_max_;                                                         // Maximum speed
   double max_dist_vertexes_;                                             // Maximum velocity
-  lbfgs::planner_params_t planner_params_;                               // Planner parameters
-  lbfgs::lbfgs_parameter_t lbfgs_params_;                                // L-BFGS parameters
 
   // Flags
   bool state_initialized_ = false;                           // State initialized
@@ -174,7 +172,7 @@ private:
   std::vector<double> optimal_yaw_sequence_;
   std::vector<double> yaw_control_points_;
   std::vector<double> yaw_knots_;
-  std::vector<Eigen::Matrix<double, 3, 6>> cps_;
+  std::vector<Eigen::Matrix<double, 3, 4>> cps_;
   std::vector<Eigen::VectorXd> list_z_subopt_;
   std::vector<std::vector<Eigen::Vector3d>> list_initial_guess_wps_subopt_;
   std::vector<std::vector<state>> list_subopt_goal_setpoints_;
@@ -195,7 +193,7 @@ private:
   double previous_yaw_ = 0.0;                      // Previous yaw
   double prev_dyaw_ = 0.0;                         // Previous dyaw
   double dyaw_filtered_ = 0.0;                     // Filtered dyaw
-  PieceWiseQuinticPol pwp_to_share_;                // Piecewise polynomial to share
+  PieceWisePol pwp_to_share_;                // Piecewise polynomial to share
 
   // Drone status
   int drone_status_ = DroneStatus::GOAL_REACHED; // status_ can be TRAVELING, GOAL_SEEN, GOAL_REACHED

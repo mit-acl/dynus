@@ -33,7 +33,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: Simulation Global Map
+    SyncSource: NX01 ACL Map Occupied
 Visualization Manager:
   Class: ""
   Displays:
@@ -62,25 +62,29 @@ Visualization Manager:
           Frame Timeout: 15
           Frames:
             All Enabled: false
+            NX01/NX01_d435_bottom_screw_frame:
+              Value: true
+            NX01/NX01_d435_color_frame:
+              Value: true
+            NX01/NX01_d435_color_optical_frame:
+              Value: true
+            NX01/NX01_d435_depth_frame:
+              Value: true
+            NX01/NX01_d435_depth_optical_frame:
+              Value: true
+            NX01/NX01_d435_left_ir_frame:
+              Value: true
+            NX01/NX01_d435_left_ir_optical_frame:
+              Value: true
+            NX01/NX01_d435_link:
+              Value: true
+            NX01/NX01_d435_right_ir_frame:
+              Value: true
+            NX01/NX01_d435_right_ir_optical_frame:
+              Value: true
+            NX01/NX01_livox:
+              Value: true
             NX01/base_link:
-              Value: true
-            NX02/base_link:
-              Value: true
-            NX03/base_link:
-              Value: true
-            NX04/base_link:
-              Value: true
-            NX05/base_link:
-              Value: true
-            NX06/base_link:
-              Value: true
-            NX07/base_link:
-              Value: true
-            NX08/base_link:
-              Value: true
-            NX09/base_link:
-              Value: true
-            NX10/base_link:
               Value: true
             map:
               Value: false
@@ -92,25 +96,22 @@ Visualization Manager:
           Tree:
             map:
               NX01/base_link:
-                {}
-              NX02/base_link:
-                {}
-              NX03/base_link:
-                {}
-              NX04/base_link:
-                {}
-              NX05/base_link:
-                {}
-              NX06/base_link:
-                {}
-              NX07/base_link:
-                {}
-              NX08/base_link:
-                {}
-              NX09/base_link:
-                {}
-              NX10/base_link:
-                {}
+                NX01/NX01_d435_bottom_screw_frame:
+                  NX01/NX01_d435_link:
+                    NX01/NX01_d435_depth_frame:
+                      NX01/NX01_d435_color_frame:
+                        NX01/NX01_d435_color_optical_frame:
+                          {}
+                      NX01/NX01_d435_depth_optical_frame:
+                        {}
+                      NX01/NX01_d435_left_ir_frame:
+                        NX01/NX01_d435_left_ir_optical_frame:
+                          {}
+                      NX01/NX01_d435_right_ir_frame:
+                        NX01/NX01_d435_right_ir_optical_frame:
+                          {}
+                NX01/NX01_livox:
+                  {}
           Update Interval: 0
           Value: true
         - Class: rviz_default_plugins/Marker
@@ -191,17 +192,17 @@ Visualization Manager:
                 Value: /NX01/original_dgp_path_marker
               Value: false
             - Class: rviz_default_plugins/MarkerArray
-              Enabled: false
+              Enabled: true
               Name: NX01 DGP path
               Namespaces:
-                {}
+                "": true
               Topic:
                 Depth: 5
                 Durability Policy: Volatile
                 History Policy: Keep Last
                 Reliability Policy: Reliable
                 Value: /NX01/dgp_path_marker
-              Value: false
+              Value: true
             - Class: rviz_default_plugins/MarkerArray
               Enabled: false
               Name: NX01 DGP Free Path
@@ -229,7 +230,7 @@ Visualization Manager:
             - Alpha: 0.20000000298023224
               BoundColor: 255; 154; 140
               Class: decomp_rviz_plugins/PolyhedronArray
-              Enabled: false
+              Enabled: true
               MeshColor: 255; 154; 140
               Name: NX01 Poly for Whole Traj
               Scale: 0.009999999776482582
@@ -240,7 +241,7 @@ Visualization Manager:
                 History Policy: Keep Last
                 Reliability Policy: Reliable
                 Value: /NX01/poly_whole
-              Value: false
+              Value: true
               VsColor: 237; 51; 59
               VsScale: 1
             - Alpha: 0.20000000298023224
@@ -264,7 +265,7 @@ Visualization Manager:
               Enabled: true
               Name: NX01 Traj
               Namespaces:
-                {}
+                state_vec: true
               Topic:
                 Depth: 5
                 Durability Policy: Volatile
@@ -736,7 +737,7 @@ Visualization Manager:
               Enabled: false
               Name: NX01 Vel Text
               Namespaces:
-                velocity: true
+                {}
               Topic:
                 Depth: 5
                 Durability Policy: Volatile
@@ -744,7 +745,7 @@ Visualization Manager:
                 History Policy: Keep Last
                 Reliability Policy: Reliable
                 Value: /NX01/vel_text
-              Value: true
+              Value: false
             - Class: rviz_default_plugins/Marker
               Enabled: false
               Name: NX01 FOV
@@ -1401,7 +1402,7 @@ Visualization Manager:
               Enabled: false
               Name: NX02 Vel Text
               Namespaces:
-                velocity: true
+                {}
               Topic:
                 Depth: 5
                 Durability Policy: Volatile
@@ -1409,7 +1410,7 @@ Visualization Manager:
                 History Policy: Keep Last
                 Reliability Policy: Reliable
                 Value: /NX02/vel_text
-              Value: true
+              Value: false
             - Class: rviz_default_plugins/Marker
               Enabled: false
               Name: NX02 FOV
@@ -2066,7 +2067,7 @@ Visualization Manager:
               Enabled: false
               Name: NX03 Vel Text
               Namespaces:
-                velocity: true
+                {}
               Topic:
                 Depth: 5
                 Durability Policy: Volatile
@@ -2074,7 +2075,7 @@ Visualization Manager:
                 History Policy: Keep Last
                 Reliability Policy: Reliable
                 Value: /NX03/vel_text
-              Value: true
+              Value: false
             - Class: rviz_default_plugins/Marker
               Enabled: false
               Name: NX03 FOV
@@ -2731,7 +2732,7 @@ Visualization Manager:
               Enabled: false
               Name: NX04 Vel Text
               Namespaces:
-                velocity: true
+                {}
               Topic:
                 Depth: 5
                 Durability Policy: Volatile
@@ -2739,7 +2740,7 @@ Visualization Manager:
                 History Policy: Keep Last
                 Reliability Policy: Reliable
                 Value: /NX04/vel_text
-              Value: true
+              Value: false
             - Class: rviz_default_plugins/Marker
               Enabled: false
               Name: NX04 FOV
@@ -3396,7 +3397,7 @@ Visualization Manager:
               Enabled: false
               Name: NX05 Vel Text
               Namespaces:
-                velocity: true
+                {}
               Topic:
                 Depth: 5
                 Durability Policy: Volatile
@@ -3404,7 +3405,7 @@ Visualization Manager:
                 History Policy: Keep Last
                 Reliability Policy: Reliable
                 Value: /NX05/vel_text
-              Value: true
+              Value: false
             - Class: rviz_default_plugins/Marker
               Enabled: false
               Name: NX05 FOV
@@ -4061,7 +4062,7 @@ Visualization Manager:
               Enabled: false
               Name: NX06 Vel Text
               Namespaces:
-                velocity: true
+                {}
               Topic:
                 Depth: 5
                 Durability Policy: Volatile
@@ -4069,7 +4070,7 @@ Visualization Manager:
                 History Policy: Keep Last
                 Reliability Policy: Reliable
                 Value: /NX06/vel_text
-              Value: true
+              Value: false
             - Class: rviz_default_plugins/Marker
               Enabled: false
               Name: NX06 FOV
@@ -4726,7 +4727,7 @@ Visualization Manager:
               Enabled: false
               Name: NX07 Vel Text
               Namespaces:
-                velocity: true
+                {}
               Topic:
                 Depth: 5
                 Durability Policy: Volatile
@@ -4734,7 +4735,7 @@ Visualization Manager:
                 History Policy: Keep Last
                 Reliability Policy: Reliable
                 Value: /NX07/vel_text
-              Value: true
+              Value: false
             - Class: rviz_default_plugins/Marker
               Enabled: false
               Name: NX07 FOV
@@ -5391,7 +5392,7 @@ Visualization Manager:
               Enabled: false
               Name: NX08 Vel Text
               Namespaces:
-                velocity: true
+                {}
               Topic:
                 Depth: 5
                 Durability Policy: Volatile
@@ -5399,7 +5400,7 @@ Visualization Manager:
                 History Policy: Keep Last
                 Reliability Policy: Reliable
                 Value: /NX08/vel_text
-              Value: true
+              Value: false
             - Class: rviz_default_plugins/Marker
               Enabled: false
               Name: NX08 FOV
@@ -6056,7 +6057,7 @@ Visualization Manager:
               Enabled: false
               Name: NX09 Vel Text
               Namespaces:
-                velocity: true
+                {}
               Topic:
                 Depth: 5
                 Durability Policy: Volatile
@@ -6064,7 +6065,7 @@ Visualization Manager:
                 History Policy: Keep Last
                 Reliability Policy: Reliable
                 Value: /NX09/vel_text
-              Value: true
+              Value: false
             - Class: rviz_default_plugins/Marker
               Enabled: false
               Name: NX09 FOV
@@ -6721,7 +6722,7 @@ Visualization Manager:
               Enabled: false
               Name: NX10 Vel Text
               Namespaces:
-                velocity: true
+                {}
               Topic:
                 Depth: 5
                 Durability Policy: Volatile
@@ -6729,7 +6730,7 @@ Visualization Manager:
                 History Policy: Keep Last
                 Reliability Policy: Reliable
                 Value: /NX10/vel_text
-              Value: true
+              Value: false
             - Class: rviz_default_plugins/Marker
               Enabled: false
               Name: NX10 FOV
@@ -6870,25 +6871,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 43.555477142333984
+      Distance: 46.968536376953125
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0.706261932849884
-        Y: -0.283535361289978
-        Z: 2.1163532733917236
+        X: 12.936952590942383
+        Y: 0.8377546072006226
+        Z: 1.0155372619628906
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.3497966527938843
+      Pitch: 1.4947963953018188
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz_default_plugins)
-      Yaw: 3.1397600173950195
+      Yaw: 3.139786720275879
     Saved: ~
 Window Geometry:
   Displays:

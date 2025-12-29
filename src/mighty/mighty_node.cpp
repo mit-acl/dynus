@@ -269,7 +269,6 @@ void MIGHTY_NODE::declareParameters()
   this->declare_parameter("v_max", 1.0);
   this->declare_parameter("a_max", 1.0);
   this->declare_parameter("j_max", 1.0);
-  this->declare_parameter("closed_form_traj_verbose", false);
   this->declare_parameter("jerk_weight", 1.0);
   this->declare_parameter("dynamic_weight", 1.0);
   this->declare_parameter("time_weight", 1.0);
@@ -288,16 +287,12 @@ void MIGHTY_NODE::declareParameters()
   this->declare_parameter("drone_bbox", std::vector<double>{0.5, 0.5, 0.5});
   this->declare_parameter("goal_radius", 0.5);
   this->declare_parameter("goal_seen_radius", 2.0);
-  this->declare_parameter("init_turn_bf", 15.0);
-  this->declare_parameter("integral_resolution", 30);
-  this->declare_parameter("hinge_mu", 1e-2);
-  this->declare_parameter("omega_max", 1e-2);
-  this->declare_parameter("tilt_max_rad", 0.6);
-  this->declare_parameter("f_min", 0.0);
-  this->declare_parameter("f_max", 20.0);
-  this->declare_parameter("mass", 1.0);
-  this->declare_parameter("g", 9.81);
-  this->declare_parameter("fopt_threshold", 0.1);
+
+  // DYNUS specific parameters
+  this->declare_parameter("num_N", 6);
+  this->declare_parameter("factor_initial", 1.0);
+  this->declare_parameter("factor_final", 5.0);
+  this->declare_parameter("factor_constant_step_size", 0.1);
 
   // L-BFGS parameters
   this->declare_parameter("f_dec_coeff", 1e-2);
@@ -431,36 +426,17 @@ void MIGHTY_NODE::setParameters()
   par_.v_max = this->get_parameter("v_max").as_double();
   par_.a_max = this->get_parameter("a_max").as_double();
   par_.j_max = this->get_parameter("j_max").as_double();
-  par_.closed_form_traj_verbose = this->get_parameter("closed_form_traj_verbose").as_bool();
-  par_.jerk_weight = this->get_parameter("jerk_weight").as_double();
-  par_.dynamic_weight = this->get_parameter("dynamic_weight").as_double();
-  par_.time_weight = this->get_parameter("time_weight").as_double();
-  par_.pos_anchor_weight = this->get_parameter("pos_anchor_weight").as_double();
-  par_.stat_weight = this->get_parameter("stat_weight").as_double();
-  par_.dyn_constr_bodyrate_weight = this->get_parameter("dyn_constr_bodyrate_weight").as_double();
-  par_.dyn_constr_tilt_weight = this->get_parameter("dyn_constr_tilt_weight").as_double();
-  par_.dyn_constr_thrust_weight = this->get_parameter("dyn_constr_thrust_weight").as_double();
-  par_.dyn_constr_vel_weight = this->get_parameter("dyn_constr_vel_weight").as_double();
-  par_.dyn_constr_acc_weight = this->get_parameter("dyn_constr_acc_weight").as_double();
-  par_.dyn_constr_jerk_weight = this->get_parameter("dyn_constr_jerk_weight").as_double();
-  par_.num_dyn_obst_samples = this->get_parameter("num_dyn_obst_samples").as_int();
-  par_.planner_Co = this->get_parameter("planner_Co").as_double();
-  par_.planner_Cw = this->get_parameter("planner_Cw").as_double();
   verbose_computation_time_ = this->get_parameter("verbose_computation_time").as_bool();
   par_.drone_bbox = this->get_parameter("drone_bbox").as_double_array();
   par_.drone_radius = par_.drone_bbox[0] / 2.0;
   par_.goal_radius = this->get_parameter("goal_radius").as_double();
   par_.goal_seen_radius = this->get_parameter("goal_seen_radius").as_double();
-  par_.init_turn_bf = this->get_parameter("init_turn_bf").as_double();
-  par_.integral_resolution = this->get_parameter("integral_resolution").as_int();
-  par_.hinge_mu = this->get_parameter("hinge_mu").as_double();
-  par_.omega_max = this->get_parameter("omega_max").as_double();
-  par_.tilt_max_rad = this->get_parameter("tilt_max_rad").as_double();
-  par_.f_min = this->get_parameter("f_min").as_double();
-  par_.f_max = this->get_parameter("f_max").as_double();
-  par_.mass = this->get_parameter("mass").as_double();
-  par_.g = this->get_parameter("g").as_double();
-  par_.fopt_threshold = this->get_parameter("fopt_threshold").as_double();
+
+  // DYNUS specific parameters
+  par_.num_N = this->get_parameter("num_N").as_int();
+  par_.factor_initial = this->get_parameter("factor_initial").as_double();
+  par_.factor_final = this->get_parameter("factor_final").as_double();
+  par_.factor_constant_step_size = this->get_parameter("factor_constant_step_size").as_double();
 
   // L-BFGS parameters
   par_.f_dec_coeff = this->get_parameter("f_dec_coeff").as_double();
@@ -603,35 +579,16 @@ void MIGHTY_NODE::printParameters()
   RCLCPP_INFO(this->get_logger(), "V Max: %f", par_.v_max);
   RCLCPP_INFO(this->get_logger(), "A Max: %f", par_.a_max);
   RCLCPP_INFO(this->get_logger(), "J Max: %f", par_.j_max);
-  RCLCPP_INFO(this->get_logger(), "Closed Form Verbose: %d", par_.closed_form_traj_verbose);
-  RCLCPP_INFO(this->get_logger(), "Control Cost Weight: %f", par_.jerk_weight);
-  RCLCPP_INFO(this->get_logger(), "Obstacles and Agents Distance Weight: %f", par_.dynamic_weight);
-  RCLCPP_INFO(this->get_logger(), "Time Weight: %f", par_.time_weight);
-  RCLCPP_INFO(this->get_logger(), "Position Anchor Weight: %f", par_.pos_anchor_weight);
-  RCLCPP_INFO(this->get_logger(), "Static Obstacle Weight: %f", par_.stat_weight);
-  RCLCPP_INFO(this->get_logger(), "Violation of Bodyrate Constr. Weight: %f", par_.dyn_constr_bodyrate_weight);
-  RCLCPP_INFO(this->get_logger(), "Violation of Tilt Constr. Weight: %f", par_.dyn_constr_tilt_weight);
-  RCLCPP_INFO(this->get_logger(), "Violation of Thrust Constr. Weight: %f", par_.dyn_constr_thrust_weight);
-  RCLCPP_INFO(this->get_logger(), "Violation of Vel Constr. Weight: %f", par_.dyn_constr_vel_weight);
-  RCLCPP_INFO(this->get_logger(), "Violation of Aeccel Constr. Weight: %f", par_.dyn_constr_acc_weight);
-  RCLCPP_INFO(this->get_logger(), "Violation of Jerk Constr. Weight: %f", par_.dyn_constr_jerk_weight);
-  RCLCPP_INFO(this->get_logger(), "Num Dynamic Obstacles Samples: %d", par_.num_dyn_obst_samples);
-  RCLCPP_INFO(this->get_logger(), "Local Traj Co: %f", par_.planner_Co);
-  RCLCPP_INFO(this->get_logger(), "Local Traj Cw: %f", par_.planner_Cw);
   RCLCPP_INFO(this->get_logger(), "Verbose Computation Time: %d", verbose_computation_time_);
   RCLCPP_INFO(this->get_logger(), "Drone Bbox: (%f, %f, %f)", par_.drone_bbox[0], par_.drone_bbox[1], par_.drone_bbox[2]);
   RCLCPP_INFO(this->get_logger(), "Goal Radius: %f", par_.goal_radius);
   RCLCPP_INFO(this->get_logger(), "Goal Seen Radius: %f", par_.goal_seen_radius);
-  RCLCPP_INFO(this->get_logger(), "Init Turn BF: %f", par_.init_turn_bf);
-  RCLCPP_INFO(this->get_logger(), "Integral Resolution: %d", par_.integral_resolution);
-  RCLCPP_INFO(this->get_logger(), "Hinge Mu: %f", par_.hinge_mu);
-  RCLCPP_INFO(this->get_logger(), "Omega Max: %f", par_.omega_max);
-  RCLCPP_INFO(this->get_logger(), "Tilt Max Rad: %f", par_.tilt_max_rad);
-  RCLCPP_INFO(this->get_logger(), "F Min: %f", par_.f_min);
-  RCLCPP_INFO(this->get_logger(), "F Max: %f", par_.f_max);
-  RCLCPP_INFO(this->get_logger(), "Mass: %f", par_.mass);
-  RCLCPP_INFO(this->get_logger(), "Gravity: %f", par_.g);
-  RCLCPP_INFO(this->get_logger(), "Fopt Threshold: %f", par_.fopt_threshold);
+
+  // DYNUS specific parameters
+  RCLCPP_INFO(this->get_logger(), "Num N: %d", par_.num_N);
+  RCLCPP_INFO(this->get_logger(), "Factor Initial: %f", par_.factor_initial);
+  RCLCPP_INFO(this->get_logger(), "Factor Final: %f", par_.factor_final);
+  RCLCPP_INFO(this->get_logger(), "Factor Constant Step Size: %f", par_.factor_constant_step_size);
 
   // L-BFGS parameters
   RCLCPP_INFO(this->get_logger(), "f_dec_coeff: %f", par_.f_dec_coeff);
@@ -989,79 +946,14 @@ void MIGHTY_NODE::convertDynTrajMsg2DynTraj(const dynus_interfaces::msg::DynTraj
   traj->id = msg.id;
 
   // Get pwp
-  if (msg.mode == "pwp")
-  {
-    traj->pwp = mighty_utils::convertPwpMsg2Pwp(msg.quintic_pwp);
-    traj->mode = dynTraj::Mode::Piecewise;
-  }
-
-  // Find quihtic coefficients from the given pwp
-  if (msg.mode == "quintic")
-  {
-    traj->cx = mighty_utils::convertCoeffMsg2Coeff(msg.poly_coeffs_x);
-    traj->cy = mighty_utils::convertCoeffMsg2Coeff(msg.poly_coeffs_y);
-    traj->cz = mighty_utils::convertCoeffMsg2Coeff(msg.poly_coeffs_z);
-    traj->poly_start_time = msg.poly_start_time;
-    traj->poly_end_time = msg.poly_end_time;
-    traj->mode = dynTraj::Mode::Quintic;
-  }
-
-  if (msg.mode == "analytic")
-  {
-    traj->mode = dynTraj::Mode::Analytic;
-  }
+  traj->pwp = mighty_utils::convertPwpMsg2Pwp(msg.pwp);
 
   // Get covariances
   if (!msg.is_agent)
   {
-
-    if (msg.ekf_cov_p.size() != 0)
-    {
-      traj->ekf_cov_p = mighty_utils::convertCovMsg2Cov(msg.ekf_cov_p); // ekf cov
-    }
-
-    if (msg.ekf_cov_q.size() != 0)
-    {
-      traj->ekf_cov_q = mighty_utils::convertCovMsg2Cov(msg.ekf_cov_q); // ekf cov
-    }
-
-    if (msg.poly_cov.size() != 0)
-    {
-      traj->poly_cov = mighty_utils::convertCovMsg2Cov(msg.poly_cov); // future traj cov
-    }
-
-    if (msg.function.size() == 3)
-    {
-      traj->traj_x = msg.function[0];
-      traj->traj_y = msg.function[1];
-      traj->traj_z = msg.function[2];
-    }
-
-    if (msg.velocity.size() == 3)
-    {
-      traj->traj_vx = msg.velocity[0];
-      traj->traj_vy = msg.velocity[1];
-      traj->traj_vz = msg.velocity[2];
-    }
-
-    if (msg.function.size() == 3 && msg.velocity.size() == 3)
-    {
-      if (traj->compileAnalytic())
-      {
-        // Change the mode only when we successfully compiled the analytic trajectory
-        traj->mode = dynTraj::Mode::Analytic;
-        // printf("Successfully compiled analytic traj id=%d\n", traj->id);
-      }
-      else
-      {
-        RCLCPP_ERROR(
-            this->get_logger(),
-            "Failed to compile analytic traj id=%d, falling back to zeros.",
-            traj->id);
-        // leave mode as whatever it was (Piecewise/Quintic),
-        // or explicitly set a safe default here
-      }
-    }
+    traj->ekf_cov_p = mighty_utils::convertCovMsg2Cov(msg.ekf_cov_p); // ekf cov
+    traj->ekf_cov_q = mighty_utils::convertCovMsg2Cov(msg.ekf_cov_q); // ekf cov
+    traj->poly_cov = mighty_utils::convertCovMsg2Cov(msg.poly_cov);   // future traj cov
   }
 
   // Record received time
@@ -1427,8 +1319,8 @@ void MIGHTY_NODE::publishState(const state &data, const rclcpp::Publisher<geomet
 void MIGHTY_NODE::publishOwnTraj()
 {
 
-  // Get the piecewise quintic polynomial trajectory to share
-  mighty_ptr_->getPiecewiseQuinticPol(pwp_to_share_);
+  // Get the piecewise polynomial trajectory to share
+  mighty_ptr_->getPieceWisePol(pwp_to_share_);
 
   // Create the message
   dynus_interfaces::msg::DynTraj msg;
@@ -1439,7 +1331,7 @@ void MIGHTY_NODE::publishOwnTraj()
   msg.bbox.push_back(par_.drone_bbox[2]);
   msg.id = id_;
   msg.mode = "pwp";
-  msg.quintic_pwp = mighty_utils::convertPwp2PwpMsg(pwp_to_share_);
+  msg.pwp = mighty_utils::convertPwp2PwpMsg(pwp_to_share_);
   msg.is_agent = true;
 
   // Get the terminal goal

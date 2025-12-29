@@ -25,45 +25,9 @@ MIGHTY::MIGHTY(parameters par) : par_(par)
   // Set up dgp_manager
   dgp_manager_.setParameters(par_);
 
-  // Set up the planner parameters (TODO: move to parameters)
-  planner_params_.verbose = false;                                 // enable verbose output
-  planner_params_.V_max = par_.v_max;                              // max velocity
-  planner_params_.A_max = par_.a_max;                              // max acceleration
-  planner_params_.J_max = par_.j_max;                              // max jerk
-  planner_params_.num_perturbation = par_.num_perturbation_for_ig; // number of perturbations for initial guesses
-  planner_params_.r_max = par_.r_max_for_ig;                       // perturbation radius for initial guesses
-  planner_params_.time_weight = par_.time_weight;                  // weight for time cost
-  planner_params_.pos_anchor_weight = par_.pos_anchor_weight;
-  planner_params_.dyn_weight = par_.dynamic_weight;
-  planner_params_.stat_weight = par_.stat_weight;
-  planner_params_.jerk_weight = par_.jerk_weight;
-  planner_params_.dyn_constr_vel_weight = par_.dyn_constr_vel_weight;
-  planner_params_.dyn_constr_acc_weight = par_.dyn_constr_acc_weight;
-  planner_params_.dyn_constr_jerk_weight = par_.dyn_constr_jerk_weight;
-  planner_params_.dyn_constr_bodyrate_weight = par_.dyn_constr_bodyrate_weight;
-  planner_params_.dyn_constr_tilt_weight = par_.dyn_constr_tilt_weight;
-  planner_params_.dyn_constr_thrust_weight = par_.dyn_constr_thrust_weight;
-  planner_params_.num_dyn_obst_samples = par_.num_dyn_obst_samples; // Number of dynamic obstacle samples
-  planner_params_.Co = par_.planner_Co;                             // for static obstacle avoidance
-  planner_params_.Cw = par_.planner_Cw;                             // for dynamic obstacle avoidance
-  planner_params_.BIG = 1e8;
-  planner_params_.dc = par_.dc; // descretiation constant
-  planner_params_.init_turn_bf = par_.init_turn_bf;
-
-  // Set up the L-BFGS parameters
-  lbfgs_params_.mem_size = 256;
-  lbfgs_params_.min_step = 1.0e-32;
-  lbfgs_params_.f_dec_coeff = par_.f_dec_coeff;         // allow larger Armijo steps
-  lbfgs_params_.cautious_factor = par_.cautious_factor; // always accept BFGS update
-  lbfgs_params_.past = par_.past;
-  lbfgs_params_.max_linesearch = par_.max_linesearch; // fewer backtracking tries
-  lbfgs_params_.max_iterations = par_.max_iterations; // allow more iterations
-  lbfgs_params_.g_epsilon = par_.g_epsilon;
-  lbfgs_params_.delta = par_.delta; // stop once f-improvement is minimal
-
   // Set up unconstrained optimization solver for whole trajectory
-  whole_traj_solver_ptr_ = std::make_shared<lbfgs::SolverLBFGS>();
-  whole_traj_solver_ptr_->initializeSolver(planner_params_);
+  whole_traj_solver_ptr_ = std::make_shared<SolverGurobi>();
+  whole_traj_solver_ptr_->initializeSolver(par_);
 
   // Set up basis converter
   BasisConverter basis_converter;
@@ -443,7 +407,7 @@ void MIGHTY::retrieveListSubOptGoalSetpoints(std::vector<std::vector<state>> &li
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY::retrieveCPs(std::vector<Eigen::Matrix<double, 3, 6>> &cps)
+void MIGHTY::retrieveCPs(std::vector<Eigen::Matrix<double, 3, 4>> &cps)
 {
   cps = cps_;
 }
@@ -682,7 +646,7 @@ bool MIGHTY::planLocalTrajectory(vec_Vecf<3> &global_path)
 
   optimization_succeeded = generateLocalTrajectory(
       local_A, A_time, global_path, initial_guess_computation_time_,
-      local_traj_computation_time_, whole_traj_solver_ptr_);
+      local_traj_computation_time_);
 
   if (par_.debug_verbose)
   {
@@ -692,35 +656,11 @@ bool MIGHTY::planLocalTrajectory(vec_Vecf<3> &global_path)
 
   if (optimization_succeeded)
   {
-
-    // For the optimal solution
-    whole_traj_solver_ptr_->reconstructPVATCPopt(zopt_); // First recover the final control points and times from z_opt
+    // Get Results.
+    whole_traj_solver_ptr_->fillGoalSetPoints();
     whole_traj_solver_ptr_->getGoalSetpoints(goal_setpoints_);
-
-    // print out the goal setpoints
     whole_traj_solver_ptr_->getPieceWisePol(pwp_to_share_);
     whole_traj_solver_ptr_->getControlPoints(cps_); // Bezier control points
-
-    // Get goal setpoints for suboptimal solutions for visualization
-    if (par_.use_multiple_initial_guesses)
-    {
-
-      if (par_.debug_verbose)
-        std::cout << "Size of list_z_subopt_: " << list_z_subopt_.size() << std::endl;
-
-      // Initialize list_subopt_goal_setpoints_
-      list_subopt_goal_setpoints_.clear();
-
-      // Loop over list_z_subopt
-      for (int idx = 0; idx < list_z_subopt_.size(); ++idx)
-      {
-        // Reconstruct control points and times for each suboptimal solution
-        whole_traj_solver_ptr_->reconstructPVATCPopt(list_z_subopt_[idx]); // First recover the final control points and times from z_opt
-        std::vector<state> subopt_goal_setpoints;
-        whole_traj_solver_ptr_->getGoalSetpoints(subopt_goal_setpoints);
-        list_subopt_goal_setpoints_.push_back(subopt_goal_setpoints);
-      }
-    }
   }
   else
   {
@@ -733,7 +673,7 @@ bool MIGHTY::planLocalTrajectory(vec_Vecf<3> &global_path)
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY::getPiecewiseQuinticPol(PieceWiseQuinticPol &pwp)
+void MIGHTY::getPieceWisePol(PieceWisePol &pwp)
 {
   pwp = pwp_to_share_;
 }
@@ -743,8 +683,7 @@ void MIGHTY::getPiecewiseQuinticPol(PieceWiseQuinticPol &pwp)
 bool MIGHTY::generateLocalTrajectory(const state &local_A, double A_time,
                                      vec_Vec3f &global_path,
                                      double &initial_guess_computation_time,
-                                     double &local_traj_computation_time,
-                                     std::shared_ptr<lbfgs::SolverLBFGS> &whole_traj_solver_ptr)
+                                     double &local_traj_computation_time)
 {
 
   if (par_.debug_verbose)
@@ -775,165 +714,33 @@ bool MIGHTY::generateLocalTrajectory(const state &local_A, double A_time,
     local_E.pos[2] = 1.0;
   }
 
-  whole_traj_solver_ptr->prepareSolverForReplan(A_time, global_path, safe_corridor_polytopes_whole_, local_trajs, local_A, local_E, initial_guess_computation_time, par_.use_multiple_initial_guesses);
-
-  // It's pushed in prepareSolverForReplan() so we get the pushed global path
-  whole_traj_solver_ptr->getGlobalPath(global_path);
-
-  mtx_global_path_.lock();
-  global_path_ = global_path; // Update the global path
-  mtx_global_path_.unlock();
-
-  // update local_E
-  local_E.pos = global_path.back();
-  mtx_E_.lock();
-  E_ = local_E; // Update the local_E
-  mtx_E_.unlock();
+  // Prepare the solver for replanning
+  whole_traj_solver_ptr_->setX0(local_A);                               // Initial condition
+  whole_traj_solver_ptr_->setXf(local_E);                               // Final condition
+  whole_traj_solver_ptr_->setPolytopes(safe_corridor_polytopes_whole_); // Safe corridor polytopes
+  whole_traj_solver_ptr_->setT0(A_time);                                // Initial time
 
   if (par_.debug_verbose)
     std::cout << "Solver prepared" << std::endl;
 
-  // Get initial guesses
-  auto list_z0 = whole_traj_solver_ptr_->getInitialGuesses();
-  auto list_initial_guess_wps = whole_traj_solver_ptr_->getInitialGuessWaypoints();
+  // Solve the optimization problem.
+  bool gurobi_error_detected = false;
+  double gurobi_computation_time = 0.0;
+  bool gurobi_result = whole_traj_solver_ptr_->generateNewTrajectory(gurobi_error_detected, global_path, gurobi_computation_time);
 
-  if (par_.debug_verbose)
-    std::cout << "Initial guesses size: " << list_z0.size() << std::endl;
-
-  // Update L-BFGS parameters.
-  // lbfgs_params_.mem_size = static_cast<int>(list_z0[0].size());
-  lbfgs_params_.mem_size = 256;
-
-  // Prepare vectors for parallelization
-  int status = -1; // Initialize status
-  int size_of_list_z0 = list_z0.size();
-
-  std::vector<int> list_status(size_of_list_z0, -1); // Initialize status for each thread
-  std::vector<Eigen::VectorXd> list_zopt(size_of_list_z0);
-  std::vector<double> list_fopt(size_of_list_z0, 0.0);
-  std::vector<double> list_initial_guess_computation_time(size_of_list_z0);
-
-  // Solve the optimiation problem.
-  if (!par_.use_multiple_initial_guesses || size_of_list_z0 == 1)
+  // If a Gurobi error occurred, reset the solver and return.
+  if (gurobi_error_detected)
   {
-    auto t_start = std::chrono::high_resolution_clock::now();
-    status = whole_traj_solver_ptr_->optimize(list_z0[0], zopt_, fopt_, lbfgs_params_);
-    auto t_end = std::chrono::high_resolution_clock::now();
-    local_traj_computation_time = std::chrono::duration<double, std::milli>(t_end - t_start).count();
-    // std::cout << lbfgs::lbfgs_strerror(status) << std::endl;
-
-    // status = 10;
-    // zopt_ = list_z0[0]; // Initialize zopt_ with the correct size
-    // fopt_ = 0.0; // Initialize fopt_ to zero
-    list_initial_guess_wps_subopt_.clear();
-    list_initial_guess_wps_subopt_.push_back(list_initial_guess_wps[0]); // Store the initial guess waypoints for the optimal solution
-  }
-  else
-  {
-    // Parallelization approach (is there any faster way to do this?)
-    std::vector<std::future<void>> futures;
-    futures.reserve(size_of_list_z0);
-
-    auto t_start = std::chrono::high_resolution_clock::now();
-    for (size_t i = 0; i < size_of_list_z0; ++i)
-    {
-      futures.emplace_back(std::async(std::launch::async,
-                                      [&, i]()
-                                      {
-                                        // make a fresh solver for thread-safety
-                                        std::shared_ptr<lbfgs::SolverLBFGS> solver_ptr = std::make_shared<lbfgs::SolverLBFGS>();
-                                        solver_ptr->initializeSolver(planner_params_);
-                                        double initial_guess_computation_time = 0.0;
-                                        solver_ptr->prepareSolverForReplan(A_time, global_path, safe_corridor_polytopes_whole_, local_trajs, local_A, local_E, initial_guess_computation_time); // initial time t0 = 0.0
-
-                                        // copy initial guess
-                                        Eigen::VectorXd z0 = list_z0[i];
-                                        Eigen::VectorXd zopt;
-                                        double fopt;
-
-                                        // run optimization
-                                        int status = solver_ptr->optimize(z0, zopt, fopt, lbfgs_params_);
-                                        list_status[i] = status;
-                                        list_zopt[i] = zopt;
-                                        list_fopt[i] = fopt;
-                                        list_initial_guess_computation_time[i] = initial_guess_computation_time;
-                                      }));
-    }
-
-    // wait for all to finish
-    for (auto &f : futures)
-      f.get();
-
-    auto t_end = std::chrono::high_resolution_clock::now();
-    local_traj_computation_time = std::chrono::duration<double, std::milli>(t_end - t_start).count();
-
-    // Find the best solution
-    fopt_ = std::numeric_limits<double>::max();
-    zopt_ = list_z0[0]; // Initialize zopt_ with the correct size
-    int best_index = -1;
-    for (size_t i = 0; i < size_of_list_z0; ++i)
-    {
-      // First check the status
-      if (list_status[i] < 0)
-      {
-        std::cout << "list_status[" << i << "] = " << list_status[i] << ", skipping this solution" << std::endl;
-        std::cout << lbfgs::lbfgs_strerror(list_status[i]) << std::endl;
-        continue; // Skip this solution if it failed
-      }
-
-      if (list_fopt[i] < fopt_)
-      {
-        fopt_ = list_fopt[i];
-        zopt_ = list_zopt[i];
-        best_index = i;
-      }
-    }
-
-    initial_guess_computation_time = list_initial_guess_computation_time[best_index]; // Get the initial guess computation time for the best solution
-
-    // If no solution was found, return
-    if (best_index < 0)
-    {
-      std::cout << bold << red << "No solution found in multiple initial guesses" << reset << std::endl;
-      replanning_failure_count_++;
-      initial_guess_computation_time = -100000.0;
-      return false;
-    }
-
-    list_z_subopt_.clear();                 // Clear the suboptimal solutions list
-    list_initial_guess_wps_subopt_.clear(); // Clear the suboptimal waypoints list
-
-    // Grab sub optimal solutions for visualization (solutions that are valid (so no negative status and no crazy big f) but no better than the best one)
-    for (size_t i = 0; i < size_of_list_z0; ++i)
-    {
-      if (list_status[i] >= 0 && i != best_index && list_fopt[i] < planner_params_.BIG * 0.9)
-      {
-        // Add the solution to the trajs_ for visualization
-        list_z_subopt_.push_back(list_zopt[i]);
-
-        // Add the initial guess waypoints for visualization
-        list_initial_guess_wps_subopt_.push_back(list_initial_guess_wps[i]);
-      }
-    }
-
-    // Set the status to the best one found
-    status = list_status[best_index];
-
-  } // End of parallelization
-
-  if (par_.debug_verbose)
-    std::cout << "Optimization status: " << status << ", fopt: " << fopt_ << ", computation time: " << local_traj_computation_time << " ms" << std::endl;
-
-  // If no solution is found, return.
-  if (status < 0 || fopt_ > par_.fopt_threshold)
-  {
-    // do the same output in red with printf
-    printf("\033[1;31mLocal Optimization Failed with status: %d, fopt: %.2f\033[0m\n", status, fopt_);
+    std::cout << bold << red << "Gurobi error detected" << reset << std::endl;
+    whole_traj_solver_ptr_ = std::make_shared<SolverGurobi>();
+    whole_traj_solver_ptr_->initializeSolver(par_);
     return false;
   }
 
-  // If the optimization succeeded, we can update the goal setpoints in green
-  // printf("\033[1;32mLocal Optimization Succeeded with status: %d, fopt: %.2f\033[0m\n", status, fopt_);
+  // If no solution is found, return.
+  if (!gurobi_result)
+    return false;
+
   return true;
 }
 
@@ -1167,14 +974,8 @@ void MIGHTY::cleanUpOldTrajs(double current_time)
 void MIGHTY::addTraj(std::shared_ptr<dynTraj> new_traj, double current_time)
 {
 
-  if (new_traj->mode == dynTraj::Mode::Analytic && !new_traj->analytic_compiled)
-  {
-    printf("Dropping analytic traj id=%d because compile failed", new_traj->id);
-    return;
-  }
-
   // Evaluate once
-  Eigen::Vector3d p = new_traj->eval(current_time);
+  Eigen::Vector3d p = new_traj->pwp.eval(current_time);
   // if (!checkPointWithinMap(p))
   //   return;
   // if ((p - state_.pos).norm() > par_.horizon)

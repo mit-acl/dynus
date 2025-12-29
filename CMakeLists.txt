@@ -36,6 +36,17 @@ find_package(std_srvs REQUIRED)
 find_package(pcl_ros REQUIRED)
 find_package(nlohmann_json REQUIRED)
 
+# Gurobi
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}")
+find_package(GUROBI REQUIRED)
+
+# check if gurobi is found
+if(GUROBI_FOUND)
+message(STATUS "GUROBI FOUND")
+else(GUROBI_FOUND)
+message(FATAL_ERROR "GUROBI NOT FOUND!")
+endif(GUROBI_FOUND)
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}")
 
 # OpenMP
@@ -47,13 +58,17 @@ if (OPENMP_FOUND)
 endif()
 
 # include directories
-include_directories(${EIGEN3_INCLUDE_DIR} ${PCL_INCLUDE_DIRS} ${DECOMP_UTIL_INCLUDE_DIRS} ${GAZEBO_INCLUDE_DIRS} include)
+include_directories(${EIGEN3_INCLUDE_DIR} ${PCL_INCLUDE_DIRS} ${DECOMP_UTIL_INCLUDE_DIRS} ${GAZEBO_INCLUDE_DIRS} ${GUROBI_INCLUDE_DIRS} include)
 link_directories(${PCL_LIBRARY_DIRS} ${BOOST_LIBRARY_DIRS} ${GAZEBO_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
 
+# set up for gurobi
+FILE(GLOB GurobiSOFiles $ENV{GUROBI_HOME}/lib/libgurobi*[0-9].so) #files that are start with libgurobi and end with number.so
+set(GUROBI_LIBRARIES "$ENV{GUROBI_HOME}/lib/libgurobi_c++.a;${GurobiSOFiles};$ENV{GUROBI_HOME}/lib/" )
+
 # add executables
-add_executable(mighty src/mighty/mighty_node.cpp src/mighty/mighty.cpp src/dgp/dgp_manager.cpp src/dgp/utils.cpp src/dgp/dgp_planner.cpp src/dgp/graph_search.cpp src/mighty/utils.cpp src/mighty/lbfgs_solver.cpp src/mighty/lbfgs_solver_utils.cpp)
-target_link_libraries(mighty ${PCL_LIBRARIES})
+add_executable(mighty src/mighty/mighty_node.cpp src/mighty/mighty.cpp src/dgp/dgp_manager.cpp src/dgp/utils.cpp src/dgp/dgp_planner.cpp src/dgp/graph_search.cpp src/mighty/utils.cpp src/mighty/gurobi_solver.cpp)
+target_link_libraries(mighty ${GUROBI_LIBRARIES} ${PCL_LIBRARIES})
 ament_target_dependencies(mighty rclcpp example_interfaces dynus_interfaces visualization_msgs Eigen3 decomp_ros_msgs sensor_msgs std_msgs decomp_rviz_plugins decomp_test_node tf2_geometry_msgs tf2 tf2_ros tf2_eigen std_srvs pcl_ros)
 
 # Add the fake_sim executable
@@ -80,10 +95,6 @@ ament_target_dependencies(convert_odom_to_state rclcpp example_interfaces dynus_
 add_executable(convert_vicon_to_state src/mighty/convert_vicon_to_state.cpp)
 target_link_libraries(convert_vicon_to_state)
 ament_target_dependencies(convert_vicon_to_state rclcpp example_interfaces dynus_interfaces visualization_msgs Eigen3 decomp_ros_msgs sensor_msgs std_msgs decomp_rviz_plugins decomp_test_node tf2_geometry_msgs tf2 tf2_ros tf2_eigen)
-
-# Add the executable for the lbfgs solver test file
-add_executable(test_lbfgs_solver src/test/test_lbfgs_solver.cpp src/mighty/lbfgs_solver.cpp src/mighty/lbfgs_solver_utils.cpp)
-ament_target_dependencies(test_lbfgs_solver rclcpp example_interfaces dynus_interfaces visualization_msgs Eigen3 decomp_ros_msgs sensor_msgs std_msgs decomp_rviz_plugins decomp_test_node tf2_geometry_msgs)
 
 # Add the convert velodyne executable
 add_executable(convert_velodyne_to_ros_time src/mighty/convert_velodyne_to_ros_time.cpp)

@@ -290,7 +290,7 @@ namespace mighty
         std::vector<double> yaw_knots_;
 
         // Local trajectory debugging
-        std::vector<Eigen::Matrix<double, 3, 6>> cps_;
+        std::vector<Eigen::Matrix<double, 3, 4>> cps_;
 
         // Static push points and p points
         vec_Vecf<3> static_push_points_;
@@ -299,7 +299,7 @@ namespace mighty
         int p_points_id_ = 0;
 
         // Trajectory sharing
-        PieceWiseQuinticPol pwp_to_share_; // Piecewise polynomial
+        PieceWisePol pwp_to_share_; // Piecewise polynomial
 
         // Flags
         bool state_initialized_ = false;             // State initialized

@@ -34,7 +34,8 @@ class GoalMonitorNode(Node):
 
         if self.namespace == 'NX01':
             # start: ( 10.000,  0.000) ↔ opposite: (-10.000,  0.000) (NX06)
-            self.goal_points = [[-10.000,  0.000, 1.0], [ 10.000,  0.000, 1.0]]
+            # self.goal_points = [[-10.000,  0.000, 1.0], [ 10.000,  0.000, 1.0]]
+            self.goal_points = [[305.000,  0.000, 3.0]]
 
         elif self.namespace == 'NX02':
             # start: (  8.090,  5.878) ↔ opposite: ( -8.090, -5.878) (NX07)
