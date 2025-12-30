@@ -219,7 +219,7 @@ bool MIGHTY::checkIfPointFree(const Vec3f &point)
 
 // ----------------------------------------------------------------------------
 
-bool MIGHTY::getSafeCorridor(const vec_Vecf<3> &global_path, const state &A)
+bool MIGHTY::getSafeCorridor(vec_Vecf<3> &global_path, const state &A)
 {
 
   // Timer for computing the safe corridor
@@ -229,11 +229,14 @@ bool MIGHTY::getSafeCorridor(const vec_Vecf<3> &global_path, const state &A)
   if (par_.debug_verbose)
     std::cout << "Convex decomposition" << std::endl;
 
-  // Check if the convex decomposition failed
-  if (!dgp_manager_.cvxEllipsoidDecomp(A, global_path, safe_corridor_polytopes_whole_, poly_out_whole_, false))
+  // Find global path with safe sub goal
+  findSafeSubGoal(global_path);
+
+  // Get safe corridor polytopes
+  bool use_safe_corridor = true;
+  if (!dgp_manager_.cvxEllipsoidDecomp(A, global_path, safe_corridor_polytopes_safe_, poly_out_safe_, use_safe_corridor))
   {
     std::cout << bold << red << "Convex decomposition failed" << reset << std::endl;
-    poly_out_whole_.clear();
     poly_out_safe_.clear();
     return false;
   }
@@ -242,6 +245,81 @@ bool MIGHTY::getSafeCorridor(const vec_Vecf<3> &global_path, const state &A)
   cvx_decomp_time_ = cvx_decomp_timer.getElapsedMicros() / 1000.0;
 
   return true;
+}
+
+// ----------------------------------------------------------------------------
+
+void MIGHTY::findSafeSubGoal(vec_Vecf<3> &global_path)
+{
+
+  // Keep the original global path
+  vec_Vecf<3> original_global_path = global_path;
+
+  // Reset goal path
+  global_path.clear();
+
+  // Initialize it with the start point
+  global_path.push_back(original_global_path[0]);
+
+  // Kd-tree search parameters
+  int n = 1;  // find one neighbour
+  std::vector<int> pointIdxNKNSearch(n);
+  std::vector<float> pointNKNSquaredDistance(n);
+
+  // sample parameters (TODO: make these parameters configurable)
+  double sample_dist = 0.1; // [m] distance between two samples along the trajectory
+
+  // flag for finding unknown space
+  bool found_unk = false;
+
+  // mutex lock
+  std::lock_guard<std::mutex> lk(mtx_kdtree_unk_);
+
+  // loop through the global path and check if the points are in unknown space
+  for (int i = 0; i < original_global_path.size() - 1; i++)
+  {
+    // Set the current and next global path point
+    Eigen::Vector3d current_gp = original_global_path[i];
+    Eigen::Vector3d next_gp = original_global_path[i + 1];
+
+    // Compute the direction and distance between the two points
+    Eigen::Vector3d dir = next_gp - current_gp;
+    double dist = dir.norm();
+    dir.normalize();
+
+    // Sample points along the line segment
+    int num_samples = static_cast<int>(dist / sample_dist);
+    for (int j = 0; j <= num_samples; j++)
+    {
+      Eigen::Vector3d sample_point = current_gp + dir * sample_dist * j;;
+      pcl::PointXYZ searchPoint(sample_point(0), sample_point(1), sample_point(2));
+
+      // Nearest neighbor search
+      if (kdtree_unk_.nearestKSearch(searchPoint, n, pointIdxNKNSearch, pointNKNSquaredDistance) > 0)
+      {
+        if (sqrt(pointNKNSquaredDistance[0]) < par_.drone_radius)
+        {
+          // Found a point in unknown space
+          found_unk = true;
+
+          // Add the point to the safe sub goal path
+          if (j != 0) // avoid adding the same point twice
+            global_path.push_back(sample_point);
+        }
+      }
+
+      if (found_unk)
+        break;
+    }
+
+    if (found_unk)
+      break;
+
+    // add the next global path point to the safe sub goal path
+    global_path.push_back(next_gp);
+    
+  }
+
 }
 
 // ----------------------------------------------------------------------------
@@ -717,7 +795,7 @@ bool MIGHTY::generateLocalTrajectory(const state &local_A, double A_time,
   // Prepare the solver for replanning
   whole_traj_solver_ptr_->setX0(local_A);                               // Initial condition
   whole_traj_solver_ptr_->setXf(local_E);                               // Final condition
-  whole_traj_solver_ptr_->setPolytopes(safe_corridor_polytopes_whole_); // Safe corridor polytopes
+  whole_traj_solver_ptr_->setPolytopes(safe_corridor_polytopes_safe_); // Safe corridor polytopes
   whole_traj_solver_ptr_->setT0(A_time);                                // Initial time
 
   if (par_.debug_verbose)

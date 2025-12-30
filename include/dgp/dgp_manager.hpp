@@ -53,7 +53,7 @@ public:
     bool solveDGP(const Vec3f &start_sent, const Vec3f &start_vel, const Vec3f &goal_sent, double &final_g, double weight, double current_time, vec_Vecf<3> &path);
     bool checkIfPathInFree(const vec_Vecf<3> &path, vec_Vecf<3> &free_path);
     void getComputationTime(double &global_planning_time, double &dgp_static_jps_time, double &dgp_check_path_time, double &dgp_dynamic_astar_time, double &dgp_recover_path_time);
-    bool cvxEllipsoidDecomp(const state &A, const vec_Vecf<3> &path, std::vector<LinearConstraint3D> &l_constraints, vec_E<Polyhedron<3>> &poly_out, bool use_for_safe_path = false);
+    bool cvxEllipsoidDecomp(const state &A, vec_Vecf<3> &path, std::vector<LinearConstraint3D> &l_constraints, vec_E<Polyhedron<3>> &poly_out, bool use_for_safe_path = false);
     bool checkIfPointFree(const Vec3f &point) const;
     void updateReadMapUtil();
     void pushPathIntoFreeSpace(const vec_Vecf<3> &path, vec_Vecf<3> &free_path);

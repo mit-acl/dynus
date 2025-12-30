@@ -192,17 +192,17 @@ Visualization Manager:
                 Value: /NX01/original_dgp_path_marker
               Value: false
             - Class: rviz_default_plugins/MarkerArray
-              Enabled: true
+              Enabled: false
               Name: NX01 DGP path
               Namespaces:
-                "": true
+                {}
               Topic:
                 Depth: 5
                 Durability Policy: Volatile
                 History Policy: Keep Last
                 Reliability Policy: Reliable
                 Value: /NX01/dgp_path_marker
-              Value: true
+              Value: false
             - Class: rviz_default_plugins/MarkerArray
               Enabled: false
               Name: NX01 DGP Free Path
@@ -230,7 +230,7 @@ Visualization Manager:
             - Alpha: 0.20000000298023224
               BoundColor: 255; 154; 140
               Class: decomp_rviz_plugins/PolyhedronArray
-              Enabled: true
+              Enabled: false
               MeshColor: 255; 154; 140
               Name: NX01 Poly for Whole Traj
               Scale: 0.009999999776482582
@@ -241,13 +241,13 @@ Visualization Manager:
                 History Policy: Keep Last
                 Reliability Policy: Reliable
                 Value: /NX01/poly_whole
-              Value: true
+              Value: false
               VsColor: 237; 51; 59
               VsScale: 1
             - Alpha: 0.20000000298023224
               BoundColor: 0; 255; 0
               Class: decomp_rviz_plugins/PolyhedronArray
-              Enabled: false
+              Enabled: true
               MeshColor: 143; 240; 164
               Name: NX01 Poly for Safe Trajs
               Scale: 0.009999999776482582
@@ -258,7 +258,7 @@ Visualization Manager:
                 History Policy: Keep Last
                 Reliability Policy: Reliable
                 Value: /NX01/poly_safe
-              Value: false
+              Value: true
               VsColor: 0; 255; 0
               VsScale: 1
             - Class: rviz_default_plugins/MarkerArray
@@ -6871,25 +6871,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 46.968536376953125
+      Distance: 52.46245574951172
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 12.936952590942383
-        Y: 0.8377546072006226
-        Z: 1.0155372619628906
+        X: 20.736703872680664
+        Y: 2.1289849281311035
+        Z: 1.3022079467773438
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.4947963953018188
+      Pitch: 1.519796371459961
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz_default_plugins)
-      Yaw: 3.139786720275879
+      Yaw: 4.704805374145508
     Saved: ~
 Window Geometry:
   Displays:

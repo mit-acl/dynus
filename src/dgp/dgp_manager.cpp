@@ -327,7 +327,7 @@ void DGPManager::insertVecOccupiedToVecUnknownOccupied()
     mtx_vec_uo_.unlock();
 }
 
-bool DGPManager::cvxEllipsoidDecomp(const state &A, const vec_Vecf<3> &path,
+bool DGPManager::cvxEllipsoidDecomp(const state &A, vec_Vecf<3> &path,
                                     std::vector<LinearConstraint3D> &l_constraints,
                                     vec_E<Polyhedron<3>> &poly_out,
                                     bool use_for_safe_path)

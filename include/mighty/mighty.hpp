@@ -81,7 +81,8 @@ public:
   bool findAandAtime(state &A, double &A_time, double current_time, double last_replaning_computation_time);
   bool checkIfPointOccupied(const Vec3f &point);
   bool checkIfPointFree(const Vec3f &point);
-  bool getSafeCorridor(const vec_Vecf<3> &global_path, const state &A);
+  bool getSafeCorridor(vec_Vecf<3> &global_path, const state &A);
+  void findSafeSubGoal(vec_Vecf<3> &global_path);
   std::tuple<bool, bool> replan(double last_replaning_computation_time, double current_time);
   void startAdaptKValue();
   void getGterm(state &G_term);
@@ -136,7 +137,7 @@ private:
   // Parameters
   parameters par_;                                                       // Parameters of the planner
   DGPManager dgp_manager_;                                               // DGP Manager
-  std::vector<LinearConstraint3D> safe_corridor_polytopes_whole_;        // Polytope (Linear) constraints for whole trajectory
+  std::vector<LinearConstraint3D> safe_corridor_polytopes_safe_;        // Polytope (Linear) constraints for whole trajectory
   std::shared_ptr<SolverGurobi> whole_traj_solver_ptr_;            // L-BFGS solver pointer for the whole trajectory
   std::vector<std::shared_ptr<dynTraj>> trajs_;                          // Dynamic trajectory
   Eigen::Vector3d v_max_3d_;                                             // Maximum velocity
