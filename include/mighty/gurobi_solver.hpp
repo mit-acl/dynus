@@ -53,9 +53,8 @@ public:
     void setXf(const state &data);
     void setDirf(double yawf);
     void initializeGoalSetpoints();
-    bool generateNewTrajectory(bool &gurobi_error_detected, const vec_Vecf<3> &global_path, double &gurobi_computation_time);
+    bool generateNewTrajectory(bool &gurobi_error_detected, double &gurobi_computation_time, double factor);
     bool callOptimizer();
-    void getInitialDT();
     void stopExecution();
     void resetToNominalState();
 
@@ -66,11 +65,10 @@ public:
     void findDT(double factor);
     double getInitialDt();
     void fillGoalSetPoints();
-    void setObjective(const vec_Vecf<3> &global_path);
+    void setObjective();
     void setConstraintsXf();
     void setConstraintsX0();
     void setContinuityConstraints();
-    void setInitialGuess(vec_Vecf<3> global_path, std::vector<double> travel_times);
     void findInitialGuessABCDFromRefPoints(double &a, double &b, double &c, double &d, double q0, double q1, double q2, double q3, double dt);
     void checkDynamicViolation(bool &is_dyn_constraints_satisfied);
     void checkCollisionViolation(bool &is_collision_free_corridor_satisfied);
@@ -107,6 +105,9 @@ public:
 
     void findClosestIndexFromTime(const double t, int &index, const std::vector<double> &time);
     dynTraj adjustTrajTime(const dynTraj &traj);
+
+    void setSubGoal(const std::vector<double> &sub_goal);
+    void setGoalPullTime(double goal_pull_time);
 
     inline GRBLinExpr getPos(int t, double tau, int ii) const;
     inline GRBLinExpr getVel(int t, double tau, int ii) const;
@@ -266,6 +267,16 @@ protected:
 
     std::vector<double> dist_near_obs_;
     std::vector<LinearConstraint3D> polytopes_;
+
+    // Optimization weights
+    double jerk_smooth_weight_ = 10.0;
+    double goal_pull_weight_ = 10.0;
+
+    // goal pull time
+    double goal_pull_time_ = -1.0;
+
+    // sub goal (goal for global plan) for goal pulling
+    std::vector<double> sub_goal_{0.0, 0.0, 0.0};
 
     double factor_initial_ = 0.6;
     double factor_final_ = 2.0;

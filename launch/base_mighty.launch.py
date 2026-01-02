@@ -101,7 +101,8 @@ def generate_launch_description():
         )
 
         # Number of dynamic obstacles
-        num_dyn_obstacles = 100 if env_value in ["empty_wo_ground"] else 50
+        # num_dyn_obstacles = 100 if env_value in ["empty_wo_ground"] else 50
+        num_dyn_obstacles = 10
 
         # Dynamic obstacles
         dynamic_obstacles_launch = IncludeLaunchDescription(

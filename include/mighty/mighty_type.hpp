@@ -112,11 +112,6 @@ struct parameters
   double decay_len_cells;   // e-folding distance from the start (cells)
   double w_side;            // side (handedness) tie-break strength (cells)
 
-  // Initial guess parameters
-  bool use_multiple_initial_guesses; // [-] Use multiple initial guesses
-  int num_perturbation_for_ig = 8;   // [-] Number of perturbations for the initial guess
-  double r_max_for_ig = 1.0;         // [m] radius for the initial guess perturbation
-
   // Optimiztion parameters
   double horizon;
   double dc;
@@ -128,11 +123,17 @@ struct parameters
   double goal_seen_radius;
 
   // DYNUS specific parameters
+  int num_P;                        // number of polytopes
   int num_N;                        // number of trajectory pieces
   double factor_initial;            // initial factor for the trajectory time allocation
   double factor_final;              // final factor for the trajectory time allocation
   double factor_constant_step_size; // step size for the constant factor increase
-
+  double obst_max_vel;        // maximum velocity of dynamic obstacles
+  double max_gurobi_comp_time_sec; // maximum Gurobi computation time per replanning
+  double jerk_smooth_weight; // weight for the jerk smoothness
+  double goal_pull_weight;   // weight for pulling the trajectory to the goal
+  double goal_pull_time_buffer; // goal_pull_time = goal_pull_time_buffer * previous_replanning_time
+  
   // L-BFGS parameters
   double f_dec_coeff;     // allow larger Armijo steps
   double cautious_factor; // always accept BFGS update
@@ -559,6 +560,11 @@ struct PieceWisePol
   std::vector<Eigen::Matrix<double, 4, 1>> coeff_y; // [a b c d]' of Int0 , [a b c d]' of Int1,...
   std::vector<Eigen::Matrix<double, 4, 1>> coeff_z; // [a b c d]' of Int0 , [a b c d]' of Int1,...
 
+  double getDuration() const
+  {
+    return times.back() - times.front();
+  }
+
   void clear()
   {
     times.clear();
@@ -725,9 +731,54 @@ struct PieceWisePol
   }
 };
 
+// struct dynTraj
+// {
+//   PieceWisePol pwp;
+//   Eigen::Vector3d ekf_cov_p;
+//   Eigen::Vector3d ekf_cov_q;
+//   Eigen::Vector3d poly_cov;
+//   std::vector<Eigen::Matrix<double, 3, 4>> control_points;
+//   Eigen::Vector3d bbox;
+//   Eigen::Vector3d goal;
+//   bool is_agent = false;
+//   int id;
+//   double time_received = 0.0;
+//   double tracking_utility = 0.0;
+//   double communication_delay = 0.0;
+
+//   // Define print method
+//   void print()
+//   {
+//     std::cout << "id= " << id << std::endl;
+//     std::cout << "bbox= " << bbox.transpose() << std::endl;
+//     std::cout << "control_points.size()= " << control_points.size() << std::endl;
+//     pwp.print();
+//   }
+// };
+
 struct dynTraj
 {
+
+  /// Which representation to use
+  enum class Mode
+  {
+    Piecewise,
+    Analytic
+  } mode{Mode::Analytic};
+
+  // --- piecewise cubic branch ---
   PieceWisePol pwp;
+
+  // --- analytic expression branch ---
+  std::string traj_x, traj_y, traj_z;
+  std::string traj_vx, traj_vy, traj_vz; // optional (velocity expressions)
+  double t_var{0.0};
+  exprtk::symbol_table<double> symbol_table;
+  exprtk::expression<double> expr_x, expr_y, expr_z;
+  exprtk::expression<double> expr_vx, expr_vy, expr_vz;
+  bool analytic_compiled{false};
+
+  // shared metadata
   Eigen::Vector3d ekf_cov_p;
   Eigen::Vector3d ekf_cov_q;
   Eigen::Vector3d poly_cov;
@@ -735,19 +786,228 @@ struct dynTraj
   Eigen::Vector3d bbox;
   Eigen::Vector3d goal;
   bool is_agent = false;
-  int id;
+  int id = -1;
   double time_received = 0.0;
   double tracking_utility = 0.0;
   double communication_delay = 0.0;
 
-  // Define print method
-  void print()
+  dynTraj() = default;
+
+  /// Switch to a piecewise cubic representation
+  inline void setPiecewise(const PieceWisePol &poly)
   {
-    std::cout << "id= " << id << std::endl;
-    std::cout << "bbox= " << bbox.transpose() << std::endl;
-    std::cout << "control_points.size()= " << control_points.size() << std::endl;
-    pwp.print();
+    mode = Mode::Piecewise;
+    pwp = poly;
   }
+
+  bool compileAnalytic()
+  {
+    symbol_table.clear();
+    symbol_table.add_variable("t", t_var);
+    symbol_table.add_constants();
+
+    auto reg = [&](exprtk::expression<double> &e)
+    { e.register_symbol_table(symbol_table); };
+    reg(expr_x);
+    reg(expr_y);
+    reg(expr_z);
+    reg(expr_vx);
+    reg(expr_vy);
+    reg(expr_vz);
+
+    exprtk::parser<double> parser;
+
+    auto compile_one = [&](const std::string &label,
+                           const std::string &src,
+                           exprtk::expression<double> &expr) -> bool
+    {
+      if (src.empty())
+      {
+        if (label == "traj_x" || label == "traj_y" || label == "traj_z")
+        {
+          std::cerr << "Missing required analytic expression " << label << "\n";
+          return false;
+        }
+        // otherwise it was a velocity string → OK to skip
+        return true;
+      }
+
+      if (!parser.compile(src, expr))
+      {
+        std::ostringstream oss;
+        oss << "ExprTk compile failure (" << label << "): '" << src << "' errors:";
+        for (std::size_t i = 0; i < parser.error_count(); ++i)
+        {
+          auto e = parser.get_error(i);
+          oss << " [pos " << e.token.position
+              << " type " << exprtk::parser_error::to_str(e.mode)
+              << " msg '" << e.diagnostic << "']";
+        }
+        std::cerr << oss.str() << std::endl;
+        return false;
+      }
+      return true;
+    };
+
+    bool ok = true;
+    ok &= compile_one("traj_x", traj_x, expr_x);
+    ok &= compile_one("traj_y", traj_y, expr_y);
+    ok &= compile_one("traj_z", traj_z, expr_z);
+    ok &= compile_one("traj_vx", traj_vx, expr_vx);
+    ok &= compile_one("traj_vy", traj_vy, expr_vy);
+    ok &= compile_one("traj_vz", traj_vz, expr_vz);
+
+    analytic_compiled = ok;
+    return ok;
+  }
+
+  /// Evaluate position at time t
+  inline Eigen::Vector3d eval(double t) const
+  {
+    switch (mode)
+    {
+    case Mode::Piecewise:
+      return pwp.eval(t);
+    case Mode::Analytic:
+      return evalAnalyticPos(t);
+    }
+    return Eigen::Vector3d::Zero();
+  }
+
+  static inline double poly5_abs(const Eigen::Matrix<double,6,1>& c, double tau) {
+    double v = c(5);
+    v = v * tau + c(4);
+    v = v * tau + c(3);
+    v = v * tau + c(2);
+    v = v * tau + c(1);
+    v = v * tau + c(0);
+    return v;
+  }
+  
+  // p'(τ) = c1 + 2 c2 τ + 3 c3 τ^2 + 4 c4 τ^3 + 5 c5 τ^4
+  static inline double dpoly5_abs(const Eigen::Matrix<double,6,1>& c, double tau) {
+    double v = 5 * c(5);
+    v = v * tau + 4 * c(4);
+    v = v * tau + 3 * c(3);
+    v = v * tau + 2 * c(2);
+    v = v * tau + c(1);
+    return v;
+  }
+  
+  // p''(τ) = 2 c2 + 6 c3 τ + 12 c4 τ^2 + 20 c5 τ^3
+  static inline double ddpoly5_abs(const Eigen::Matrix<double,6,1>& c, double tau) {
+    double v = 20 * c(5);
+    v = v * tau + 12 * c(4);
+    v = v * tau + 6 * c(3);
+    v = v * tau + 2 * c(2);
+    return v;
+  }
+
+  // --- normalized-time evaluation: u = (t - t0) / (tf - t0) clamped to [0,1] ---
+
+  inline Eigen::Vector3d evalAnalyticPos(double t) const
+  {
+    if (!analytic_compiled)
+    {
+      // this should never happen if steps 1+2 are correct
+      std::cerr << "[dynTraj] evalAnalyticPos called but analytic_compiled==false\n";
+      return Eigen::Vector3d::Zero();
+    }
+
+    const_cast<dynTraj *>(this)->t_var = t;
+    return {expr_x.value(),
+            expr_y.value(),
+            expr_z.value()};
+  }
+
+  /// Evaluate velocity at time t
+  inline Eigen::Vector3d velocity(double t) const
+  {
+    switch (mode)
+    {
+    case Mode::Piecewise:
+      return pwp.velocity(t);
+    case Mode::Analytic:
+      return velocityAnalytic(t);
+    }
+    return Eigen::Vector3d::Zero();
+  }
+
+  inline Eigen::Vector3d velocityAnalytic(double t) const
+  {
+    if (!analytic_compiled)
+      return Eigen::Vector3d::Zero();
+    const_cast<dynTraj *>(this)->t_var = t;
+    // If velocity expressions provided
+    if (!traj_vx.empty() && !traj_vy.empty() && !traj_vz.empty())
+      return {expr_vx.value(), expr_vy.value(), expr_vz.value()};
+
+    // Fallback numerical diff (dt small):
+    double dt = 1e-3;
+    const_cast<dynTraj *>(this)->t_var = t;
+    double x0 = expr_x.value(), y0 = expr_y.value(), z0 = expr_z.value();
+    const_cast<dynTraj *>(this)->t_var = t + dt;
+    double x1 = expr_x.value(), y1 = expr_y.value(), z1 = expr_z.value();
+    return {(x1 - x0) / dt, (y1 - y0) / dt, (z1 - z0) / dt};
+  }
+
+  /// Evaluate acceleration at time t
+  inline Eigen::Vector3d accel(double t) const
+  {
+    switch (mode)
+    {
+    case Mode::Piecewise:
+      return pwp.acceleration(t);
+    case Mode::Analytic:
+      return accelAnalytic(t);
+    }
+    return Eigen::Vector3d::Zero();
+  }
+
+  inline Eigen::Vector3d accelAnalytic(double t) const
+  {
+    // If you add analytic second derivatives later, evaluate them here.
+    // For now numeric second derivative:
+    if (!analytic_compiled)
+      return Eigen::Vector3d::Zero();
+    double dt = 1e-3;
+    Eigen::Vector3d v1 = velocity(t - dt);
+    Eigen::Vector3d v2 = velocity(t + dt);
+    return (v2 - v1) / (2 * dt);
+  }
+
+  static const char* modeName(dynTraj::Mode m) {
+    switch (m) {
+      case dynTraj::Mode::Piecewise: return "Piecewise";
+      case dynTraj::Mode::Analytic:  return "Analytic";
+      default: return "Unknown";
+    }
+  }
+
+  /// Print debug info
+  inline void print() const
+  {
+    std::cout << "dynTraj id=" << id << " mode=" << modeName(mode) << "\n";
+
+    if (mode == Mode::Piecewise)
+    {
+      pwp.print();
+    }
+    else if (mode == Mode::Analytic)
+    {
+      std::cout << "  traj_x='" << traj_x << "'\n";
+      std::cout << "  traj_y='" << traj_y << "'\n";
+      std::cout << "  traj_z='" << traj_z << "'\n";
+      if (!traj_vx.empty() || !traj_vy.empty() || !traj_vz.empty())
+      {
+        std::cout << "  traj_vx='" << traj_vx << "'\n";
+        std::cout << "  traj_vy='" << traj_vy << "'\n";
+        std::cout << "  traj_vz='" << traj_vz << "'\n";
+      }
+      std::cout << "  analytic_compiled=" << analytic_compiled << "\n";
+    }
+  }
+
 };
 
 struct state

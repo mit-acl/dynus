@@ -5,9 +5,11 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Common1/TF1/Frames1
+        - /NX011
         - /NX011/Planning1/NX01 DGP Free Path1/Topic1
         - /NX011/Planning1/NX01 Traj1/Topic1
         - /NX011/Planning1/NX01 Subopt Trajs1/Topic1
+        - /NX011/Mapping1
         - /NX011/Mapping1/NX01 D435 PointCloud1/Topic1
         - /NX011/Mapping1/NX01 Lidar PointCloud1/Topic1
         - /NX031/Mapping1/NX03 Sensor PCL1
@@ -87,7 +89,27 @@ Visualization Manager:
             NX01/base_link:
               Value: true
             map:
-              Value: false
+              Value: true
+            obstacle_0:
+              Value: true
+            obstacle_1:
+              Value: true
+            obstacle_2:
+              Value: true
+            obstacle_3:
+              Value: true
+            obstacle_4:
+              Value: true
+            obstacle_5:
+              Value: true
+            obstacle_6:
+              Value: true
+            obstacle_7:
+              Value: true
+            obstacle_8:
+              Value: true
+            obstacle_9:
+              Value: true
           Marker Scale: 5
           Name: TF
           Show Arrows: false
@@ -112,6 +134,26 @@ Visualization Manager:
                           {}
                 NX01/NX01_livox:
                   {}
+              obstacle_0:
+                {}
+              obstacle_1:
+                {}
+              obstacle_2:
+                {}
+              obstacle_3:
+                {}
+              obstacle_4:
+                {}
+              obstacle_5:
+                {}
+              obstacle_6:
+                {}
+              obstacle_7:
+                {}
+              obstacle_8:
+                {}
+              obstacle_9:
+                {}
           Update Interval: 0
           Value: true
         - Class: rviz_default_plugins/Marker
@@ -192,17 +234,17 @@ Visualization Manager:
                 Value: /NX01/original_dgp_path_marker
               Value: false
             - Class: rviz_default_plugins/MarkerArray
-              Enabled: false
+              Enabled: true
               Name: NX01 DGP path
               Namespaces:
-                {}
+                "": true
               Topic:
                 Depth: 5
                 Durability Policy: Volatile
                 History Policy: Keep Last
                 Reliability Policy: Reliable
                 Value: /NX01/dgp_path_marker
-              Value: false
+              Value: true
             - Class: rviz_default_plugins/MarkerArray
               Enabled: false
               Name: NX01 DGP Free Path
@@ -274,17 +316,17 @@ Visualization Manager:
                 Value: /NX01/traj_committed_colored
               Value: true
             - Class: rviz_default_plugins/MarkerArray
-              Enabled: false
+              Enabled: true
               Name: NX01 Subopt Trajs
               Namespaces:
-                {}
+                state_vec: true
               Topic:
                 Depth: 5
                 Durability Policy: Volatile
                 History Policy: Keep Last
                 Reliability Policy: Reliable
                 Value: /NX01/traj_subopt_colored
-              Value: false
+              Value: true
             - Class: rviz_default_plugins/Marker
               Enabled: false
               Name: NX01 Actual Traj
@@ -6871,25 +6913,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 52.46245574951172
+      Distance: 35.185302734375
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 20.736703872680664
-        Y: 2.1289849281311035
-        Z: 1.3022079467773438
+        X: 11.368721961975098
+        Y: -1.1569626331329346
+        Z: 3.7478954792022705
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.519796371459961
+      Pitch: 1.5597963333129883
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz_default_plugins)
-      Yaw: 4.704805374145508
+      Yaw: 4.714801788330078
     Saved: ~
 Window Geometry:
   Displays:

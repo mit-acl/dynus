@@ -128,15 +128,9 @@ MIGHTY has been tested on both Docker and native installations on Ubuntu 22.04 w
 
 <details>
   <summary><b>MIGHTY with Gazebo (and hence ACL mapper) </b></summary>
-  Make sure `sim_env` parameter in mighty.yaml is set to `gazebo` and run the following three commands:
+  Make sure `sim_env` parameter in mighty.yaml is set to `gazebo` and run the following commands:
   - ```bash
-   colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release && . install/setup.bash && ros2 launch mighty base_mighty.launch.py use_dyn_obs:=false use_gazebo_gui:=false use_rviz:=true env:=hard_forest
-    ```
-  - ```bash
-   . install/setup.bash && ros2 launch global_mapper_ros global_mapper_node.launch.py quad:=NX01 depth_pointcloud_topic:=mid360_PointCloud2
-    ```
-  - ```bash
-   . install/setup.bash && ros2 launch mighty onboard_mighty.launch.py namespace:=NX01 x:=0.0 y:=0.0 z:=1.0 yaw:=0.0
+   colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select mighty global_mapper global_mapper_ros ros2_livox_simulation && . install/setup.bash && ./src/dynus/launch/run_mighty_sim.sh /home/kkondo/code/dynus_ws/install/setup.bash
     ```
 </details>
 

@@ -33,7 +33,7 @@ void DGPManager::setParameters(const parameters &par)
     local_box_size_ = {static_cast<float>(par.local_box_size[0]), static_cast<float>(par.local_box_size[1]), static_cast<float>(par.local_box_size[2])};
 
     // shared pointer to the map util for actual planning
-    map_util_ = std::make_shared<mighty::VoxelMapUtil>(par.factor_dgp * par.res, par.x_min, par.x_max, par.y_min, par.y_max, par.z_min, par.z_max, par.inflation_dgp);
+    map_util_ = std::make_shared<mighty::VoxelMapUtil>(par.factor_dgp * par.res, par.x_min, par.x_max, par.y_min, par.y_max, par.z_min, par.z_max, par.inflation_dgp, par.obst_max_vel);
 }
 
 void DGPManager::cleanUpPath(vec_Vecf<3> &path)
@@ -327,100 +327,170 @@ void DGPManager::insertVecOccupiedToVecUnknownOccupied()
     mtx_vec_uo_.unlock();
 }
 
-bool DGPManager::cvxEllipsoidDecomp(const state &A, vec_Vecf<3> &path,
-                                    std::vector<LinearConstraint3D> &l_constraints,
-                                    vec_E<Polyhedron<3>> &poly_out,
-                                    bool use_for_safe_path)
+bool DGPManager::cvxEllipsoidDecomp(
+    EllipsoidDecomp3D &ellip,
+    const vec_Vecf<3> &path,
+    const vec_Vec3f &base_uo,
+    const vec_Vecf<3> &obst_pos,
+    const std::vector<double> &seg_end_times,
+    std::vector<LinearConstraint3D> &l_constraints,
+    vec_E<Polyhedron<3>> &poly_out)
 {
-
-    // Initialize result.
-    bool result = true;
-
-    // Get unknown occupied cells.
-    if (use_for_safe_path)
-    {
-        // If we are using the convex decomposition for safe paths, we include both unknown and occupied cells.
-        vec_Vecf<3> vec_uo;
-        getVecUnknownOccupied(vec_uo);
-        ellip_decomp_util_.set_obs(vec_uo);
-    }
-    else
-    {
-        // Otherwise, we only include occupied cells.
-        vec_Vecf<3> vec_o;
-        getVecOccupied(vec_o);
-        ellip_decomp_util_.set_obs(vec_o);
-    }
-
-    // Set the local bounding box and z constraints.
-    ellip_decomp_util_.set_local_bbox(Vec3f(local_box_size_[0], local_box_size_[1], local_box_size_[2]));
-    ellip_decomp_util_.set_z_min_and_max(par_.z_min, par_.z_max); // buffer for the drone size
-
-    // Set the inflate distance.
-    ellip_decomp_util_.set_inflate_distance(drone_radius_);
-
-    // Find convex polyhedra.
-    ellip_decomp_util_.dilate(path, result);
-
-    if (!result)
+    if (path.size() < 2)
         return false;
-    // Optionally shrink polyhedra.
-    if (use_shrinked_box_)
-        ellip_decomp_util_.shrink_polyhedrons(shrinked_box_size_);
 
-    // Get the polyhedra.
-    auto polys = ellip_decomp_util_.get_polyhedrons();
+    const size_t num_seg = path.size() - 1;
 
-    // Preallocate the constraints vector.
-    size_t numConstraints = (path.size() > 0) ? (path.size() - 1) : 0;
-    l_constraints.clear();
-    l_constraints.resize(numConstraints);
-
-    // Flag to record if any thread finds an error.
-    bool errorFound = false;
-
-// Parallelize the constraint computation loop.
-#pragma omp parallel for schedule(static)
-    for (int i = 0; i < static_cast<int>(numConstraints); i++)
+    if (seg_end_times.size() != num_seg)
     {
+        std::cout << "cvxEllipsoidDecomp: seg_end_times size mismatch. Expected "
+                  << num_seg << ", got " << seg_end_times.size() << std::endl;
+        return false;
+    }
 
-        // Compute the midpoint between consecutive path points.
-        auto pt_inside = (path[i] + path[i + 1]) / 2.0;
-        LinearConstraint3D cs(pt_inside, polys[i].hyperplanes(), polys[i]);
+    // Configure ellipsoid-decomp settings on the per-worker instance
+    ellip.set_local_bbox(Vec3f(local_box_size_[0], local_box_size_[1], local_box_size_[2]));
+    ellip.set_z_min_and_max(par_.z_min, par_.z_max);
+    ellip.set_inflate_distance(drone_radius_);
 
-        // If either matrix A_ or vector b_ contains NaN, mark an error.
+    // Outputs
+    l_constraints.clear();
+    l_constraints.resize(num_seg);
+
+    poly_out.clear();
+    poly_out.resize(num_seg);
+
+    vec_Vecf<3> seg_path;
+    seg_path.reserve(2);
+
+    for (size_t i = 0; i < num_seg; ++i)
+    {
+        const double traj_max_time = seg_end_times[i];
+        if (!(traj_max_time > 0.0))
+        {
+            std::cout << "cvxEllipsoidDecomp: non-positive seg_end_times[" << i
+                      << "]=" << traj_max_time << std::endl;
+            return false;
+        }
+
+        // Build per-segment obstacle set = base_uo + inflated dynamic obstacle points
+        vec_Vec3f vec_uo = base_uo; // copy snapshot
+        obstacle_to_vec(vec_uo, obst_pos, traj_max_time);
+
+        ellip.set_obs(vec_uo);
+
+        seg_path.clear();
+        seg_path.push_back(path[i]);
+        seg_path.push_back(path[i + 1]);
+
+        bool ok = true;
+        ellip.dilate(seg_path, ok);
+        if (!ok)
+        {
+            std::cout << "cvxEllipsoidDecomp: dilate failed at segment " << i << std::endl;
+            return false;
+        }
+
+        if (use_shrinked_box_)
+            ellip.shrink_polyhedrons(shrinked_box_size_);
+
+        auto polys = ellip.get_polyhedrons();
+        if (polys.size() != 1)
+        {
+            std::cout << "cvxEllipsoidDecomp: expected 1 polyhedron for segment " << i
+                      << ", got " << polys.size() << std::endl;
+            return false;
+        }
+
+        poly_out[i] = polys[0];
+
+        const auto pt_inside = (path[i] + path[i + 1]) / 2.0;
+        LinearConstraint3D cs(pt_inside, poly_out[i].hyperplanes(), poly_out[i]);
+
         if (cs.A_.hasNaN() || cs.b_.hasNaN())
         {
-#pragma omp atomic write
-            errorFound = true;
+            std::cout << "cvxEllipsoidDecomp: A_ or b_ has NaN at segment " << i << std::endl;
+            return false;
         }
-        else
-        {
-            l_constraints[i] = cs;
-        }
-    }
 
-    // If an error was detected, report and exit.
-    if (errorFound)
-    {
-        std::cout << "A_ or b_ has NaN" << std::endl;
-        return false;
+        l_constraints[i] = cs;
     }
-
-    // Return the computed polyhedra.
-    poly_out = std::move(polys);
 
     return true;
 }
 
-void DGPManager::updateMap(double wdx, double wdy, double wdz, const Vec3f &center_map, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr)
+// ----------------------------------------------------------------------------
+
+void DGPManager::obstacle_to_vec(
+    vec_Vec3f &pts,
+    const vec_Vecf<3> &obst_pos,
+    double traj_max_time)
+{
+    // Safety checks
+    if (obst_pos.empty())
+        return;
+
+    const double res = par_.factor_dgp * par_.res;
+    const double r = par_.obst_max_vel * traj_max_time; // [m]
+
+    if (!(r > 0.0) || !(res > 0.0))
+        return;
+
+    const double r2 = r * r;
+
+    // Grid half-width in cells for sampling inside the sphere
+    const int m = static_cast<int>(std::ceil(r / res));
+
+    // Reserve to reduce reallocations (rough upper bound per obstacle)
+    // Note: many points will be rejected by the sphere test, but reserve is still helpful.
+    const size_t per_obst_upper = static_cast<size_t>(2 * m + 1) *
+                                  static_cast<size_t>(2 * m + 1) *
+                                  static_cast<size_t>(2 * m + 1);
+    pts.reserve(pts.size() + per_obst_upper * obst_pos.size());
+
+    for (const auto &O : obst_pos)
+    {
+        const double ox = O.x();
+        const double oy = O.y();
+        const double oz = O.z();
+
+        for (int ix = -m; ix <= m; ++ix)
+        {
+            const double dx = ix * res;
+            const double x = ox + dx;
+
+            for (int iy = -m; iy <= m; ++iy)
+            {
+                const double dy = iy * res;
+                const double y = oy + dy;
+
+                for (int iz = -m; iz <= m; ++iz)
+                {
+                    const double dz = iz * res;
+                    if (dx * dx + dy * dy + dz * dz > r2)
+                        continue;
+
+                    const double z = oz + dz;
+
+                    Vec3f p;
+                    p << static_cast<float>(x),
+                        static_cast<float>(y),
+                        static_cast<float>(z);
+                    pts.emplace_back(p);
+                }
+            }
+        }
+    }
+}
+
+void DGPManager::updateMap(double wdx, double wdy, double wdz, const Vec3f &center_map, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr, const vec_Vecf<3> &obst_pos, double traj_max_time)
 {
 
     // Get the current time to see the computation time for readmap
     auto start_time = std::chrono::high_resolution_clock::now();
 
     mtx_map_util_.lock();
-    map_util_->readMap(pclptr, (int)wdx / res_, (int)wdy / res_, (int)wdz / res_, center_map, par_.z_min, par_.z_max, par_.inflation_dgp); // Map read
+    map_util_->readMap(pclptr, (int)wdx / res_, (int)wdy / res_, (int)wdz / res_, center_map, par_.z_min, par_.z_max, par_.inflation_dgp, obst_pos, traj_max_time);
     mtx_map_util_.unlock();
 
     // Get the elapsed time for reading the map

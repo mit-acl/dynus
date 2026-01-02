@@ -28,13 +28,14 @@ namespace mighty
   {
   public:
     // Constructor
-    MapUtil(float res, float x_min, float x_max, float y_min, float y_max, float z_min, float z_max, float inflation)
+    MapUtil(float res, float x_min, float x_max, float y_min, float y_max, float z_min, float z_max, float inflation, float obst_max_vel)
     {
 
       /* --------- Initialize parameters --------- */
-      setInflation(inflation);                                                                                                                               // Set inflation
-      setResolution(res);                                                                                                                                    // Set the resolution
-      setMapSize(x_min, x_max, y_min, y_max, z_min, z_max);                                                                                                  // Set the cells and z_boundaries
+      setInflation(inflation);                              // Set inflation
+      setResolution(res);                                   // Set the resolution
+      setMapSize(x_min, x_max, y_min, y_max, z_min, z_max); // Set the cells and z_boundaries
+      setObstMaxVelocity(obst_max_vel);                     // Set obstacle maximum velocity
     }
 
     // Destructor
@@ -46,12 +47,14 @@ namespace mighty
 
     // assume Vec3f is Eigen::Vector3f and Vec3i is Eigen::Vector3i
     void readMap(
-        const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& cloud,
+        const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &cloud,
         int cells_x, int cells_y, int cells_z,
         const Vec3f &center_map,
         double z_ground,
         double z_max,
-        double inflation)
+        double inflation,
+        const vec_Vecf<3> &obst_pos,
+        double traj_max_time)
     {
       // 1) Compute X/Y dims with inflation pad
       int pad = int(std::ceil(5.0 * inflation / res_));
@@ -125,13 +128,60 @@ namespace mighty
         }
       }
 
-      // 8) Update metadata
+      // 8) Mark dynamic-obstacle reachable sphere as occupied (with buffer)
+      const double obst_radius = (obst_max_vel_ * traj_max_time) + 0.8; // [m]
+
+      if (obst_radius > 0.0 && !obst_pos.empty())
+      {
+        const double r2 = obst_radius * obst_radius;
+
+        for (const auto &O : obst_pos)
+        {
+          // Bounding box of the sphere in index space (clamped)
+          int ix_min = int(std::floor((O.x() - obst_radius - origin.x()) / res_));
+          int ix_max = int(std::floor((O.x() + obst_radius - origin.x()) / res_));
+          int iy_min = int(std::floor((O.y() - obst_radius - origin.y()) / res_));
+          int iy_max = int(std::floor((O.y() + obst_radius - origin.y()) / res_));
+          int iz_min = int(std::floor((O.z() - obst_radius - origin.z()) / res_));
+          int iz_max = int(std::floor((O.z() + obst_radius - origin.z()) / res_));
+
+          ix_min = std::clamp(ix_min, 0, dimX - 1);
+          ix_max = std::clamp(ix_max, 0, dimX - 1);
+          iy_min = std::clamp(iy_min, 0, dimY - 1);
+          iy_max = std::clamp(iy_max, 0, dimY - 1);
+          iz_min = std::clamp(iz_min, 0, dimZ - 1);
+          iz_max = std::clamp(iz_max, 0, dimZ - 1);
+
+          // Iterate all voxels in the bounding box; keep those inside the sphere
+          for (int ix = ix_min; ix <= ix_max; ++ix)
+          {
+            const double xc = origin.x() + (ix + 0.5) * res_;
+            const double dx = xc - O.x();
+
+            for (int iy = iy_min; iy <= iy_max; ++iy)
+            {
+              const double yc = origin.y() + (iy + 0.5) * res_;
+              const double dy = yc - O.y();
+
+              for (int iz = iz_min; iz <= iz_max; ++iz)
+              {
+                const double zc = origin.z() + (iz + 0.5) * res_;
+                const double dz = zc - O.z();
+
+                if (dx * dx + dy * dy + dz * dz <= r2)
+                  map_[idx3(ix, iy, iz)] = val_occ_;
+              }
+            }
+          }
+        }
+      }
+
+      // 9) Update metadata
       dim_ = Veci<3>(dimX, dimY, dimZ);
       total_size_ = total;
       origin_d_ = origin;
       center_map_ = center_map;
     }
-
 
     // Pre-compute inflation
     // Precompute offsets for inflation
@@ -180,6 +230,12 @@ namespace mighty
       y_map_max_ = y_max;
       z_map_min_ = z_min;
       z_map_max_ = z_max;
+    }
+
+    void setObstMaxVelocity(float obst_max_vel)
+    {
+      // Set obstacle maximum velocity
+      obst_max_vel_ = obst_max_vel;
     }
 
     /**
@@ -833,6 +889,8 @@ namespace mighty
     // Map values
     float x_map_min_, x_map_max_, y_map_min_, y_map_max_, z_map_min_, z_map_max_;
     float x_min_, x_max_, y_min_, y_max_, z_min_, z_max_;
+    // Obstacle maximum velocity
+    float obst_max_vel_;
     // Cells size
     int cells_x_, cells_y_, cells_z_;
     // Assume occupied cell has value 100

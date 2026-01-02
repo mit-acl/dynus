@@ -258,11 +258,6 @@ void MIGHTY_NODE::declareParameters()
   this->declare_parameter("fov_visual_x_deg", 10.0);
   this->declare_parameter("fov_visual_y_deg", 10.0);
 
-  // Initial guess parameters
-  this->declare_parameter("use_multiple_initial_guesses", true);
-  this->declare_parameter("num_perturbation_for_ig", 8);
-  this->declare_parameter("r_max_for_ig", 1.0);
-
   // Optimization parameters
   this->declare_parameter("horizon", 20.0);
   this->declare_parameter("dc", 0.01);
@@ -289,10 +284,16 @@ void MIGHTY_NODE::declareParameters()
   this->declare_parameter("goal_seen_radius", 2.0);
 
   // DYNUS specific parameters
+  this->declare_parameter("num_P", 3);
   this->declare_parameter("num_N", 6);
   this->declare_parameter("factor_initial", 1.0);
   this->declare_parameter("factor_final", 5.0);
   this->declare_parameter("factor_constant_step_size", 0.1);
+  this->declare_parameter("obst_max_vel", 0.5);
+  this->declare_parameter("max_gurobi_comp_time_sec", 0.5);
+  this->declare_parameter("jerk_smooth_weight", 1.0e+1);
+  this->declare_parameter("goal_pull_weight", 1.0e+2);
+  this->declare_parameter("goal_pull_time_buffer", 1.5);
 
   // L-BFGS parameters
   this->declare_parameter("f_dec_coeff", 1e-2);
@@ -415,11 +416,6 @@ void MIGHTY_NODE::setParameters()
   par_.fov_visual_x_deg = this->get_parameter("fov_visual_x_deg").as_double();
   par_.fov_visual_y_deg = this->get_parameter("fov_visual_y_deg").as_double();
 
-  // Initial guess parameters
-  par_.use_multiple_initial_guesses = this->get_parameter("use_multiple_initial_guesses").as_bool();
-  par_.num_perturbation_for_ig = this->get_parameter("num_perturbation_for_ig").as_int();
-  par_.r_max_for_ig = this->get_parameter("r_max_for_ig").as_double();
-
   // Optimization parameters
   par_.horizon = this->get_parameter("horizon").as_double();
   par_.dc = this->get_parameter("dc").as_double();
@@ -433,10 +429,16 @@ void MIGHTY_NODE::setParameters()
   par_.goal_seen_radius = this->get_parameter("goal_seen_radius").as_double();
 
   // DYNUS specific parameters
+  par_.num_P = this->get_parameter("num_P").as_int();
   par_.num_N = this->get_parameter("num_N").as_int();
   par_.factor_initial = this->get_parameter("factor_initial").as_double();
   par_.factor_final = this->get_parameter("factor_final").as_double();
   par_.factor_constant_step_size = this->get_parameter("factor_constant_step_size").as_double();
+  par_.obst_max_vel = this->get_parameter("obst_max_vel").as_double();
+  par_.max_gurobi_comp_time_sec = this->get_parameter("max_gurobi_comp_time_sec").as_double();
+  par_.jerk_smooth_weight = this->get_parameter("jerk_smooth_weight").as_double();
+  par_.goal_pull_weight = this->get_parameter("goal_pull_weight").as_double();
+  par_.goal_pull_time_buffer = this->get_parameter("goal_pull_time_buffer").as_double();
 
   // L-BFGS parameters
   par_.f_dec_coeff = this->get_parameter("f_dec_coeff").as_double();
@@ -568,11 +570,6 @@ void MIGHTY_NODE::printParameters()
   RCLCPP_INFO(this->get_logger(), "FOV Visual X Deg: %f", par_.fov_visual_x_deg);
   RCLCPP_INFO(this->get_logger(), "FOV Visual Y Deg: %f", par_.fov_visual_y_deg);
 
-  // Initial guess parameters
-  RCLCPP_INFO(this->get_logger(), "Use Multiple Initial Guesses: %d", par_.use_multiple_initial_guesses);
-  RCLCPP_INFO(this->get_logger(), "Num of Perturbations: %d", par_.num_perturbation_for_ig);
-  RCLCPP_INFO(this->get_logger(), "r_max: %f", par_.r_max_for_ig);
-
   // Optimization parameters
   RCLCPP_INFO(this->get_logger(), "Horizon: %f", par_.horizon);
   RCLCPP_INFO(this->get_logger(), "DC: %f", par_.dc);
@@ -585,10 +582,16 @@ void MIGHTY_NODE::printParameters()
   RCLCPP_INFO(this->get_logger(), "Goal Seen Radius: %f", par_.goal_seen_radius);
 
   // DYNUS specific parameters
+  RCLCPP_INFO(this->get_logger(), "Num P: %d", par_.num_P);
   RCLCPP_INFO(this->get_logger(), "Num N: %d", par_.num_N);
   RCLCPP_INFO(this->get_logger(), "Factor Initial: %f", par_.factor_initial);
   RCLCPP_INFO(this->get_logger(), "Factor Final: %f", par_.factor_final);
   RCLCPP_INFO(this->get_logger(), "Factor Constant Step Size: %f", par_.factor_constant_step_size);
+  RCLCPP_INFO(this->get_logger(), "Obst Max Vel: %f", par_.obst_max_vel);
+  RCLCPP_INFO(this->get_logger(), "Max Gurobi Comp Time Sec: %f", par_.max_gurobi_comp_time_sec);
+  RCLCPP_INFO(this->get_logger(), "Jerk Smooth Weight: %f", par_.jerk_smooth_weight);
+  RCLCPP_INFO(this->get_logger(), "Goal Pull Weight: %f", par_.goal_pull_weight);
+  RCLCPP_INFO(this->get_logger(), "Goal Pull Time Buffer: %f", par_.goal_pull_time_buffer);
 
   // L-BFGS parameters
   RCLCPP_INFO(this->get_logger(), "f_dec_coeff: %f", par_.f_dec_coeff);
@@ -954,6 +957,40 @@ void MIGHTY_NODE::convertDynTrajMsg2DynTraj(const dynus_interfaces::msg::DynTraj
     traj->ekf_cov_p = mighty_utils::convertCovMsg2Cov(msg.ekf_cov_p); // ekf cov
     traj->ekf_cov_q = mighty_utils::convertCovMsg2Cov(msg.ekf_cov_q); // ekf cov
     traj->poly_cov = mighty_utils::convertCovMsg2Cov(msg.poly_cov);   // future traj cov
+  }
+
+  // Get analytical functions
+  if (msg.function.size() == 3)
+  {
+    traj->traj_x = msg.function[0];
+    traj->traj_y = msg.function[1];
+    traj->traj_z = msg.function[2];
+  }
+
+  if (msg.velocity.size() == 3)
+  {
+    traj->traj_vx = msg.velocity[0];
+    traj->traj_vy = msg.velocity[1];
+    traj->traj_vz = msg.velocity[2];
+  }
+
+  if (msg.function.size() == 3 && msg.velocity.size() == 3)
+  {
+    if (traj->compileAnalytic())
+    {
+      // Change the mode only when we successfully compiled the analytic trajectory
+      traj->mode = dynTraj::Mode::Analytic;
+      // printf("Successfully compiled analytic traj id=%d\n", traj->id);
+    }
+    else
+    {
+      RCLCPP_ERROR(
+          this->get_logger(),
+          "Failed to compile analytic traj id=%d, falling back to zeros.",
+          traj->id);
+      // leave mode as whatever it was (Piecewise/Quintic),
+      // or explicitly set a safe default here
+    }
   }
 
   // Record received time
@@ -1540,26 +1577,22 @@ void MIGHTY_NODE::publishTraj()
   }
 
   // 3) Publish all sub-optimal trajectories
-  if (par_.use_multiple_initial_guesses)
+  mighty_ptr_->retrieveListSubOptGoalSetpoints(list_subopt_goal_setpoints_);
+  visualization_msgs::msg::MarkerArray subopt_ma;
+  for (int i = 0; i < (int)list_subopt_goal_setpoints_.size(); ++i)
   {
-    mighty_ptr_->retrieveListSubOptGoalSetpoints(list_subopt_goal_setpoints_);
-
-    visualization_msgs::msg::MarkerArray subopt_ma;
-    for (int i = 0; i < (int)list_subopt_goal_setpoints_.size(); ++i)
-    {
-      auto single = stateVector2ColoredMarkerArray(
-          list_subopt_goal_setpoints_[i],
-          /*type=*/i + 2,
-          par_.v_max,
-          now);
-      // append all markers from this one:
-      subopt_ma.markers.insert(
-          subopt_ma.markers.end(),
-          single.markers.begin(),
-          single.markers.end());
-    }
-    pub_traj_subopt_colored_->publish(subopt_ma);
+    auto single = stateVector2ColoredMarkerArray(
+        list_subopt_goal_setpoints_[i],
+        /*type=*/i + 2,
+        par_.v_max,
+        now);
+    // append all markers from this one:
+    subopt_ma.markers.insert(
+        subopt_ma.markers.end(),
+        single.markers.begin(),
+        single.markers.end());
   }
+  pub_traj_subopt_colored_->publish(subopt_ma);
 }
 
 // ----------------------------------------------------------------------------
@@ -1808,7 +1841,7 @@ void MIGHTY_NODE::mapCallback(
   pcl::PointCloud<pcl::PointXYZ>::Ptr unk_pc(new pcl::PointCloud<pcl::PointXYZ>());
   pcl::fromROSMsg(*unk_msg, *unk_pc);
 
-  mighty_ptr_->updateMap(map_pc, unk_pc);
+  mighty_ptr_->updateMap(map_pc, unk_pc, this->now().seconds());
 }
 
 // ----------------------------------------------------------------------------
@@ -1820,7 +1853,7 @@ void MIGHTY_NODE::occupancyMapCallback(
   pcl::PointCloud<pcl::PointXYZ>::Ptr map_pc(new pcl::PointCloud<pcl::PointXYZ>());
   pcl::fromROSMsg(*map_msg, *map_pc);
 
-  mighty_ptr_->updateOccupancyMap(map_pc);
+  mighty_ptr_->updateOccupancyMap(map_pc, this->now().seconds());
 }
 
 // ----------------------------------------------------------------------------

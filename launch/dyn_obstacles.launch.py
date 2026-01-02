@@ -54,7 +54,7 @@ def _as(context, name, cast, default):
         raise RuntimeError(f"[dyn_obstacles] Argument '{name}' expected {cast.__name__}, got '{s}'")
 
 # Optional: flip to True for one‑time verbose dump
-DEBUG_DYN_OBS = False
+DEBUG_DYN_OBS = True
 
 
 # ---------- Spawn Static Obstacles ----------
@@ -91,7 +91,7 @@ def trefoil_expr_with_vel(x0, y0, z0, sx, sy, sz, offset, slower):
 def _spawn_static_block(context):
     import random
 
-    num_obstacles   = _as(context, 'num_obstacles', int,   30)
+    num_obstacles   = _as(context, 'num_obstacles', int,   1)
     x_min           = _as(context, 'x_min', float, 5.0)
     x_max           = _as(context, 'x_max', float, 105.0)
     y_min           = _as(context, 'y_min', float, -10.0)
@@ -105,7 +105,7 @@ def _spawn_static_block(context):
     use_sim_time    = _as_bool(context, 'use_sim_time', False)
     urdf_xacro      = LaunchConfiguration('urdf_xacro').perform(context) or 'dyn_obstacle1.urdf.xacro'
 
-    scale_range = [[2.0, 5.0], [5.0, 10.0], [2.0, 4.0]]
+    scale_range = [[2.0, 2.0], [2.0, 2.0], [2.0, 2.0]]
 
     offset_range = [0.0, 3.0] # [offset_min, offset_max]
     slower_range = [slower_min, slower_max]
@@ -259,7 +259,7 @@ def _maybe_launch_forest_node(context):
 
 def generate_launch_description():
     args = [
-        DeclareLaunchArgument('num_obstacles', default_value='100'),
+        DeclareLaunchArgument('num_obstacles', default_value='1'),
         DeclareLaunchArgument('seed', default_value='0'),
         DeclareLaunchArgument('dynamic_ratio', default_value='0.5'),
         DeclareLaunchArgument('publish_rate_hz', default_value='50.0'),
@@ -272,11 +272,11 @@ def generate_launch_description():
 
         # Spatial ranges
         DeclareLaunchArgument('x_min', default_value='5.0'),
-        DeclareLaunchArgument('x_max', default_value='105.0'),
-        DeclareLaunchArgument('y_min', default_value='-5.0'),
-        DeclareLaunchArgument('y_max', default_value='5.0'),
-        DeclareLaunchArgument('z_min', default_value='1.0'),
-        DeclareLaunchArgument('z_max', default_value='5.0'),
+        DeclareLaunchArgument('x_max', default_value='50.0'),
+        DeclareLaunchArgument('y_min', default_value='-3.0'),
+        DeclareLaunchArgument('y_max', default_value='3.0'),
+        DeclareLaunchArgument('z_min', default_value='3.0'),
+        DeclareLaunchArgument('z_max', default_value='3.0'),
 
         # Trajectory params
         DeclareLaunchArgument('slower_min', default_value='4.0'),

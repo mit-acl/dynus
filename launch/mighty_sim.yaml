@@ -14,7 +14,7 @@ windows:
     panes:
       # base station
       - shell_command:
-        - ros2 launch mighty base_mighty.launch.py use_dyn_obs:=false use_gazebo_gui:=false use_rviz:=true env:=hard_forest
+        - ros2 launch mighty base_mighty.launch.py use_dyn_obs:=true use_gazebo_gui:=false use_rviz:=true env:=empty
 
       # NX01 ACL Mapper
       - shell_command:

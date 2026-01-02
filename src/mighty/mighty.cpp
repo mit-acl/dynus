@@ -25,9 +25,23 @@ MIGHTY::MIGHTY(parameters par) : par_(par)
   // Set up dgp_manager
   dgp_manager_.setParameters(par_);
 
+  // Compute factors_ for time allocation
+  const int num_factors = static_cast<int>((par_.factor_final - par_.factor_initial) / par_.factor_constant_step_size) + 1;
+  for (int i = 0; i < num_factors; i++)
+  {
+    double factor = par_.factor_initial + i * par_.factor_constant_step_size;
+    factors_.push_back(factor);
+  }
+
   // Set up unconstrained optimization solver for whole trajectory
-  whole_traj_solver_ptr_ = std::make_shared<SolverGurobi>();
-  whole_traj_solver_ptr_->initializeSolver(par_);
+  for (int i = 0; i < num_factors; i++)
+  {
+    whole_traj_solver_ptrs_.push_back(std::make_shared<SolverGurobi>());
+    whole_traj_solver_ptrs_[i]->initializeSolver(par_);
+  }
+
+  // Set up decomp ellip workers for each thread
+  ellip_workers_.resize(whole_traj_solver_ptrs_.size());
 
   // Set up basis converter
   BasisConverter basis_converter;
@@ -219,36 +233,6 @@ bool MIGHTY::checkIfPointFree(const Vec3f &point)
 
 // ----------------------------------------------------------------------------
 
-bool MIGHTY::getSafeCorridor(vec_Vecf<3> &global_path, const state &A)
-{
-
-  // Timer for computing the safe corridor
-  MyTimer cvx_decomp_timer(true);
-
-  // Debug
-  if (par_.debug_verbose)
-    std::cout << "Convex decomposition" << std::endl;
-
-  // Find global path with safe sub goal
-  findSafeSubGoal(global_path);
-
-  // Get safe corridor polytopes
-  bool use_safe_corridor = true;
-  if (!dgp_manager_.cvxEllipsoidDecomp(A, global_path, safe_corridor_polytopes_safe_, poly_out_safe_, use_safe_corridor))
-  {
-    std::cout << bold << red << "Convex decomposition failed" << reset << std::endl;
-    poly_out_safe_.clear();
-    return false;
-  }
-
-  // Get computation time [ms]
-  cvx_decomp_time_ = cvx_decomp_timer.getElapsedMicros() / 1000.0;
-
-  return true;
-}
-
-// ----------------------------------------------------------------------------
-
 void MIGHTY::findSafeSubGoal(vec_Vecf<3> &global_path)
 {
 
@@ -262,7 +246,7 @@ void MIGHTY::findSafeSubGoal(vec_Vecf<3> &global_path)
   global_path.push_back(original_global_path[0]);
 
   // Kd-tree search parameters
-  int n = 1;  // find one neighbour
+  int n = 1; // find one neighbour
   std::vector<int> pointIdxNKNSearch(n);
   std::vector<float> pointNKNSquaredDistance(n);
 
@@ -291,7 +275,7 @@ void MIGHTY::findSafeSubGoal(vec_Vecf<3> &global_path)
     int num_samples = static_cast<int>(dist / sample_dist);
     for (int j = 0; j <= num_samples; j++)
     {
-      Eigen::Vector3d sample_point = current_gp + dir * sample_dist * j;;
+      Eigen::Vector3d sample_point = current_gp + dir * sample_dist * j;
       pcl::PointXYZ searchPoint(sample_point(0), sample_point(1), sample_point(2));
 
       // Nearest neighbor search
@@ -317,9 +301,7 @@ void MIGHTY::findSafeSubGoal(vec_Vecf<3> &global_path)
 
     // add the next global path point to the safe sub goal path
     global_path.push_back(next_gp);
-    
   }
-
 }
 
 // ----------------------------------------------------------------------------
@@ -543,7 +525,7 @@ std::tuple<bool, bool> MIGHTY::replan(double last_replaning_computation_time, do
   /* -------------------- Local Trajectory Optimization -------------------- */
 
   MyTimer timer_local(true);
-  if (!planLocalTrajectory(global_path))
+  if (!planLocalTrajectory(global_path, last_replaning_computation_time))
   {
     if (par_.debug_verbose)
       std::cout << "Local Trajectory Optimization: " << timer_local.getElapsedMicros() / 1000.0 << " ms" << std::endl;
@@ -677,6 +659,16 @@ bool MIGHTY::generateGlobalPath(vec_Vecf<3> &global_path, double current_time, d
   original_global_path_ = global_path;
   mtx_original_global_path_.unlock();
 
+  // Make sure global path does not exceed (num_P + 1)
+  if (global_path.size() > par_.num_P + 1)
+  {
+    // Trim the global path
+    global_path.resize(par_.num_P + 1);
+  }
+
+  // Find global path with safe sub goal
+  findSafeSubGoal(global_path);
+
   // Debug
   if (par_.debug_verbose)
     std::cout << "global_path.size(): " << global_path.size() << std::endl;
@@ -689,11 +681,11 @@ bool MIGHTY::generateGlobalPath(vec_Vecf<3> &global_path, double current_time, d
 
 // ----------------------------------------------------------------------------
 
-bool MIGHTY::planLocalTrajectory(vec_Vecf<3> &global_path)
+bool MIGHTY::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_computation_time)
 {
 
   // Get local_A, local_G and A_time
-  state local_A, local_G;
+  state local_A, local_G, local_E;
   double A_time;
   getA(local_A);
   getG(local_G);
@@ -707,46 +699,187 @@ bool MIGHTY::planLocalTrajectory(vec_Vecf<3> &global_path)
     return false;
   }
 
-  // convex decomposition
-  if (!getSafeCorridor(global_path, local_A))
-  {
-    replanning_failure_count_++;
-    return false;
-  }
-
   // Initialize flag
   bool optimization_succeeded = false;
 
+  // Set local_E
+  if (drone_status_ == DroneStatus::GOAL_REACHED || drone_status_ == DroneStatus::GOAL_SEEN)
+    local_E = local_G;
+  else
+    local_E.pos = global_path.back();
+
+  // if using ground robot, we fix the z
   if (par_.vehicle_type != "uav")
   {
     local_A.pos[2] = 1.0;
+    local_E.pos[2] = 1.0;
   }
 
-  optimization_succeeded = generateLocalTrajectory(
-      local_A, A_time, global_path, initial_guess_computation_time_,
-      local_traj_computation_time_);
+  /*
+   * Parallelized Local Trajectory Optimization
+   */
 
-  if (par_.debug_verbose)
+  // Reset whole trajectory planners to nominal state
+  for (auto &solver : whole_traj_solver_ptrs_)
+    solver->resetToNominalState();
+
+  // Get the base uo vector
+  vec_Vec3f vec_uo;
+  dgp_manager_.getVecUnknownOccupied(vec_uo);
+
+  // Get obst_pos
+  vec_Vecf<3> obst_pos;
   {
-    std::cout << "initial_guess_computation_time_: " << initial_guess_computation_time_ << " ms" << std::endl;
-    std::cout << "Local trajectory optimization finished" << std::endl;
+    std::lock_guard<std::mutex> lk(mtx_obst_pos_);
+    obst_pos = obst_pos_;
+  }
+
+  // Compute an initial dt for the local trajectory optimization
+  whole_traj_solver_ptrs_[0]->setX0(local_A);
+  whole_traj_solver_ptrs_[0]->setXf(local_E);
+  double initial_dt = whole_traj_solver_ptrs_[0]->getInitialDt();
+
+  // Compute sub goal vector once
+  std::vector<double> sub_goal;
+  sub_goal.push_back(local_G.pos[0]);
+  sub_goal.push_back(local_G.pos[1]);
+  sub_goal.push_back(local_G.pos[2]);
+
+  // Compute goal pull time
+  const double goal_pull_time = par_.goal_pull_time_buffer * last_replaning_computation_time;
+
+  std::vector<std::future<std::tuple<bool, double, double, double, vec_E<Polyhedron<3>>>>> futures;
+  futures.reserve(whole_traj_solver_ptrs_.size());
+
+  for (size_t i = 0; i < whole_traj_solver_ptrs_.size(); ++i)
+  {
+    const double factor = factors_[i]; // corresponding factor for solver i
+
+    futures.push_back(std::async(std::launch::async,
+                                 [this, i, factor, &global_path, local_A, local_E, sub_goal, A_time,
+                                  initial_dt, &obst_pos, &vec_uo, goal_pull_time]()
+                                     -> std::tuple<bool, double, double, double, vec_E<Polyhedron<3>>>
+                                 {
+                                   try
+                                   {
+                                     double thread_gurobi_time = 0.0;
+                                     double thread_convx_decomp_time = 0.0;
+                                     vec_E<Polyhedron<3>> thread_poly_out_safe;
+
+                                     // Per-worker decomp util (no sharing across worker index)
+                                     EllipsoidDecomp3D &ellip = this->ellip_workers_[i];
+
+                                     const bool result = generateLocalTrajectory(
+                                         ellip,
+                                         global_path,
+                                         local_A, local_E, sub_goal, A_time,
+                                         thread_gurobi_time,
+                                         thread_convx_decomp_time,
+                                         whole_traj_solver_ptrs_[i],
+                                         factor,
+                                         initial_dt,
+                                         obst_pos,
+                                         vec_uo, // base_uo snapshot
+                                         thread_poly_out_safe,
+                                         goal_pull_time);
+
+                                     return {result, thread_gurobi_time, thread_convx_decomp_time, factor, thread_poly_out_safe};
+                                   }
+                                   catch (const std::exception &ex)
+                                   {
+                                     std::cerr << "Exception in async task with factor " << factor
+                                               << ": " << ex.what() << std::endl;
+                                     return {false, 0.0, 0.0, factor, vec_E<Polyhedron<3>>{}};
+                                   }
+                                 }));
+  }
+
+  // Wait for any task to succeed.
+  std::vector<bool> vec_optimization_succeeded;
+  std::vector<std::vector<state>> vec_goal_setpoints;
+  std::vector<PieceWisePol> vec_pwp_to_share;
+  std::vector<std::vector<Eigen::Matrix<double, 3, 4>>> vec_cps;
+  std::vector<double> vec_gurobi_times;
+  std::vector<double> vec_convx_decomp_times;
+  std::vector<vec_E<Polyhedron<3>>> vec_poly_out_safe;
+
+  vec_optimization_succeeded.resize(whole_traj_solver_ptrs_.size(), false);
+  vec_goal_setpoints.resize(whole_traj_solver_ptrs_.size());
+  vec_pwp_to_share.resize(whole_traj_solver_ptrs_.size());
+  vec_cps.resize(whole_traj_solver_ptrs_.size());
+  vec_gurobi_times.resize(whole_traj_solver_ptrs_.size(), 0.0);
+  vec_convx_decomp_times.resize(whole_traj_solver_ptrs_.size(), 0.0);
+  vec_poly_out_safe.resize(whole_traj_solver_ptrs_.size());
+
+  for (size_t i = 0; i < futures.size(); ++i)
+  {
+    auto [result, thread_gurobi_time, thread_convx_decomp_time, thread_factor, thread_poly_out_safe] = futures[i].get();
+
+    if (!result)
+      continue;
+
+    // One thread succeeded. Stop all the other solver instances.
+    for (size_t j = 0; j < whole_traj_solver_ptrs_.size(); ++j)
+    {
+      if (j == i)
+        continue;
+
+      try
+      {
+        whole_traj_solver_ptrs_[j]->stopExecution();
+      }
+      catch (const std::exception &e)
+      {
+        std::cout << "it's likely that the solver has gurobi error and already released the gurobi environment" << std::endl;
+        std::cerr << e.what() << '\n';
+      }
+    }
+
+    // Get Results from the successful solver.
+    whole_traj_solver_ptrs_[i]->fillGoalSetPoints();
+    whole_traj_solver_ptrs_[i]->getGoalSetpoints(vec_goal_setpoints[i]);
+    whole_traj_solver_ptrs_[i]->getPieceWisePol(vec_pwp_to_share[i]);
+    whole_traj_solver_ptrs_[i]->getControlPoints(vec_cps[i]); // Bezier control points
+    vec_gurobi_times[i] = thread_gurobi_time;
+    vec_convx_decomp_times[i] = thread_convx_decomp_time;
+    vec_poly_out_safe[i] = thread_poly_out_safe;
+
+    vec_optimization_succeeded[i] = true;
+    // break; // Exit the loop after the first success
+  }
+
+  // Find the first successful optimization
+  int successful_index = -1;
+  for (size_t i = 0; i < vec_optimization_succeeded.size(); ++i)
+  {
+    if (vec_optimization_succeeded[i])
+    {
+      optimization_succeeded = true;
+      goal_setpoints_ = vec_goal_setpoints[i];
+      pwp_to_share_ = vec_pwp_to_share[i];
+      cps_ = vec_cps[i];
+      local_traj_computation_time_ = vec_gurobi_times[i];
+      cvx_decomp_time_ = vec_convx_decomp_times[i];
+      poly_out_safe_ = vec_poly_out_safe[i];
+      successful_index = i;
+      break; // Exit the loop after the first success
+    }
   }
 
   if (optimization_succeeded)
   {
-    // Get Results.
-    whole_traj_solver_ptr_->fillGoalSetPoints();
-    whole_traj_solver_ptr_->getGoalSetpoints(goal_setpoints_);
-    whole_traj_solver_ptr_->getPieceWisePol(pwp_to_share_);
-    whole_traj_solver_ptr_->getControlPoints(cps_); // Bezier control points
-  }
-  else
-  {
-    replanning_failure_count_++;
-    return false;
+    // update list_subopt_goal_setpoints_ (vec_goal_setpoints without the successful one)
+    list_subopt_goal_setpoints_.clear();
+    for (size_t i = 0; i < vec_goal_setpoints.size(); ++i)
+    {
+      if (i != successful_index && !vec_goal_setpoints[i].empty())
+      {
+        list_subopt_goal_setpoints_.push_back(vec_goal_setpoints[i]);
+      }
+    }
   }
 
-  return true;
+  return optimization_succeeded;
 }
 
 // ----------------------------------------------------------------------------
@@ -758,60 +891,106 @@ void MIGHTY::getPieceWisePol(PieceWisePol &pwp)
 
 // ----------------------------------------------------------------------------
 
-bool MIGHTY::generateLocalTrajectory(const state &local_A, double A_time,
-                                     vec_Vec3f &global_path,
-                                     double &initial_guess_computation_time,
-                                     double &local_traj_computation_time)
+// Computes worst-case polytope end times (cumulative) under the rule:
+// - last (P-1) polytopes each get 1 segment
+// - first polytope gets the remaining segments
+// Returns seg_end_times with size P, where seg_end_times[p] is cumulative end time at polytope p.
+std::vector<double> MIGHTY::computeWorstSegEndTimesPoly(
+    double initial_dt, double factor)
+{
+  std::vector<double> seg_end_times;
+  seg_end_times.reserve(std::max(0, par_.num_P));
+
+  // You cannot allocate at least one segment to each polytope if N < P.
+  // In that case, the "worst assignment" cannot satisfy your constraint.
+  // Workaround: assign 1 to as many last polytopes as possible, remainder to first.
+  const int min_one = std::min(par_.num_P - 1, par_.num_N - 1); // number of "last" polytopes guaranteed 1 segment
+  const int first_segments = par_.num_N - min_one;
+
+  // segments_per_poly: [first_segments, 1, 1, ..., 1] (length = par_.num_P, but may have zeros if N < P)
+  std::vector<int> segments_per_poly(par_.num_P, 0);
+  segments_per_poly[0] = std::max(first_segments, 0);
+
+  // Give 1 segment to the last min_one polytopes
+  for (int k = 0; k < min_one; ++k)
+  {
+    const int p = par_.num_P - 1 - k;
+    segments_per_poly[p] = 1;
+  }
+
+  // Convert to cumulative end times
+  double t_acc = 0.0;
+  const double dt = initial_dt * factor;
+
+  for (int p = 0; p < par_.num_P; ++p)
+  {
+    t_acc += dt * static_cast<double>(segments_per_poly[p]);
+    seg_end_times.push_back(t_acc); // end time at end of polytope p
+  }
+
+  return seg_end_times;
+}
+
+// ----------------------------------------------------------------------------
+
+bool MIGHTY::generateLocalTrajectory(
+    EllipsoidDecomp3D &ellip,
+    const vec_Vecf<3> &global_path,
+    const state &local_A, const state &local_E, const std::vector<double> &sub_goal, double A_time,
+    double &gurobi_computation_time,
+    double &cvx_decomp_time,
+    std::shared_ptr<SolverGurobi> &whole_traj_solver_ptr,
+    double factor,
+    double initial_dt,
+    const vec_Vecf<3> &obst_pos,
+    const vec_Vec3f &base_uo,
+    vec_E<Polyhedron<3>> &poly_out_safe,
+    double goal_pull_time)
 {
 
-  if (par_.debug_verbose)
-    std::cout << "Preparing solver for replan" << std::endl;
+  // Compute worst-case (conservative) segment end times for safe corridor generation
+  std::vector<double> seg_end_times = computeWorstSegEndTimesPoly(initial_dt, factor);
 
-  std::vector<std::shared_ptr<dynTraj>> local_trajs;
-  getTrajs(local_trajs);
+  // Timer for computing the safe corridor
+  MyTimer cvx_decomp_timer(true);
 
-  // Get local_G
-  state local_G;
-  getG(local_G);
+  // Get safe corridor polytopes
+  std::vector<LinearConstraint3D> l_constraints;
 
-  state local_E;
-  Vec3f mean_point;
-
-  if (drone_status_ == DroneStatus::GOAL_REACHED || drone_status_ == DroneStatus::GOAL_SEEN)
+  if (!dgp_manager_.cvxEllipsoidDecomp(
+          ellip,
+          global_path,
+          base_uo,
+          obst_pos,
+          seg_end_times,
+          l_constraints,
+          poly_out_safe))
   {
-    local_E = local_G;
-  }
-  else
-  {
-    local_E.pos = global_path.back();
-  }
-
-  // if using ground robot, we fix the z
-  if (par_.vehicle_type != "uav")
-  {
-    local_E.pos[2] = 1.0;
+    std::cout << bold << red << "Convex decomposition failed" << reset << std::endl;
+    poly_out_safe.clear();
+    return false;
   }
 
-  // Prepare the solver for replanning
-  whole_traj_solver_ptr_->setX0(local_A);                               // Initial condition
-  whole_traj_solver_ptr_->setXf(local_E);                               // Final condition
-  whole_traj_solver_ptr_->setPolytopes(safe_corridor_polytopes_safe_); // Safe corridor polytopes
-  whole_traj_solver_ptr_->setT0(A_time);                                // Initial time
+  cvx_decomp_time = cvx_decomp_timer.getElapsedMicros() / 1000.0;
 
-  if (par_.debug_verbose)
-    std::cout << "Solver prepared" << std::endl;
+  // Initialize the solver.
+  whole_traj_solver_ptr->setX0(local_A);              // Initial condition
+  whole_traj_solver_ptr->setXf(local_E);              // Final condition
+  whole_traj_solver_ptr->setPolytopes(l_constraints); // Safe corridor polytopes
+  whole_traj_solver_ptr->setT0(A_time);               // Initial time
+  whole_traj_solver_ptr->setInitialDt(initial_dt);    // Initial dt
+  whole_traj_solver_ptr->setSubGoal(sub_goal);         // Subgoal for goal pulling
+  whole_traj_solver_ptr->setGoalPullTime(goal_pull_time);        // Goal pull time
 
   // Solve the optimization problem.
   bool gurobi_error_detected = false;
-  double gurobi_computation_time = 0.0;
-  bool gurobi_result = whole_traj_solver_ptr_->generateNewTrajectory(gurobi_error_detected, global_path, gurobi_computation_time);
+  bool gurobi_result = whole_traj_solver_ptr->generateNewTrajectory(gurobi_error_detected, gurobi_computation_time, factor);
 
   // If a Gurobi error occurred, reset the solver and return.
   if (gurobi_error_detected)
   {
-    std::cout << bold << red << "Gurobi error detected" << reset << std::endl;
-    whole_traj_solver_ptr_ = std::make_shared<SolverGurobi>();
-    whole_traj_solver_ptr_->initializeSolver(par_);
+    whole_traj_solver_ptr = std::make_shared<SolverGurobi>();
+    whole_traj_solver_ptr->initializeSolver(par_);
     return false;
   }
 
@@ -1052,8 +1231,8 @@ void MIGHTY::cleanUpOldTrajs(double current_time)
 void MIGHTY::addTraj(std::shared_ptr<dynTraj> new_traj, double current_time)
 {
 
-  // Evaluate once
-  Eigen::Vector3d p = new_traj->pwp.eval(current_time);
+  // Evaluate
+  // Eigen::Vector3d p = new_traj->pwp.eval(current_time);
   // if (!checkPointWithinMap(p))
   //   return;
   // if ((p - state_.pos).norm() > par_.horizon)
@@ -1063,7 +1242,7 @@ void MIGHTY::addTraj(std::shared_ptr<dynTraj> new_traj, double current_time)
     std::lock_guard<std::mutex> lock(mtx_trajs_);
     auto it = std::find_if(trajs_.begin(), trajs_.end(),
                            [&](const std::shared_ptr<dynTraj> &t)
-                           { return t->id == new_traj->id; });
+                           { return t && t->id == new_traj->id; });
 
     if (it != trajs_.end())
       *it = new_traj; // replace pointer
@@ -1393,7 +1572,8 @@ bool MIGHTY::checkReadyToReplan()
 
 void MIGHTY::updateMap(
     const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_map,
-    const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_unk)
+    const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_unk,
+    double current_time)
 {
   // 1) Atomically store the incoming clouds
   {
@@ -1411,8 +1591,18 @@ void MIGHTY::updateMap(
   getG(local_G);
   computeMapSize(local_state.pos, local_G.pos);
 
+  // Get dynamic obstacles' positions and traj_max_time
+  vec_Vecf<3> obst_pos;
+  double traj_max_time = computeObstPosAndTrajMaxTimeForMapUpdate(obst_pos, current_time);
+
+  // time the map update
+  MyTimer timer_map(true);
+
   // 2) map update (unlocked)
-  dgp_manager_.updateMap(wdx_, wdy_, wdz_, map_center_, pclptr_map_);
+  dgp_manager_.updateMap(wdx_, wdy_, wdz_, map_center_, pclptr_map_, obst_pos, traj_max_time);
+
+  if (par_.debug_verbose)
+    std::cout << "Map update time: " << timer_map.getElapsedMicros() / 1000.0 << " ms" << std::endl;
 
   // 3) Known‐space KD‐tree
   if (pclptr_map_ && !pclptr_map_->points.empty())
@@ -1450,7 +1640,8 @@ void MIGHTY::updateMap(
 // ----------------------------------------------------------------------------
 
 void MIGHTY::updateOccupancyMap(
-    const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_map)
+    const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_map,
+    double current_time)
 {
   // 1) Atomically store the incoming clouds
   {
@@ -1464,8 +1655,12 @@ void MIGHTY::updateOccupancyMap(
   getG(local_G);
   computeMapSize(local_state.pos, local_G.pos);
 
+  // Get dynamic obstacles' positions and traj_max_time
+  vec_Vecf<3> obst_pos;
+  double traj_max_time = computeObstPosAndTrajMaxTimeForMapUpdate(obst_pos, current_time);
+
   // 2) map update (unlocked)
-  dgp_manager_.updateMap(wdx_, wdy_, wdz_, map_center_, pclptr_map_);
+  dgp_manager_.updateMap(wdx_, wdy_, wdz_, map_center_, pclptr_map_, obst_pos, traj_max_time);
 
   // 3) Known‐space KD‐tree
   if (pclptr_map_ && !pclptr_map_->points.empty())
@@ -1481,6 +1676,39 @@ void MIGHTY::updateOccupancyMap(
         rclcpp::get_logger("mighty"),
         "updateMap: member pclptr_map_ was null or empty; skipping KD-tree update");
   }
+}
+
+// ----------------------------------------------------------------------------
+
+double MIGHTY::computeObstPosAndTrajMaxTimeForMapUpdate(vec_Vecf<3> &obst_pos, double current_time)
+{
+  // Get a vector of obstacles' current positions
+  obst_pos.clear();
+
+  std::vector<std::shared_ptr<dynTraj>> local_trajs;
+  getTrajs(local_trajs);
+
+  for (const auto &traj : local_trajs)
+  {
+    Eigen::Vector3d p = traj->eval(current_time);
+    if (!checkPointWithinMap(p) || (p - state_.pos).norm() > (par_.horizon / 2.0))
+      continue;
+    obst_pos.push_back(p);
+  }
+
+  // update obst_pos_
+  {
+    std::lock_guard<std::mutex> lock(mtx_obst_pos_);
+    obst_pos_ = obst_pos;
+  }
+
+  // Get the traj_max_time
+  if (prev_traj_max_time_ == -1.0) // not initialized yet
+  {
+    return (par_.max_dist_vertexes * par_.num_P) / par_.v_max; // initial huristic value
+  }
+
+  return prev_traj_max_time_ * 1.2; // increase by 20% to be safe
 }
 
 // ----------------------------------------------------------------------------

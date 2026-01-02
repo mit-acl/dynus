@@ -23,6 +23,9 @@
 #include <mighty/utils.hpp>
 #include "dgp/dgp_manager.hpp"
 #include <mighty/gurobi_solver.hpp>
+#include <decomp_rviz_plugins/data_ros_utils.hpp>
+#include <decomp_util/ellipsoid_decomp.h>
+#include <decomp_util/seed_decomp.h>
 
 enum
 {
@@ -76,46 +79,58 @@ class MIGHTY
 
 public:
   // Methods
-  MIGHTY(parameters par);                                                                                                           
+  MIGHTY(parameters par);
   bool needReplan(const state &local_state, const state &local_G_term, const state &last_plan_state);
   bool findAandAtime(state &A, double &A_time, double current_time, double last_replaning_computation_time);
   bool checkIfPointOccupied(const Vec3f &point);
   bool checkIfPointFree(const Vec3f &point);
-  bool getSafeCorridor(vec_Vecf<3> &global_path, const state &A);
   void findSafeSubGoal(vec_Vecf<3> &global_path);
   std::tuple<bool, bool> replan(double last_replaning_computation_time, double current_time);
   void startAdaptKValue();
   void getGterm(state &G_term);
   void setGterm(const state &G_term);
-  void getG(state &G);      
-  void getE(state &E);      
+  void getG(state &G);
+  void getE(state &E);
   void setG(const state &G);
   void getA(state &A);
   void setA(const state &A);
   void getA_time(double &A_time);
   void setA_time(double A_time);
   void getState(state &state);
-  void getTrajs(std::vector<std::shared_ptr<dynTraj>> &out);            
-  void getLastPlanState(state &state);                                 
+  void getTrajs(std::vector<std::shared_ptr<dynTraj>> &out);
+  void getLastPlanState(state &state);
   void cleanUpOldTrajs(double current_time);
   void addTraj(std::shared_ptr<dynTraj> new_traj, double current_time);
-  void updateState(state data); 
-  bool getNextGoal(state &next_goal); 
+  void updateState(state data);
+  bool getNextGoal(state &next_goal);
   bool checkReadyToReplan();
   void setTerminalGoal(const state &term_goal);
-  void changeDroneStatus(int new_status);  
+  void changeDroneStatus(int new_status);
   void getDesiredYaw(state &next_goal);
-  void yaw(double diff, state &next_goal); 
-  void computeG(const state &A, const state &G_term, double horizon);                                                                                                                                     
-  bool goalReachedCheck();                                                                             
+  void yaw(double diff, state &next_goal);
+  void computeG(const state &A, const state &G_term, double horizon);
+  bool goalReachedCheck();
   void computeMapSize(const Eigen::Vector3d &min_pos, const Eigen::Vector3d &max_pos);
-  bool checkPointWithinMap(const Eigen::Vector3d &point) const;             
+  bool checkPointWithinMap(const Eigen::Vector3d &point) const;
   void getStaticPushPoints(vec_Vecf<3> &static_push_points);
   void getLocalGlobalPath(vec_Vecf<3> &local_global_path, vec_Vecf<3> &local_global_path_after_push);
   void getGlobalPath(vec_Vecf<3> &global_path);
-  void getOriginalGlobalPath(vec_Vecf<3> &original_global_path); 
+  void getOriginalGlobalPath(vec_Vecf<3> &original_global_path);
   void getFreeGlobalPath(vec_Vecf<3> &free_global_path);
-  bool generateLocalTrajectory(const state &local_A, double A_time, vec_Vec3f &global_path, double &initial_guess_computation_time, double &local_traj_computation_time);
+  std::vector<double> computeWorstSegEndTimesPoly(double initial_dt, double factor);
+  bool generateLocalTrajectory(
+      EllipsoidDecomp3D &ellip,
+      const vec_Vecf<3> &global_path,
+      const state &local_A, const state &local_E, const std::vector<double> &sub_goal, double A_time,
+      double &gurobi_computation_time,
+      double &cvx_decomp_time,
+      std::shared_ptr<SolverGurobi> &whole_traj_solver_ptr,
+      double factor,
+      double initial_dt,
+      const vec_Vecf<3> &obst_pos,
+      const vec_Vec3f &base_uo,
+      vec_E<Polyhedron<3>> &poly_out_safe,
+      double goal_pull_time);
   void resetData();
   void retrieveData(double &final_g, double &global_planning_time, double &dgp_static_jps_time, double &dgp_check_path_time, double &dgp_dynamic_astar_time, double &dgp_recover_path_time, double &cvx_decomp_time, double &initial_guess_computation_time, double &local_traj_computatoin_time, double &safety_check_time, double &safe_paths_time, double &yaw_sequence_time, double &yaw_fitting_time);
   void retrievePolytopes(vec_E<Polyhedron<3>> &poly_out_whole, vec_E<Polyhedron<3>> &poly_out_safe);
@@ -124,34 +139,35 @@ public:
   void retrieveCPs(std::vector<Eigen::Matrix<double, 3, 4>> &cps);
   bool generateGlobalPath(vec_Vecf<3> &global_path, double current_time, double last_replaning_computation_time);
   bool pushPath(vec_Vecf<3> &global_path, vec_Vecf<3> &free_global_path, double current_time);
-  bool planLocalTrajectory(vec_Vecf<3> &global_path);
+  bool planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_computation_time);
   bool appendToPlan();
   void setInitialPose(const geometry_msgs::msg::TransformStamped &init_pose);
   void applyInitiPoseTransform(PieceWisePol &pwp);
   void applyInitiPoseInverseTransform(PieceWisePol &pwp);
-  void updateMap(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_map, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_unk);
-  void updateOccupancyMap(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_map);
+  void updateMap(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_map, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_unk, double current_time);
+  void updateOccupancyMap(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_map, double current_time);
+  double computeObstPosAndTrajMaxTimeForMapUpdate(vec_Vecf<3> &obst_pos, double current_time);
   void getPieceWisePol(PieceWisePol &pwp);
-  
+
 private:
   // Parameters
-  parameters par_;                                                       // Parameters of the planner
-  DGPManager dgp_manager_;                                               // DGP Manager
-  std::vector<LinearConstraint3D> safe_corridor_polytopes_safe_;        // Polytope (Linear) constraints for whole trajectory
-  std::shared_ptr<SolverGurobi> whole_traj_solver_ptr_;            // L-BFGS solver pointer for the whole trajectory
-  std::vector<std::shared_ptr<dynTraj>> trajs_;                          // Dynamic trajectory
-  Eigen::Vector3d v_max_3d_;                                             // Maximum velocity
-  Eigen::Vector3d a_max_3d_;                                             // Maximum acceleration
-  Eigen::Vector3d j_max_3d_;                                             // Maximum jerk
-  double v_max_;                                                         // Maximum speed
-  double max_dist_vertexes_;                                             // Maximum velocity
+  parameters par_;                                                    // Parameters of the planner
+  DGPManager dgp_manager_;                                            // DGP Manager
+  std::vector<std::shared_ptr<SolverGurobi>> whole_traj_solver_ptrs_; // L-BFGS solver pointer for the whole trajectory
+  std::vector<std::shared_ptr<dynTraj>> trajs_;                       // Dynamic trajectory
+  Eigen::Vector3d v_max_3d_;                                          // Maximum velocity
+  Eigen::Vector3d a_max_3d_;                                          // Maximum acceleration
+  Eigen::Vector3d j_max_3d_;                                          // Maximum jerk
+  double v_max_;                                                      // Maximum speed
+  double max_dist_vertexes_;                                          // Maximum velocity
+  std::vector<double> factors_;                                       // Factors for time allocation
 
   // Flags
-  bool state_initialized_ = false;                           // State initialized
-  bool terminal_goal_initialized_ = false;                   // Terminal goal initialized
-  bool use_adapt_k_value_ = false;                           // Use adapt k value
-  bool kdtree_map_initialized_ = false;                      // Kd-tree for the map initialized
-  bool kdtree_unk_initialized_ = false;                      // Kd-tree for the map initialized
+  bool state_initialized_ = false;         // State initialized
+  bool terminal_goal_initialized_ = false; // Terminal goal initialized
+  bool use_adapt_k_value_ = false;         // Use adapt k value
+  bool kdtree_map_initialized_ = false;    // Kd-tree for the map initialized
+  bool kdtree_unk_initialized_ = false;    // Kd-tree for the map initialized
 
   // Data
   double final_g_ = 0.0;
@@ -194,7 +210,8 @@ private:
   double previous_yaw_ = 0.0;                      // Previous yaw
   double prev_dyaw_ = 0.0;                         // Previous dyaw
   double dyaw_filtered_ = 0.0;                     // Filtered dyaw
-  PieceWisePol pwp_to_share_;                // Piecewise polynomial to share
+  PieceWisePol pwp_to_share_;                      // Piecewise polynomial to share
+  vec_Vecf<3> obst_pos_;
 
   // Drone status
   int drone_status_ = DroneStatus::GOAL_REACHED; // status_ can be TRAVELING, GOAL_SEEN, GOAL_REACHED
@@ -213,6 +230,7 @@ private:
   std::mutex mtx_original_global_path_; // Mutex for the original_global_path_
   std::mutex mtx_kdtree_map_;           // Mutex for the map_
   std::mutex mtx_kdtree_unk_;           // Mutex for the unknown map_
+  std::mutex mtx_obst_pos_;             // Mutex for the obst_pos_
   pcl::PointCloud<pcl::PointXYZ>::ConstPtr pclptr_map_;
   pcl::PointCloud<pcl::PointXYZ>::ConstPtr pclptr_unk_;
 
@@ -260,7 +278,7 @@ private:
   Eigen::Matrix3d init_pose_transform_rotation_inv_;
   double yaw_init_offset_ = 0.0;
 
-  // Safe corridor 
+  // Safe corridor
   std::vector<Eigen::Matrix<double, Eigen::Dynamic, 3>, Eigen::aligned_allocator<Eigen::Matrix<double, Eigen::Dynamic, 3>>> A_stat_;
   std::vector<Eigen::VectorXd, Eigen::aligned_allocator<Eigen::VectorXd>> b_stat_;
 
@@ -268,7 +286,13 @@ private:
   pcl::KdTreeFLANN<pcl::PointXYZ> kdtree_map_; // kdtree of the point cloud of the occuppancy grid
   pcl::KdTreeFLANN<pcl::PointXYZ> kdtree_unk_; // kdtree of the point cloud of the unknown grid
 
+  // max trajectory time for dynamic obstacle map update
+  double prev_traj_max_time_ = -1.0; // [s]
+
   // Store data
   Eigen::VectorXd zopt_;
   double fopt_;
+
+  // decomp ellip workers for each thread
+  std::vector<EllipsoidDecomp3D> ellip_workers_;
 };

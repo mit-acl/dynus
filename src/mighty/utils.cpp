@@ -150,15 +150,19 @@ namespace mighty_utils
   // Function to convert std::vector<float> to Eigen::Vector3d
   Eigen::Vector3d convertCovMsg2Cov(const std::vector<float> &msg_cov)
   {
+    Eigen::Vector3d cov;
+    
     // Ensure the vector has exactly 3 elements
     if (msg_cov.size() != 3)
     {
-      throw std::invalid_argument("msg_cov must have exactly 3 elements.");
+      // throw std::invalid_argument("msg_cov must have exactly 3 elements.");
+      cov << 0.0, 0.0, 0.0;
+    }
+    else
+    {
+      cov << msg_cov[0], msg_cov[1], msg_cov[2];
     }
 
-    // Convert to Eigen::Vector3d
-    Eigen::Vector3d cov;
-    cov << msg_cov[0], msg_cov[1], msg_cov[2];
     return cov;
   }
 

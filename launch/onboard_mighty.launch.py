@@ -86,7 +86,7 @@ def generate_launch_description():
                     emulate_tty=True,
                     parameters=[parameters],
                     # prefix='xterm -e gdb -q -ex run --args', # gdb debugging
-                    arguments=['--ros-args', '--log-level', 'error'],
+                    # arguments=['--ros-args', '--log-level', 'error'],
         )
 
         # Robot state publisher node

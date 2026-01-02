@@ -37,7 +37,6 @@ using std::placeholders::_3;
 class DGPManager
 {
 public:
-
     DGPManager();
 
     void setParameters(const parameters &par);
@@ -46,14 +45,22 @@ public:
     void getFreeCells(vec_Vecf<3> &free_cells);
     void getOccupiedCellsForCvxDecomp(vec_Vecf<3> &occupied_cells, const vec_Vecf<3> &path, bool use_for_safe_path);
     void getDynamicOccupiedCellsForVis(vec_Vecf<3> &occupied_cells, vec_Vecf<3> &free_cells, vec_Vecf<3> &unknown_cells, double current_time);
-    void updateMap(double wdx, double wdy, double wdz, const Vec3f &center_map, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& pclptr);
+    void updateMap(double wdx, double wdy, double wdz, const Vec3f &center_map, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr, const vec_Vecf<3> &obst_pos, double traj_max_time);
     void freeStart(Vec3f &start_sent, double factor);
     void freeGoal(Vec3f &goal_sent, double factor);
     bool checkIfPointOccupied(const Vec3f &point);
     bool solveDGP(const Vec3f &start_sent, const Vec3f &start_vel, const Vec3f &goal_sent, double &final_g, double weight, double current_time, vec_Vecf<3> &path);
     bool checkIfPathInFree(const vec_Vecf<3> &path, vec_Vecf<3> &free_path);
     void getComputationTime(double &global_planning_time, double &dgp_static_jps_time, double &dgp_check_path_time, double &dgp_dynamic_astar_time, double &dgp_recover_path_time);
-    bool cvxEllipsoidDecomp(const state &A, vec_Vecf<3> &path, std::vector<LinearConstraint3D> &l_constraints, vec_E<Polyhedron<3>> &poly_out, bool use_for_safe_path = false);
+    bool cvxEllipsoidDecomp(
+        EllipsoidDecomp3D &ellip, // per-worker decomp util
+        const vec_Vecf<3> &path,
+        const vec_Vec3f &base_uo, // snapshot of (unknown+occupied) or (occupied-only)
+        const vec_Vecf<3> &obst_pos,
+        const std::vector<double> &seg_end_times,
+        std::vector<LinearConstraint3D> &l_constraints,
+        vec_E<Polyhedron<3>> &poly_out);
+    void obstacle_to_vec(vec_Vec3f &pts, const vec_Vecf<3> &obst_pos, double traj_max_time);
     bool checkIfPointFree(const Vec3f &point) const;
     void updateReadMapUtil();
     void pushPathIntoFreeSpace(const vec_Vecf<3> &path, vec_Vecf<3> &free_path);
@@ -63,29 +70,27 @@ public:
     void updateVmax(double v_max);
     void cleanUpPath(vec_Vecf<3> &path);
     bool isMapInitialized() const;
-    bool checkIfPointHasNonFreeNeighbour(const Vec3f& point) const;
-    void getVecOccupied(vec_Vec3f& vec_o);
-    void updateVecOccupied(const vec_Vec3f& vec_o);
-    void getVecUnknownOccupied(vec_Vec3f& vec_uo);
-    void updateVecUnknownOccupied(const vec_Vec3f& vec_uo);
+    bool checkIfPointHasNonFreeNeighbour(const Vec3f &point) const;
+    void getVecOccupied(vec_Vec3f &vec_o);
+    void updateVecOccupied(const vec_Vec3f &vec_o);
+    void getVecUnknownOccupied(vec_Vec3f &vec_uo);
+    void updateVecUnknownOccupied(const vec_Vec3f &vec_uo);
     void insertVecOccupiedToVecUnknownOccupied();
 
     std::shared_ptr<mighty::VoxelMapUtil> map_util_;
     std::shared_ptr<mighty::VoxelMapUtil> map_util_for_planning_;
     std::unique_ptr<DGPPlanner> planner_ptr_;
-    
-private:
 
-    vec_Vec3f vec_o_;   // Vector that contains the occupied points
-    vec_Vec3f vec_uo_;  // Vector that contains the unkown and occupied points
+private:
+    vec_Vec3f vec_o_;  // Vector that contains the occupied points
+    vec_Vec3f vec_uo_; // Vector that contains the unkown and occupied points
 
     // Mutex
     std::mutex mtx_map_util_;
-    std::mutex mtx_vec_o_;  
+    std::mutex mtx_vec_o_;
     std::mutex mtx_vec_uo_;
 
     // Convex decomposition
-    EllipsoidDecomp3D ellip_decomp_util_;
     std::vector<float> local_box_size_;
 
     // Parameters
