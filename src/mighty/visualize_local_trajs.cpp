@@ -17,11 +17,14 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <map>
 #include <algorithm>
 #include <limits>
 #include <cctype>
 #include <cmath>
+#include <optional>
+#include <iomanip>
 
 namespace fs = std::filesystem;
 
@@ -48,6 +51,11 @@ struct CaseBundle
 {
     std::string case_file; // basename: "sfc_g000.mysco2"
     fs::path mysco2_path;
+
+    // from .mysco2 (preferred for start/goal labels)
+    Vec3d mysco2_start{0, 0, 0};
+    Vec3d mysco2_goal{0, 0, 0};
+    bool have_mysco2_start_goal{false};
 
     decomp_ros_msgs::msg::PolyhedronArray poly_msg;
     visualization_msgs::msg::MarkerArray guide_path_ma;
@@ -77,6 +85,20 @@ static inline bool endsWith(const std::string &s, const std::string &suf)
     return s.size() >= suf.size() && s.compare(s.size() - suf.size(), suf.size(), suf) == 0;
 }
 
+static inline std::string toLower(std::string s)
+{
+    for (char &c : s)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return s;
+}
+
+static inline std::string zeroPadInt(int v, int width)
+{
+    std::ostringstream oss;
+    oss << std::setw(width) << std::setfill('0') << v;
+    return oss.str();
+}
+
 static inline std::vector<std::string> splitCsvLine(const std::string &line)
 {
     std::vector<std::string> out;
@@ -101,6 +123,37 @@ static inline std_msgs::msg::ColorRGBA makeColor(float r, float g, float b, floa
     c.a = a;
     return c;
 }
+
+// ------------------------ overlap-visibility controls ------------------------
+// Improves visibility when trajectories overlap by:
+//  (1) Drawing a translucent "halo" behind each trajectory line
+//  (2) Optionally stacking lines in Z by a tiny offset per planner slot
+//  (3) Optionally highlighting a specific planner
+struct TrajVizConfig
+{
+    // Base visibility
+    float alpha_line_base = 0.10f;
+    float alpha_pts_base = 0.25f;
+
+    // Halo/outline behind each line
+    bool enable_halo = true;
+    float halo_alpha = 0.10f;
+    double halo_scale = 2.5;                           // multiplier on line width
+    float halo_r = 0.0f, halo_g = 0.0f, halo_b = 0.0f; // black halo by default
+
+    // Optional Z stacking
+    bool enable_z_offset = false;
+    double z_step = 0.02; // meters per planner slot
+
+    // Optional highlight
+    std::string highlight_planner = ""; // e.g. "super" or "dynus_N4"
+    bool highlight_only = false;        // if true, only draw highlight_planner
+    float alpha_line_highlight = 1.0f;
+    float alpha_pts_highlight = 0.8f;
+    double highlight_scale = 3.0; // multiplier on line width for highlight
+};
+
+static TrajVizConfig g_traj_viz;
 
 // Deterministic hash -> [0,1)
 static inline double hash01(const std::string &s)
@@ -346,12 +399,52 @@ static visualization_msgs::msg::MarkerArray makeGuidePathMarkers(const std::vect
     return arr;
 }
 
+// Screenshot-mode helper: append guide path markers WITHOUT DELETEALL, with unique ns/id.
+static void appendGuidePathMarkersNoDelete(
+    visualization_msgs::msg::MarkerArray &arr,
+    int &id,
+    const std::vector<Vec3f> &path,
+    const std::string &frame_id,
+    const rclcpp::Time &stamp,
+    const std_msgs::msg::ColorRGBA &color,
+    double line_width,
+    double point_diam,
+    const std::string &ns_prefix)
+{
+    visualization_msgs::msg::Marker line;
+    line.header.frame_id = frame_id;
+    line.header.stamp = stamp;
+    line.ns = ns_prefix + "/guide_path";
+    line.id = id++;
+    line.type = visualization_msgs::msg::Marker::LINE_STRIP;
+    line.action = visualization_msgs::msg::Marker::ADD;
+    line.pose.orientation.w = 1.0;
+    line.scale.x = line_width;
+    line.color = color;
+
+    visualization_msgs::msg::Marker pts = line;
+    pts.ns = ns_prefix + "/guide_path_pts";
+    pts.id = id++;
+    pts.type = visualization_msgs::msg::Marker::SPHERE_LIST;
+    pts.scale.x = point_diam;
+    pts.scale.y = point_diam;
+    pts.scale.z = point_diam;
+
+    line.points.reserve(path.size());
+    pts.points.reserve(path.size());
+    for (const auto &p : path)
+    {
+        const auto gp = toPoint(p.x(), p.y(), p.z());
+        line.points.push_back(gp);
+        pts.points.push_back(gp);
+    }
+
+    arr.markers.push_back(line);
+    arr.markers.push_back(pts);
+}
+
 // ------------------------ trajectory CSV scan + parse ------------------------
 
-// Tries to parse our dumped format:
-// # planner_name: ...
-// # case_file: ...
-// then header with t,x,y,z,...
 static bool parseTrajCsv(const fs::path &csv_path, TrajCsv &out)
 {
     std::ifstream ifs(csv_path);
@@ -371,7 +464,6 @@ static bool parseTrajCsv(const fs::path &csv_path, TrajCsv &out)
 
         if (startsWith(line, "#"))
         {
-            // metadata
             const auto pos = line.find(':');
             if (pos != std::string::npos)
             {
@@ -387,7 +479,6 @@ static bool parseTrajCsv(const fs::path &csv_path, TrajCsv &out)
             continue;
         }
 
-        // First non-comment line: header
         if (!header_seen)
         {
             header_seen = true;
@@ -395,7 +486,6 @@ static bool parseTrajCsv(const fs::path &csv_path, TrajCsv &out)
             for (int i = 0; i < (int)toks.size(); ++i)
                 col[toks[i]] = i;
 
-            // minimally require x,y,z (t optional)
             if (col.find("x") == col.end() ||
                 col.find("y") == col.end() ||
                 col.find("z") == col.end())
@@ -404,7 +494,6 @@ static bool parseTrajCsv(const fs::path &csv_path, TrajCsv &out)
             continue;
         }
 
-        // Data
         const auto toks = splitCsvLine(line);
         auto getD = [&](const std::string &name, double def) -> double
         {
@@ -434,9 +523,6 @@ static bool parseTrajCsv(const fs::path &csv_path, TrajCsv &out)
             out.pts.push_back(p);
     }
 
-    // Fallback inference from filename / directory if not present (or to enrich with N):
-    // Expected filename (recommended): traj_<planner>_N<k>__<case>.csv
-    // Also supported: traj_<planner>__<case>.csv
     const std::string fname = csv_path.filename().string();
     const std::string parent_dir = csv_path.parent_path().filename().string();
 
@@ -449,7 +535,6 @@ static bool parseTrajCsv(const fs::path &csv_path, TrajCsv &out)
 
     auto inferVariantFromFilename = [&]() -> std::string
     {
-        // "traj_dynus_N4__sfc_g000.mysco2.csv" -> "dynus_N4"
         std::string s = fname;
         if (startsWith(s, "traj_"))
             s = s.substr(5);
@@ -461,7 +546,6 @@ static bool parseTrajCsv(const fs::path &csv_path, TrajCsv &out)
 
     auto inferCaseFromFilename = [&]() -> std::string
     {
-        // "traj_dynus_N4__sfc_g000.mysco2.csv" -> "sfc_g000.mysco2"
         const auto pos = fname.find("__");
         if (pos == std::string::npos)
             return std::string();
@@ -470,8 +554,6 @@ static bool parseTrajCsv(const fs::path &csv_path, TrajCsv &out)
 
     auto inferVariantFromDir = [&]() -> std::string
     {
-        // If parent_dir is "dynus_N4" or "faster_N6" -> keep it.
-        // We treat anything containing "_N" followed by digits as a variant.
         const auto pos = parent_dir.find("_N");
         if (pos == std::string::npos)
             return std::string();
@@ -488,30 +570,25 @@ static bool parseTrajCsv(const fs::path &csv_path, TrajCsv &out)
         return has_digit ? parent_dir : std::string();
     };
 
-    // Case file inference
     if (out.case_file.empty())
     {
         out.case_file = inferCaseFromFilename();
     }
     else
     {
-        // Sometimes header contains absolute path; normalize to basename.
         out.case_file = fs::path(out.case_file).filename().string();
     }
 
-    // Planner variant inference (prefer filename, then directory).
     const std::string variant_fname = inferVariantFromFilename();
     const std::string variant_dir = inferVariantFromDir();
     const std::string variant = !variant_fname.empty() ? variant_fname : variant_dir;
 
-    // Use variant as grouping key (so dynus_N4, dynus_N5, ... do not overwrite each other).
     if (!variant.empty())
     {
         out.planner_name = variant;
     }
     else if (out.planner_name.empty())
     {
-        // Last resort: take substring up to "__" (without truncating at "_N")
         std::string s = fname;
         if (startsWith(s, "traj_"))
             s = s.substr(5);
@@ -530,6 +607,417 @@ static bool parseTrajCsv(const fs::path &csv_path, TrajCsv &out)
 
 // ------------------------ marker building for trajectories ------------------------
 
+static inline std::string prettyPlannerName(const std::string &planner_key)
+{
+    if (planner_key == "dynus_N4")
+        return std::string("DYNUS(N=4)");
+    if (planner_key == "dynus_N5")
+        return std::string("DYNUS(N=5)");
+    if (planner_key == "dynus_N6")
+        return std::string("DYNUS(N=6)");
+    if (planner_key == "faster_N4")
+        return std::string("FASTER(N=4)");
+    if (planner_key == "faster_N5")
+        return std::string("FASTER(N=5)");
+    if (planner_key == "faster_N6")
+        return std::string("FASTER(N=6)");
+    if (planner_key == "super")
+        return "SUPER";
+    return planner_key;
+}
+
+static void appendStartOnce(
+    visualization_msgs::msg::MarkerArray &arr,
+    int &id,
+    const std::string &frame_id,
+    const rclcpp::Time &stamp,
+    const geometry_msgs::msg::Point &start_pt,
+    double point_diam,
+    double label_height,
+    double label_z_offset)
+{
+    const double start_goal_point_scale = 3.0;
+    const double start_goal_text_scale = 2.5;
+    const double start_text_dy = 0.6;
+    const double start_text_dz = 0.3;
+
+    auto init = [&](visualization_msgs::msg::Marker &m, const std::string &ns)
+    {
+        m.header.frame_id = frame_id;
+        m.header.stamp = stamp;
+        m.ns = ns;
+        m.id = id++;
+        m.action = visualization_msgs::msg::Marker::ADD;
+        m.pose.orientation.w = 1.0;
+        m.lifetime = rclcpp::Duration(0, 0);
+    };
+
+    // Start sphere
+    {
+        visualization_msgs::msg::Marker mk;
+        init(mk, "global_start");
+        mk.type = visualization_msgs::msg::Marker::SPHERE;
+        mk.pose.position = start_pt;
+        mk.scale.x = start_goal_point_scale * point_diam;
+        mk.scale.y = start_goal_point_scale * point_diam;
+        mk.scale.z = start_goal_point_scale * point_diam;
+        mk.color = makeColor(1.0f, 1.0f, 1.0f, 0.85f);
+        arr.markers.push_back(mk);
+    }
+    // Start text
+    {
+        visualization_msgs::msg::Marker mk;
+        init(mk, "global_start_text");
+        mk.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+        mk.pose.position.x = start_pt.x;
+        mk.pose.position.y = start_pt.y + start_text_dy;
+        mk.pose.position.z = start_pt.z + start_text_dz + label_z_offset * 0.0; // keep same convention
+        mk.scale.z = start_goal_text_scale * label_height;
+        mk.color = makeColor(1.0f, 1.0f, 1.0f, 1.0f);
+        mk.text = "start";
+        arr.markers.push_back(mk);
+    }
+}
+
+static void appendPlannerLegendOnce(
+    visualization_msgs::msg::MarkerArray &arr,
+    int &id,
+    const std::vector<std::string> &planners_sorted,
+    const std::string &frame_id,
+    const rclcpp::Time &stamp,
+    const geometry_msgs::msg::Point &anchor,
+    double label_height,
+    double label_z_offset)
+{
+    if (planners_sorted.empty())
+        return;
+
+    const float alpha_text = 1.0f;
+    const double text_scale = 2.0;
+    const double label_spacing_m = 1.0;
+
+    const int N = (int)planners_sorted.size();
+    const double mid = (N - 1) / 2.0;
+
+    auto init = [&](visualization_msgs::msg::Marker &m, const std::string &ns)
+    {
+        m.header.frame_id = frame_id;
+        m.header.stamp = stamp;
+        m.ns = ns;
+        m.id = id++;
+        m.action = visualization_msgs::msg::Marker::ADD;
+        m.pose.orientation.w = 1.0;
+        m.lifetime = rclcpp::Duration(0, 0);
+    };
+
+    for (int i = 0; i < N; ++i)
+    {
+        const std::string &planner = planners_sorted[i];
+
+        const double t = (N <= 1) ? 0.0 : (double)i / (double)(N - 1);
+        const double h = 0.85 * t;
+
+        double rr, gg, bb;
+        hsv2rgb(h, 1.0, 1.0, rr, gg, bb);
+
+        visualization_msgs::msg::Marker text;
+        init(text, "planner_legend");
+        text.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+
+        text.pose.position.x = anchor.x;
+        text.pose.position.y = anchor.y + (mid - (double)i) * label_spacing_m;
+        text.pose.position.z = anchor.z + label_z_offset;
+
+        text.scale.z = text_scale * label_height;
+        text.color = makeColor((float)rr, (float)gg, (float)bb, alpha_text);
+        text.text = prettyPlannerName(planner);
+
+        arr.markers.push_back(text);
+    }
+}
+
+// Core builder that APPENDS markers (no DELETEALL). Used by both loop and screenshot modes.
+static void appendTrajOverlayMarkers(
+    visualization_msgs::msg::MarkerArray &arr,
+    int &id,
+    const std::map<std::string, TrajCsv> &planner_to_traj,
+    const std::string &frame_id,
+    const rclcpp::Time &stamp,
+    bool show_points,
+    bool show_labels,
+    double line_width,
+    double point_diam,
+    double label_height,
+    double label_z_offset,
+    const std::string &ns_prefix,
+    const std::string &goal_text_override,
+    const std::optional<geometry_msgs::msg::Point> &start_opt,
+    const std::optional<geometry_msgs::msg::Point> &goal_opt,
+    bool publish_start,                                               // loop: true, screenshot: false
+    bool publish_goal_and_case_label,                                 // loop: true (goal), screenshot: true (case label at goal)
+    bool publish_planner_labels,                                      // loop: true, screenshot: false
+    const std::unordered_map<std::string, int> *global_planner_index, // screenshot: non-null
+    int global_planner_count,                                         // screenshot: >0
+    double goal_label_dx,                                             // screenshot: +1.0, loop: 0.0
+    double goal_label_dy)                                             // screenshot: 0.0, loop: +0.6
+{
+    // Visual tuning knobs (configurable via params)
+    const float alpha_line_base = g_traj_viz.alpha_line_base;
+    const float alpha_pts_base = g_traj_viz.alpha_pts_base;
+    const float alpha_text = 1.0f;
+
+    const double line_scale = 1.5;
+    const double text_scale = 2.0;
+
+    const double start_goal_text_scale = 2.5;
+    const double start_goal_point_scale = 3.0;
+    const double start_goal_text_dy = 0.6;
+    const double start_goal_text_dz = 0.3;
+
+    // Choose which planner index map to use
+    std::unordered_map<std::string, int> local_index;
+    const std::unordered_map<std::string, int> *index_map = nullptr;
+    int num_planners = 0;
+
+    if (global_planner_index && !global_planner_index->empty() && global_planner_count > 0)
+    {
+        index_map = global_planner_index;
+        num_planners = global_planner_count;
+    }
+    else
+    {
+        num_planners = static_cast<int>(planner_to_traj.size());
+        local_index.reserve(static_cast<size_t>(num_planners));
+        int idx = 0;
+        for (const auto &kv : planner_to_traj)
+            local_index[kv.first] = idx++;
+        index_map = &local_index;
+    }
+
+    const double label_spacing_m = 1.0;
+    const double mid = (num_planners - 1) / 2.0;
+
+    auto initMarkerCommon = [&](visualization_msgs::msg::Marker &m, const std::string &ns)
+    {
+        m.header.frame_id = frame_id;
+        m.header.stamp = stamp;
+        m.ns = ns;
+        m.id = id++;
+        m.action = visualization_msgs::msg::Marker::ADD;
+        m.pose.orientation.w = 1.0;
+        m.lifetime = rclcpp::Duration(0, 0);
+    };
+
+    // Determine start/goal
+    bool have_start_goal = false;
+    geometry_msgs::msg::Point start_pt, goal_pt;
+
+    if (start_opt && goal_opt)
+    {
+        start_pt = *start_opt;
+        goal_pt = *goal_opt;
+        have_start_goal = true;
+    }
+    else
+    {
+        for (const auto &kv : planner_to_traj)
+        {
+            if (!kv.second.pts.empty())
+            {
+                start_pt = toPoint(kv.second.pts.front().x, kv.second.pts.front().y, kv.second.pts.front().z);
+                goal_pt = toPoint(kv.second.pts.back().x, kv.second.pts.back().y, kv.second.pts.back().z);
+                have_start_goal = true;
+                break;
+            }
+        }
+    }
+
+    // Start marker/text (only if requested)
+    if (publish_start && have_start_goal)
+    {
+        const std::string base_ns = ns_prefix.empty() ? "start_goal" : (ns_prefix + "/start_goal");
+        const std::string base_ns_text = ns_prefix.empty() ? "start_goal_text" : (ns_prefix + "/start_goal_text");
+
+        const auto col_sg_pt = makeColor(1.0f, 1.0f, 1.0f, 0.85f);
+        const auto col_sg_text = makeColor(1.0f, 1.0f, 1.0f, 1.0f);
+
+        // Start sphere
+        {
+            visualization_msgs::msg::Marker mk;
+            initMarkerCommon(mk, base_ns);
+            mk.type = visualization_msgs::msg::Marker::SPHERE;
+            mk.scale.x = start_goal_point_scale * point_diam;
+            mk.scale.y = start_goal_point_scale * point_diam;
+            mk.scale.z = start_goal_point_scale * point_diam;
+            mk.pose.position = start_pt;
+            mk.color = col_sg_pt;
+            arr.markers.push_back(mk);
+        }
+        // Start text
+        {
+            visualization_msgs::msg::Marker mk;
+            initMarkerCommon(mk, base_ns_text);
+            mk.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+            mk.pose.position.x = start_pt.x;
+            mk.pose.position.y = start_pt.y + start_goal_text_dy;
+            mk.pose.position.z = start_pt.z + start_goal_text_dz;
+            mk.scale.z = start_goal_text_scale * label_height;
+            mk.color = col_sg_text;
+            mk.text = "start";
+            arr.markers.push_back(mk);
+        }
+    }
+
+    // Goal / Case label (only if requested)
+    if (publish_goal_and_case_label && have_start_goal)
+    {
+        const std::string base_ns = ns_prefix.empty() ? "goal" : (ns_prefix + "/goal");
+        const std::string base_ns_text = ns_prefix.empty() ? "goal_text" : (ns_prefix + "/goal_text");
+
+        const auto col_pt = makeColor(1.0f, 1.0f, 1.0f, 0.85f);
+        const auto col_text = makeColor(1.0f, 1.0f, 1.0f, 1.0f);
+
+        // Goal sphere
+        {
+            visualization_msgs::msg::Marker mk;
+            initMarkerCommon(mk, base_ns);
+            mk.type = visualization_msgs::msg::Marker::SPHERE;
+            mk.scale.x = start_goal_point_scale * point_diam;
+            mk.scale.y = start_goal_point_scale * point_diam;
+            mk.scale.z = start_goal_point_scale * point_diam;
+            mk.pose.position = goal_pt;
+            mk.color = col_pt;
+            arr.markers.push_back(mk);
+        }
+        // Goal/case text (requirements: screenshot => +1m in x, no y increment, no space in "caseXX")
+        {
+            visualization_msgs::msg::Marker mk;
+            initMarkerCommon(mk, base_ns_text);
+            mk.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+            mk.pose.position.x = goal_pt.x + goal_label_dx;
+            mk.pose.position.y = goal_pt.y + goal_label_dy;
+            mk.pose.position.z = goal_pt.z + start_goal_text_dz;
+            mk.scale.z = start_goal_text_scale * label_height;
+            mk.color = col_text;
+            mk.text = goal_text_override;
+            arr.markers.push_back(mk);
+        }
+    }
+
+    // Trajectory overlays per planner
+    for (const auto &kv : planner_to_traj)
+    {
+        const std::string &planner = kv.first;
+        const TrajCsv &tr = kv.second;
+
+        auto it_idx = index_map->find(planner);
+        const int i = (it_idx != index_map->end()) ? it_idx->second
+                                                   : (int)std::floor(hash01(planner) * std::max(1, num_planners));
+
+        // Keep i/t for label y-positioning only (do NOT use it for color in loop mode).
+        const double t = (num_planners <= 1) ? 0.0 : (double)i / (double)(num_planners - 1);
+
+        // Color hue: stable per planner in loop mode; keep index-based color in screenshot mode.
+        double h_color = 0.0;
+        if (global_planner_index && !global_planner_index->empty() && global_planner_count > 0)
+        {
+            // screenshot mode (global stable palette by global index)
+            h_color = 0.85 * t;
+        }
+        else
+        {
+            // loop mode (stable per planner across cases even if planners are missing)
+            h_color = 0.85 * hash01(planner);
+        }
+
+        double rr, gg, bb;
+        hsv2rgb(h_color, 1.0, 1.0, rr, gg, bb);
+
+        // Highlight logic
+        const bool has_highlight = !g_traj_viz.highlight_planner.empty();
+        const bool is_highlight = has_highlight && (planner == g_traj_viz.highlight_planner);
+        if (g_traj_viz.highlight_only && has_highlight && !is_highlight)
+            continue;
+
+        const float a_line = is_highlight ? g_traj_viz.alpha_line_highlight : alpha_line_base;
+        const float a_pts = is_highlight ? g_traj_viz.alpha_pts_highlight : alpha_pts_base;
+        const double width_scale = is_highlight ? (line_scale * g_traj_viz.highlight_scale) : line_scale;
+
+        // Optional Z stacking offset (helps when overlapping)
+        const double z_off = g_traj_viz.enable_z_offset ? (((double)i - mid) * g_traj_viz.z_step) : 0.0;
+
+        const auto col_line = makeColor((float)rr, (float)gg, (float)bb, a_line);
+        const auto col_pts = makeColor((float)rr, (float)gg, (float)bb, a_pts);
+        const auto col_text = makeColor((float)rr, (float)gg, (float)bb, alpha_text);
+
+        const std::string ns_traj = (ns_prefix.empty() ? "" : (ns_prefix + "/")) + "traj/" + planner;
+        const std::string ns_pts = (ns_prefix.empty() ? "" : (ns_prefix + "/")) + "traj_pts/" + planner;
+        const std::string ns_label = (ns_prefix.empty() ? "" : (ns_prefix + "/")) + "traj_label";
+
+        // Build points once (with optional z offset)
+        std::vector<geometry_msgs::msg::Point> pts_vec;
+        pts_vec.reserve(tr.pts.size());
+        for (const auto &p : tr.pts)
+            pts_vec.push_back(toPoint(p.x, p.y, p.z + z_off));
+
+        // Halo behind the main line (improves separability under overlap)
+        if (g_traj_viz.enable_halo)
+        {
+            visualization_msgs::msg::Marker halo;
+            initMarkerCommon(halo, ns_traj + "/halo");
+            halo.type = visualization_msgs::msg::Marker::LINE_STRIP;
+            halo.scale.x = g_traj_viz.halo_scale * width_scale * line_width;
+            halo.color = makeColor(g_traj_viz.halo_r, g_traj_viz.halo_g, g_traj_viz.halo_b, g_traj_viz.halo_alpha);
+            halo.points = pts_vec;
+            arr.markers.push_back(halo);
+        }
+
+        // Main colored line
+        visualization_msgs::msg::Marker line;
+        initMarkerCommon(line, ns_traj);
+        line.type = visualization_msgs::msg::Marker::LINE_STRIP;
+        line.scale.x = width_scale * line_width;
+        line.color = col_line;
+        line.points = pts_vec;
+        arr.markers.push_back(line);
+
+        if (show_points)
+        {
+            visualization_msgs::msg::Marker pts;
+            initMarkerCommon(pts, ns_pts);
+            pts.type = visualization_msgs::msg::Marker::SPHERE_LIST;
+            pts.scale.x = point_diam;
+            pts.scale.y = point_diam;
+            pts.scale.z = point_diam;
+            pts.color = col_pts;
+            pts.points = pts_vec;
+            arr.markers.push_back(pts);
+        }
+
+        // Planner labels (screenshot mode disables this; loop mode enables)
+        if (publish_planner_labels && show_labels && !tr.pts.empty())
+        {
+            const double y_label = (mid - (double)i) * label_spacing_m;
+
+            visualization_msgs::msg::Marker text;
+            initMarkerCommon(text, ns_label);
+            text.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+
+            text.pose.position.x = tr.pts.front().x - 2.0;
+            text.pose.position.y = y_label;
+            text.pose.position.z = tr.pts.front().z + z_off + label_z_offset;
+
+            text.scale.z = text_scale * label_height;
+            text.color = col_text;
+            text.text = prettyPlannerName(planner);
+
+            arr.markers.push_back(text);
+        }
+    }
+}
+
+// Loop-mode wrapper: returns a standalone MarkerArray (with DELETEALL).
+// Loop-mode wrapper: returns a standalone MarkerArray (with DELETEALL).
 static visualization_msgs::msg::MarkerArray makeTrajOverlayMarkers(
     const std::map<std::string, TrajCsv> &planner_to_traj,
     const std::string &frame_id,
@@ -539,89 +1027,34 @@ static visualization_msgs::msg::MarkerArray makeTrajOverlayMarkers(
     double line_width,
     double point_diam,
     double label_height,
-    double label_z_offset)
+    double label_z_offset,
+    const std::string &goal_text_override,
+    const std::optional<geometry_msgs::msg::Point> &start_opt,
+    const std::optional<geometry_msgs::msg::Point> &goal_opt,
+    const std::unordered_map<std::string, int> *global_planner_index,
+    int global_planner_count)
 {
     visualization_msgs::msg::MarkerArray arr;
     arr.markers.push_back(deleteAllMarker(frame_id, stamp));
-
     int id = 1;
 
-    // label spacing rule:
-    const int num_planners = static_cast<int>(planner_to_traj.size());
-    const double label_spacing_m = 1.0;
-
-    std::unordered_map<std::string, int> planner_to_index;
-    planner_to_index.reserve((size_t)num_planners);
-
-    int idx = 0;
-    for (const auto &kv : planner_to_traj)
-        planner_to_index[kv.first] = idx++;
-
-    const double mid = (num_planners - 1) / 2.0;
-
-    for (const auto &kv : planner_to_traj)
-    {
-        const std::string &planner = kv.first; // this is now planner variant (e.g., dynus_N4)
-        const TrajCsv &tr = kv.second;
-
-        // deterministic per planner-variant color
-        const double h = hash01(planner);
-        double rr, gg, bb;
-        hsv2rgb(h, 0.85, 0.95, rr, gg, bb);
-        const auto col = makeColor((float)rr, (float)gg, (float)bb, 1.0f);
-
-        visualization_msgs::msg::Marker line;
-        line.header.frame_id = frame_id;
-        line.header.stamp = stamp;
-        line.ns = "traj/" + planner;
-        line.id = id++;
-        line.type = visualization_msgs::msg::Marker::LINE_STRIP;
-        line.action = visualization_msgs::msg::Marker::ADD;
-        line.pose.orientation.w = 1.0;
-        line.scale.x = line_width;
-        line.color = col;
-
-        line.points.reserve(tr.pts.size());
-        for (const auto &p : tr.pts)
-            line.points.push_back(toPoint(p.x, p.y, p.z));
-        arr.markers.push_back(line);
-
-        if (show_points)
-        {
-            visualization_msgs::msg::Marker pts = line;
-            pts.id = id++;
-            pts.type = visualization_msgs::msg::Marker::SPHERE_LIST;
-            pts.scale.x = point_diam;
-            pts.scale.y = point_diam;
-            pts.scale.z = point_diam;
-            pts.points = line.points;
-            arr.markers.push_back(pts);
-        }
-
-        if (show_labels && !tr.pts.empty())
-        {
-            const int i = planner_to_index.at(planner);
-            const double y_label = (mid - (double)i) * label_spacing_m;
-
-            visualization_msgs::msg::Marker text;
-            text.header.frame_id = frame_id;
-            text.header.stamp = stamp;
-            text.ns = "traj_label";
-            text.id = id++;
-            text.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
-            text.action = visualization_msgs::msg::Marker::ADD;
-            text.pose.orientation.w = 1.0;
-
-            text.pose.position.x = tr.pts.front().x - 1.0;
-            text.pose.position.y = y_label;
-            text.pose.position.z = tr.pts.front().z + label_z_offset;
-
-            text.scale.z = label_height;
-            text.color = col;
-            text.text = planner; // show variant (dynus_N4, ...)
-            arr.markers.push_back(text);
-        }
-    }
+    // IMPORTANT: forward the global palette into appendTrajOverlayMarkers()
+    appendTrajOverlayMarkers(
+        arr, id,
+        planner_to_traj, frame_id, stamp,
+        show_points, show_labels,
+        line_width, point_diam,
+        label_height, label_z_offset,
+        /*ns_prefix=*/"",
+        goal_text_override,
+        start_opt, goal_opt,
+        /*publish_start=*/true,
+        /*publish_goal_and_case_label=*/true,
+        /*publish_planner_labels=*/true,
+        /*global_planner_index=*/global_planner_index,
+        /*global_planner_count=*/global_planner_count,
+        /*goal_label_dx=*/0.0,
+        /*goal_label_dy=*/0.6);
 
     return arr;
 }
@@ -656,6 +1089,11 @@ public:
         playback_period_sec_ = declare_parameter<double>("playback_period_sec", 0.5);
         visualize_ = declare_parameter<bool>("visualize", true);
 
+        // Mode
+        mode_ = toLower(declare_parameter<std::string>("mode", "loop")); // "loop" or "screenshot"
+        screenshot_stride_ = declare_parameter<int>("screenshot_stride", 10);
+        screenshot_max_index_ = declare_parameter<int>("screenshot_max_index", 100);
+
         // What to show
         show_guide_path_ = declare_parameter<bool>("show_guide_path", true);
         show_points_ = declare_parameter<bool>("show_points", true);
@@ -666,6 +1104,26 @@ public:
         traj_point_diam_ = declare_parameter<double>("traj_point_diam", 0.10);
         label_height_ = declare_parameter<double>("label_height", 0.25);
         label_z_offset_ = declare_parameter<double>("label_z_offset", 0.25);
+
+        // Overlap visibility controls
+        g_traj_viz.alpha_line_base = (float)declare_parameter<double>("viz_alpha_line_base", 0.10);
+        g_traj_viz.alpha_pts_base = (float)declare_parameter<double>("viz_alpha_pts_base", 0.25);
+
+        g_traj_viz.enable_halo = declare_parameter<bool>("viz_enable_halo", true);
+        g_traj_viz.halo_alpha = (float)declare_parameter<double>("viz_halo_alpha", 0.10);
+        g_traj_viz.halo_scale = declare_parameter<double>("viz_halo_scale", 2.5);
+        g_traj_viz.halo_r = (float)declare_parameter<double>("viz_halo_r", 0.0);
+        g_traj_viz.halo_g = (float)declare_parameter<double>("viz_halo_g", 0.0);
+        g_traj_viz.halo_b = (float)declare_parameter<double>("viz_halo_b", 0.0);
+
+        g_traj_viz.enable_z_offset = declare_parameter<bool>("viz_enable_z_offset", false);
+        g_traj_viz.z_step = declare_parameter<double>("viz_z_step", 0.02);
+
+        g_traj_viz.highlight_planner = declare_parameter<std::string>("viz_highlight_planner", "");
+        g_traj_viz.highlight_only = declare_parameter<bool>("viz_highlight_only", false);
+        g_traj_viz.alpha_line_highlight = (float)declare_parameter<double>("viz_alpha_line_highlight", 1.0);
+        g_traj_viz.alpha_pts_highlight = (float)declare_parameter<double>("viz_alpha_pts_highlight", 0.8);
+        g_traj_viz.highlight_scale = declare_parameter<double>("viz_highlight_scale", 3.0);
 
         // Corridor load
         poly_seed_eps_ = declare_parameter<double>("poly_seed_eps", 1e-6);
@@ -701,17 +1159,29 @@ public:
             return;
         }
 
-        RCLCPP_INFO(get_logger(), "Loaded %zu cases with trajectories. Starting playback.", cases_.size());
-
-        if (visualize_)
+        if (mode_ == "loop")
         {
-            const double period = std::max(0.05, playback_period_sec_);
-            timer_ = create_wall_timer(std::chrono::duration<double>(period),
-                                       std::bind(&VisualizeLocalTrajsNode::publishNext, this));
+            RCLCPP_INFO(get_logger(), "Mode=loop. Loaded %zu cases. Starting playback.", cases_.size());
+
+            if (visualize_)
+            {
+                const double period = std::max(0.05, playback_period_sec_);
+                timer_ = create_wall_timer(std::chrono::duration<double>(period),
+                                           std::bind(&VisualizeLocalTrajsNode::publishNext, this));
+            }
+            else
+            {
+                publishCase(0);
+            }
+        }
+        else if (mode_ == "screenshot")
+        {
+            RCLCPP_INFO(get_logger(), "Mode=screenshot. Publishing sampled cases overlay.");
+            publishScreenshotOverlay();
         }
         else
         {
-            publishCase(0);
+            RCLCPP_ERROR(get_logger(), "Unknown mode: '%s'. Use mode:=loop or mode:=screenshot", mode_.c_str());
         }
     }
 
@@ -743,7 +1213,7 @@ private:
             case_index[cases_.back().case_file] = cases_.size() - 1;
         }
 
-        // 2) Load trajectories by scanning traj_dump_root_dir recursively
+        // 2) Load trajectories by scanning traj_dump_root_dirs recursively
         size_t traj_count = 0;
 
         for (const auto &root_str : traj_dump_root_dirs_)
@@ -775,15 +1245,11 @@ private:
                 if (!parseTrajCsv(p, tr))
                     continue;
 
-                // normalize to basename (important if SUPER writes full paths)
                 tr.case_file = fs::path(tr.case_file).filename().string();
 
-                // match to sfc_dir cases
                 auto itc = case_index.find(tr.case_file);
                 if (itc == case_index.end())
                 {
-                    // If your mysco2 files in sfc_dir are named "sfc_g000.mysco2" and SUPER logs "sfc_g000"
-                    // you can optionally try appending extension here.
                     if (!endsWith(tr.case_file, file_ext_) &&
                         case_index.find(tr.case_file + file_ext_) != case_index.end())
                     {
@@ -796,7 +1262,6 @@ private:
 
                 tr.frame_id = frame_id_;
 
-                // Use tr.planner_name as the “variant key” (dynus_N4, faster_N6, super, etc.)
                 cases_[itc->second].planner_to_traj[tr.planner_name] = std::move(tr);
                 traj_count++;
             }
@@ -819,10 +1284,14 @@ private:
 
                 loadMysco2CorridorAndPath(cb.mysco2_path, start, goal, path_pts, polys, poly_seed_eps_);
 
+                cb.mysco2_start = start;
+                cb.mysco2_goal = goal;
+                cb.have_mysco2_start_goal = true;
+
                 auto msg = DecompROS::polyhedron_array_to_ros(polys);
                 msg.header.frame_id = frame_id_;
                 msg.header.stamp = now();
-                msg.lifetime = rclcpp::Duration::from_seconds(1.0);
+                msg.lifetime = rclcpp::Duration::from_seconds(1000.0);
                 cb.poly_msg = msg;
 
                 cb.guide_path_ma = makeGuidePathMarkers(
@@ -841,6 +1310,34 @@ private:
         }
 
         cases_.swap(filtered);
+
+        // Build global planner ordering (union across all cases with non-empty trajectory)
+        global_planner_index_.clear();
+        global_planners_sorted_.clear();
+
+        std::unordered_set<std::string> set;
+        for (const auto &cb : cases_)
+        {
+            for (const auto &kv : cb.planner_to_traj)
+            {
+                if (!kv.second.pts.empty())
+                    set.insert(kv.first);
+            }
+        }
+
+        global_planners_sorted_.reserve(set.size());
+        for (const auto &p : set)
+            global_planners_sorted_.push_back(p);
+
+        std::sort(global_planners_sorted_.begin(), global_planners_sorted_.end());
+
+        global_planner_index_.reserve(global_planners_sorted_.size());
+        for (int i = 0; i < (int)global_planners_sorted_.size(); ++i)
+            global_planner_index_[global_planners_sorted_[i]] = i;
+
+        global_planner_count_ = (int)global_planners_sorted_.size();
+
+        RCLCPP_INFO(get_logger(), "Global planner palette: %d planners.", global_planner_count_);
 
         RCLCPP_INFO(get_logger(),
                     "Scan complete: %zu cases in sfc_dir, %zu cases with trajectories, %zu trajectory CSVs loaded.",
@@ -886,18 +1383,223 @@ private:
             pub_guide_path_->publish(cb.guide_path_ma);
         }
 
-        // Overlay trajectories for this case (now includes dynus_N4, dynus_N5, ...)
+        std::optional<geometry_msgs::msg::Point> start_opt;
+        std::optional<geometry_msgs::msg::Point> goal_opt;
+        if (cb.have_mysco2_start_goal)
+        {
+            start_opt = toPoint(cb.mysco2_start.x(), cb.mysco2_start.y(), cb.mysco2_start.z());
+            goal_opt = toPoint(cb.mysco2_goal.x(), cb.mysco2_goal.y(), cb.mysco2_goal.z());
+        }
+
         const auto traj_ma = makeTrajOverlayMarkers(
             cb.planner_to_traj, frame_id_, stamp,
             show_points_, show_labels_,
             traj_line_width_, traj_point_diam_,
-            label_height_, label_z_offset_);
+            label_height_, label_z_offset_,
+            /*goal_text_override=*/"goal",
+            start_opt, goal_opt,
+            /*global_planner_index=*/&global_planner_index_,
+            /*global_planner_count=*/global_planner_count_);
 
         pub_traj_->publish(traj_ma);
 
         RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 2000,
                              "Visualizing case %zu/%zu: %s (variants=%zu)",
                              idx + 1, cases_.size(), cb.case_file.c_str(), cb.planner_to_traj.size());
+    }
+
+    void publishScreenshotOverlay()
+    {
+        if (cases_.empty())
+            return;
+
+        const auto stamp = now();
+
+        // Select indices: 0, stride, 2*stride, ... up to screenshot_max_index_ (inclusive), if available.
+        const int stride = std::max(1, screenshot_stride_);
+        const int max_i = std::max(0, screenshot_max_index_);
+
+        std::vector<size_t> sel;
+        for (int i = 0; i <= max_i; i += stride)
+        {
+            if ((size_t)i < cases_.size())
+                sel.push_back((size_t)i);
+        }
+        if (sel.empty())
+            sel.push_back(0);
+
+        // Pre-scan: union of planners that have non-empty trajectory in ANY selected case.
+        std::unordered_set<std::string> planner_set;
+        for (size_t ci : sel)
+        {
+            for (const auto &kv : cases_[ci].planner_to_traj)
+            {
+                if (!kv.second.pts.empty())
+                    planner_set.insert(kv.first);
+            }
+        }
+
+        std::vector<std::string> planners_sorted;
+        planners_sorted.reserve(planner_set.size());
+        for (const auto &p : planner_set)
+            planners_sorted.push_back(p);
+        std::sort(planners_sorted.begin(), planners_sorted.end());
+
+        std::unordered_map<std::string, int> global_planner_index;
+        global_planner_index.reserve(planners_sorted.size());
+        for (int i = 0; i < (int)planners_sorted.size(); ++i)
+            global_planner_index[planners_sorted[i]] = i;
+        const int global_planner_count = (int)planners_sorted.size();
+
+        // Determine global start (publish only once)
+        std::optional<geometry_msgs::msg::Point> global_start_opt;
+        if (!sel.empty() && cases_[sel.front()].have_mysco2_start_goal)
+        {
+            const auto &cb0 = cases_[sel.front()];
+            global_start_opt = toPoint(cb0.mysco2_start.x(), cb0.mysco2_start.y(), cb0.mysco2_start.z());
+        }
+
+        // Clear once
+        visualization_msgs::msg::MarkerArray traj_all;
+        visualization_msgs::msg::MarkerArray guide_all;
+        traj_all.markers.push_back(deleteAllMarker(frame_id_, stamp));
+        guide_all.markers.push_back(deleteAllMarker(frame_id_, stamp));
+
+        // Combine corridor polys into one message
+        decomp_ros_msgs::msg::PolyhedronArray poly_all;
+        bool poly_init = false;
+
+        int traj_id = 1;
+        int guide_id = 1;
+
+        for (size_t k = 0; k < sel.size(); ++k)
+        {
+            const size_t ci = sel[k];
+            auto &cb = cases_[ci];
+
+            const std::string ns_prefix = "case_" + zeroPadInt((int)ci, 3);
+
+            // Corridor accumulation
+            if (!poly_init)
+            {
+                poly_all = cb.poly_msg;
+                poly_all.header.frame_id = frame_id_;
+                poly_all.header.stamp = stamp;
+                poly_init = true;
+            }
+            else
+            {
+                poly_all.polyhedrons.insert(poly_all.polyhedrons.end(),
+                                            cb.poly_msg.polyhedrons.begin(),
+                                            cb.poly_msg.polyhedrons.end());
+            }
+
+            // Guide path accumulation
+            if (show_guide_path_)
+            {
+                const auto &ma = cb.guide_path_ma;
+                if (ma.markers.size() >= 3 && ma.markers[1].type == visualization_msgs::msg::Marker::LINE_STRIP)
+                {
+                    std::vector<Vec3f> path_pts;
+                    path_pts.reserve(ma.markers[1].points.size());
+                    for (const auto &p : ma.markers[1].points)
+                    {
+                        Vec3f v;
+                        v.x() = p.x;
+                        v.y() = p.y;
+                        v.z() = p.z;
+                        path_pts.push_back(v);
+                    }
+                    appendGuidePathMarkersNoDelete(
+                        guide_all, guide_id,
+                        path_pts, frame_id_, stamp,
+                        makeColor(0.6f, 0.6f, 0.6f, 1.0f),
+                        0.04, 0.08,
+                        ns_prefix);
+                }
+            }
+
+            // Start/goal from .mysco2
+            std::optional<geometry_msgs::msg::Point> start_opt;
+            std::optional<geometry_msgs::msg::Point> goal_opt;
+            if (cb.have_mysco2_start_goal)
+            {
+                start_opt = toPoint(cb.mysco2_start.x(), cb.mysco2_start.y(), cb.mysco2_start.z());
+                goal_opt = toPoint(cb.mysco2_goal.x(), cb.mysco2_goal.y(), cb.mysco2_goal.z());
+            }
+
+            // Case label: requirements
+            // - text: "caseXX" (no space)
+            // - placed at goal.x + 1.0, goal.y + 0.0
+            const std::string case_text = std::string("case-") + std::to_string((int)ci);
+
+            appendTrajOverlayMarkers(
+                traj_all, traj_id,
+                cb.planner_to_traj, frame_id_, stamp,
+                show_points_, show_labels_,
+                traj_line_width_, traj_point_diam_,
+                label_height_, label_z_offset_,
+                ns_prefix,
+                case_text,
+                start_opt, goal_opt,
+                /*publish_start=*/false,              // start only once globally
+                /*publish_goal_and_case_label=*/true, // case label per case
+                /*publish_planner_labels=*/false,     // planner legend only once globally
+                /*global_planner_index=*/&global_planner_index,
+                /*global_planner_count=*/global_planner_count,
+                /*goal_label_dx=*/1.3,
+                /*goal_label_dy=*/0.0);
+        }
+
+        // Publish global start once
+        if (global_start_opt)
+        {
+            appendStartOnce(
+                traj_all, traj_id,
+                frame_id_, stamp,
+                *global_start_opt,
+                traj_point_diam_,
+                label_height_,
+                label_z_offset_);
+        }
+
+        // Publish planner legend once (use global planner list; stable colors)
+        if (!planners_sorted.empty())
+        {
+            geometry_msgs::msg::Point anchor;
+            if (global_start_opt)
+            {
+                anchor = *global_start_opt;
+                anchor.x -= 2.0; // place legend left of start
+            }
+            else
+            {
+                anchor = toPoint(0.0, 0.0, 0.0);
+            }
+
+            appendPlannerLegendOnce(
+                traj_all, traj_id,
+                planners_sorted,
+                frame_id_, stamp,
+                anchor,
+                label_height_,
+                label_z_offset_);
+        }
+
+        // Publish
+        if (poly_init)
+        {
+            poly_all.header.frame_id = frame_id_;
+            poly_all.header.stamp = stamp;
+            pub_poly_->publish(poly_all);
+        }
+
+        pub_guide_path_->publish(guide_all);
+        pub_traj_->publish(traj_all);
+
+        RCLCPP_INFO(get_logger(),
+                    "Screenshot overlay published: %zu cases sampled (stride=%d, max_index=%d). planners=%zu",
+                    sel.size(), stride, max_i, planners_sorted.size());
     }
 
 private:
@@ -916,6 +1618,10 @@ private:
     double playback_period_sec_{0.5};
     bool latched_{true};
 
+    std::string mode_{"loop"};
+    int screenshot_stride_{10};
+    int screenshot_max_index_{100};
+
     bool show_guide_path_{true};
     bool show_points_{true};
     bool show_labels_{true};
@@ -930,6 +1636,11 @@ private:
     // state
     std::vector<CaseBundle> cases_;
     size_t play_idx_{0};
+
+    // global planner palette for loop mode (and can also be used elsewhere)
+    std::vector<std::string> global_planners_sorted_;
+    std::unordered_map<std::string, int> global_planner_index_;
+    int global_planner_count_{0};
 
     // ros
     rclcpp::Publisher<decomp_ros_msgs::msg::PolyhedronArray>::SharedPtr pub_poly_;

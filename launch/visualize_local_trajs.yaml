@@ -11,10 +11,10 @@ windows:
       - shell_command:
         - ros2 launch mighty simulator.launch.py
 
-      # run benchmark (dynus, dynus_star, faster)
+      # run benchmark (dynus, dynus_star, faster) (mode: loop, screenshot)
       - shell_command:
-        - sleep 5
-        - ros2 run mighty visualize_local_trajs_node
+        - sleep 2
+        - ros2 run mighty visualize_local_trajs_node --ros-args -p viz_enable_z_offset:=true -p viz_z_step:=0.05 -p mode:=loop -p viz_enable_halo:=false -p alpha_pts_base:=1.0 -p viz_alpha_line_base:=1.0
 
 
 

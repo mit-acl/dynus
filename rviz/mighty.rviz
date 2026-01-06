@@ -96,17 +96,17 @@ Visualization Manager:
             Reliability Policy: Reliable
             Value: /shapes_dynamic_mesh
           Value: false
-        - Alpha: 0.5
+        - Alpha: 1
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: 10
-            Min Value: -10
+            Max Value: 2.9600000381469727
+            Min Value: -1.940000057220459
             Value: true
           Axis: Z
           Channel Name: intensity
           Class: rviz_default_plugins/PointCloud2
           Color: 153; 193; 241
-          Color Transformer: FlatColor
+          Color Transformer: AxisColor
           Decay Time: 0
           Enabled: true
           Invert Rainbow: false
@@ -118,7 +118,7 @@ Visualization Manager:
           Position Transformer: XYZ
           Selectable: true
           Size (Pixels): 3
-          Size (m): 0.05000000074505806
+          Size (m): 0.10000000149011612
           Style: Flat Squares
           Topic:
             Depth: 5
@@ -138,14 +138,177 @@ Visualization Manager:
           Enabled: true
           Name: Trajectories
           Namespaces:
-            traj/dynus_N4: true
-            traj/dynus_N5: true
-            traj/dynus_N6: true
-            traj/faster_N4: true
-            traj/faster_N5: true
-            traj/faster_N6: true
-            traj/super: true
-            traj_label: true
+            case_000/goal: true
+            case_000/goal_text: true
+            case_000/traj/dynus_N5: true
+            case_000/traj/dynus_N6: true
+            case_000/traj/faster_N5: true
+            case_000/traj/faster_N6: true
+            case_000/traj/super: true
+            case_000/traj_pts/dynus_N5: true
+            case_000/traj_pts/dynus_N6: true
+            case_000/traj_pts/faster_N5: true
+            case_000/traj_pts/faster_N6: true
+            case_000/traj_pts/super: true
+            case_010/goal: true
+            case_010/goal_text: true
+            case_010/traj/dynus_N4: true
+            case_010/traj/dynus_N5: true
+            case_010/traj/dynus_N6: true
+            case_010/traj/faster_N4: true
+            case_010/traj/faster_N5: true
+            case_010/traj/faster_N6: true
+            case_010/traj/super: true
+            case_010/traj_pts/dynus_N4: true
+            case_010/traj_pts/dynus_N5: true
+            case_010/traj_pts/dynus_N6: true
+            case_010/traj_pts/faster_N4: true
+            case_010/traj_pts/faster_N5: true
+            case_010/traj_pts/faster_N6: true
+            case_010/traj_pts/super: true
+            case_020/goal: true
+            case_020/goal_text: true
+            case_020/traj/dynus_N4: true
+            case_020/traj/dynus_N5: true
+            case_020/traj/dynus_N6: true
+            case_020/traj/faster_N4: true
+            case_020/traj/faster_N5: true
+            case_020/traj/faster_N6: true
+            case_020/traj/super: true
+            case_020/traj_pts/dynus_N4: true
+            case_020/traj_pts/dynus_N5: true
+            case_020/traj_pts/dynus_N6: true
+            case_020/traj_pts/faster_N4: true
+            case_020/traj_pts/faster_N5: true
+            case_020/traj_pts/faster_N6: true
+            case_020/traj_pts/super: true
+            case_030/goal: true
+            case_030/goal_text: true
+            case_030/traj/dynus_N4: true
+            case_030/traj/dynus_N5: true
+            case_030/traj/dynus_N6: true
+            case_030/traj/faster_N4: true
+            case_030/traj/faster_N5: true
+            case_030/traj/faster_N6: true
+            case_030/traj/super: true
+            case_030/traj_pts/dynus_N4: true
+            case_030/traj_pts/dynus_N5: true
+            case_030/traj_pts/dynus_N6: true
+            case_030/traj_pts/faster_N4: true
+            case_030/traj_pts/faster_N5: true
+            case_030/traj_pts/faster_N6: true
+            case_030/traj_pts/super: true
+            case_040/goal: true
+            case_040/goal_text: true
+            case_040/traj/dynus_N4: true
+            case_040/traj/dynus_N5: true
+            case_040/traj/dynus_N6: true
+            case_040/traj/faster_N4: true
+            case_040/traj/faster_N5: true
+            case_040/traj/faster_N6: true
+            case_040/traj/super: true
+            case_040/traj_pts/dynus_N4: true
+            case_040/traj_pts/dynus_N5: true
+            case_040/traj_pts/dynus_N6: true
+            case_040/traj_pts/faster_N4: true
+            case_040/traj_pts/faster_N5: true
+            case_040/traj_pts/faster_N6: true
+            case_040/traj_pts/super: true
+            case_050/goal: true
+            case_050/goal_text: true
+            case_050/traj/dynus_N4: true
+            case_050/traj/dynus_N5: true
+            case_050/traj/dynus_N6: true
+            case_050/traj/faster_N4: true
+            case_050/traj/faster_N5: true
+            case_050/traj/faster_N6: true
+            case_050/traj/super: true
+            case_050/traj_pts/dynus_N4: true
+            case_050/traj_pts/dynus_N5: true
+            case_050/traj_pts/dynus_N6: true
+            case_050/traj_pts/faster_N4: true
+            case_050/traj_pts/faster_N5: true
+            case_050/traj_pts/faster_N6: true
+            case_050/traj_pts/super: true
+            case_060/goal: true
+            case_060/goal_text: true
+            case_060/traj/dynus_N4: true
+            case_060/traj/dynus_N5: true
+            case_060/traj/dynus_N6: true
+            case_060/traj/faster_N4: true
+            case_060/traj/faster_N5: true
+            case_060/traj/faster_N6: true
+            case_060/traj/super: true
+            case_060/traj_pts/dynus_N4: true
+            case_060/traj_pts/dynus_N5: true
+            case_060/traj_pts/dynus_N6: true
+            case_060/traj_pts/faster_N4: true
+            case_060/traj_pts/faster_N5: true
+            case_060/traj_pts/faster_N6: true
+            case_060/traj_pts/super: true
+            case_070/goal: true
+            case_070/goal_text: true
+            case_070/traj/dynus_N4: true
+            case_070/traj/dynus_N5: true
+            case_070/traj/dynus_N6: true
+            case_070/traj/faster_N4: true
+            case_070/traj/faster_N5: true
+            case_070/traj/faster_N6: true
+            case_070/traj/super: true
+            case_070/traj_pts/dynus_N4: true
+            case_070/traj_pts/dynus_N5: true
+            case_070/traj_pts/dynus_N6: true
+            case_070/traj_pts/faster_N4: true
+            case_070/traj_pts/faster_N5: true
+            case_070/traj_pts/faster_N6: true
+            case_070/traj_pts/super: true
+            case_080/goal: true
+            case_080/goal_text: true
+            case_080/traj/dynus_N4: true
+            case_080/traj/dynus_N5: true
+            case_080/traj/dynus_N6: true
+            case_080/traj/faster_N4: true
+            case_080/traj/faster_N5: true
+            case_080/traj/faster_N6: true
+            case_080/traj/super: true
+            case_080/traj_pts/dynus_N4: true
+            case_080/traj_pts/dynus_N5: true
+            case_080/traj_pts/dynus_N6: true
+            case_080/traj_pts/faster_N4: true
+            case_080/traj_pts/faster_N5: true
+            case_080/traj_pts/faster_N6: true
+            case_080/traj_pts/super: true
+            case_090/goal: true
+            case_090/goal_text: true
+            case_090/traj/dynus_N5: true
+            case_090/traj/dynus_N6: true
+            case_090/traj/faster_N5: true
+            case_090/traj/faster_N6: true
+            case_090/traj/super: true
+            case_090/traj_pts/dynus_N5: true
+            case_090/traj_pts/dynus_N6: true
+            case_090/traj_pts/faster_N5: true
+            case_090/traj_pts/faster_N6: true
+            case_090/traj_pts/super: true
+            case_100/goal: true
+            case_100/goal_text: true
+            case_100/traj/dynus_N4: true
+            case_100/traj/dynus_N5: true
+            case_100/traj/dynus_N6: true
+            case_100/traj/faster_N4: true
+            case_100/traj/faster_N5: true
+            case_100/traj/faster_N6: true
+            case_100/traj/super: true
+            case_100/traj_pts/dynus_N4: true
+            case_100/traj_pts/dynus_N5: true
+            case_100/traj_pts/dynus_N6: true
+            case_100/traj_pts/faster_N4: true
+            case_100/traj_pts/faster_N5: true
+            case_100/traj_pts/faster_N6: true
+            case_100/traj_pts/super: true
+            global_start: true
+            global_start_text: true
+            planner_legend: true
           Topic:
             Depth: 5
             Durability Policy: Volatile
@@ -224,7 +387,7 @@ Visualization Manager:
               Value: false
               VsColor: 237; 51; 59
               VsScale: 1
-            - Alpha: 0.20000000298023224
+            - Alpha: 0.05000000074505806
               BoundColor: 0; 255; 0
               Class: decomp_rviz_plugins/PolyhedronArray
               Enabled: true
@@ -6851,25 +7014,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 17.26943588256836
+      Distance: 15.762672424316406
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0.7523229122161865
-        Y: -0.34424781799316406
-        Z: 3.7571184635162354
+        X: 0.1411728411912918
+        Y: -0.4940643608570099
+        Z: 3.300381660461426
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.5597963333129883
+      Pitch: 1.5547963380813599
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz_default_plugins)
-      Yaw: 4.714801788330078
+      Yaw: 4.714794635772705
     Saved: ~
 Window Geometry:
   Displays:
