@@ -35,6 +35,7 @@ struct parameters
 
   // Sim enviroment
   std::string sim_env;
+  bool use_global_pc;
 
   // UAV or Ground robot
   std::string vehicle_type;
@@ -133,7 +134,7 @@ struct parameters
   double jerk_smooth_weight; // weight for the jerk smoothness
   double goal_pull_weight;   // weight for pulling the trajectory to the goal
   double goal_pull_time_buffer; // goal_pull_time = goal_pull_time_buffer * previous_replanning_time
-  
+
   // L-BFGS parameters
   double f_dec_coeff;     // allow larger Armijo steps
   double cautious_factor; // always accept BFGS update

@@ -47,13 +47,19 @@ public:
     SolverGurobi();
     ~SolverGurobi();
 
+    void setPlannerName(const std::string &name);
     void initializeSolver(const parameters &par);
     void setX0(const state &data);
     void setT0(double t0);
     void setXf(const state &data);
     void setDirf(double yawf);
+    void getTotalTrajTime(double &total_traj_time);
     void initializeGoalSetpoints();
-    bool generateNewTrajectory(bool &gurobi_error_detected, double &gurobi_computation_time, double factor);
+    bool generateNewTrajectory(bool &gurobi_error_detected, double &gurobi_computation_time, double factor, bool use_single_thread = false);
+    bool generateNewTrajectorySequentialFactors(
+        bool &gurobi_error_detected,
+        double &gurobi_computation_time_ms,
+        double &factor_that_worked);
     bool callOptimizer();
     void stopExecution();
     void resetToNominalState();
@@ -188,7 +194,10 @@ public:
 
     // set initial dt
     void setInitialDt(double initial_dt);
+    double getFactorThatWorked();
+    double getObjectiveValue() const { return objective_value_; }
 
+    double objective_value_{std::numeric_limits<double>::quiet_NaN()};
     std::vector<state> goal_setpoints_;
     std::vector<double> dt_; // time step found by the solver
     double total_traj_time_;
@@ -200,6 +209,15 @@ public:
     mycallback cb_;
 
 protected:
+
+    std::string planner_name_{"DYNUS"};              // "DYNUS" or "FASTER"
+    std::vector<std::vector<GRBVar>> x_faster_vars_; // [axis][4*N] coefficient vars for FASTER
+    bool usingFaster_() const;
+    void createVarsFaster_();
+    void setXFaster_();
+    void getCoefficientsDoubleFaster_();
+    void setDynamicConstraintsFaster_();
+
     // parameters
     double cost_;
     double xf_[3 * 3];

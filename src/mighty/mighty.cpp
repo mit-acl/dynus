@@ -723,9 +723,16 @@ bool MIGHTY::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning
   for (auto &solver : whole_traj_solver_ptrs_)
     solver->resetToNominalState();
 
-  // Get the base uo vector
-  vec_Vec3f vec_uo;
-  dgp_manager_.getVecUnknownOccupied(vec_uo);
+  // Get the base map vector
+  vec_Vec3f base_map;
+  if (par_.sim_env == "gazebo")
+  {
+    dgp_manager_.getVecUnknownOccupied(base_map);
+  }
+  else if (par_.sim_env == "fake_sim")
+  {
+    dgp_manager_.getVecOccupied(base_map);
+  }
 
   // Get obst_pos
   vec_Vecf<3> obst_pos;
@@ -757,7 +764,7 @@ bool MIGHTY::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning
 
     futures.push_back(std::async(std::launch::async,
                                  [this, i, factor, &global_path, local_A, local_E, sub_goal, A_time,
-                                  initial_dt, &obst_pos, &vec_uo, goal_pull_time]()
+                                  initial_dt, &obst_pos, &base_map, goal_pull_time]()
                                      -> std::tuple<bool, double, double, double, vec_E<Polyhedron<3>>>
                                  {
                                    try
@@ -779,7 +786,7 @@ bool MIGHTY::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning
                                          factor,
                                          initial_dt,
                                          obst_pos,
-                                         vec_uo, // base_uo snapshot
+                                         base_map, // base_uo snapshot
                                          thread_poly_out_safe,
                                          goal_pull_time);
 

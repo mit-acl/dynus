@@ -5,11 +5,9 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Common1/TF1/Frames1
-        - /NX011
         - /NX011/Planning1/NX01 DGP Free Path1/Topic1
         - /NX011/Planning1/NX01 Traj1/Topic1
         - /NX011/Planning1/NX01 Subopt Trajs1/Topic1
-        - /NX011/Mapping1
         - /NX011/Mapping1/NX01 D435 PointCloud1/Topic1
         - /NX011/Mapping1/NX01 Lidar PointCloud1/Topic1
         - /NX031/Mapping1/NX03 Sensor PCL1
@@ -35,7 +33,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: NX01 ACL Map Occupied
+    SyncSource: Simulation Global Map
 Visualization Manager:
   Class: ""
   Displays:
@@ -64,96 +62,13 @@ Visualization Manager:
           Frame Timeout: 15
           Frames:
             All Enabled: false
-            NX01/NX01_d435_bottom_screw_frame:
-              Value: true
-            NX01/NX01_d435_color_frame:
-              Value: true
-            NX01/NX01_d435_color_optical_frame:
-              Value: true
-            NX01/NX01_d435_depth_frame:
-              Value: true
-            NX01/NX01_d435_depth_optical_frame:
-              Value: true
-            NX01/NX01_d435_left_ir_frame:
-              Value: true
-            NX01/NX01_d435_left_ir_optical_frame:
-              Value: true
-            NX01/NX01_d435_link:
-              Value: true
-            NX01/NX01_d435_right_ir_frame:
-              Value: true
-            NX01/NX01_d435_right_ir_optical_frame:
-              Value: true
-            NX01/NX01_livox:
-              Value: true
-            NX01/base_link:
-              Value: true
-            map:
-              Value: true
-            obstacle_0:
-              Value: true
-            obstacle_1:
-              Value: true
-            obstacle_2:
-              Value: true
-            obstacle_3:
-              Value: true
-            obstacle_4:
-              Value: true
-            obstacle_5:
-              Value: true
-            obstacle_6:
-              Value: true
-            obstacle_7:
-              Value: true
-            obstacle_8:
-              Value: true
-            obstacle_9:
-              Value: true
           Marker Scale: 5
           Name: TF
           Show Arrows: false
           Show Axes: true
           Show Names: false
           Tree:
-            map:
-              NX01/base_link:
-                NX01/NX01_d435_bottom_screw_frame:
-                  NX01/NX01_d435_link:
-                    NX01/NX01_d435_depth_frame:
-                      NX01/NX01_d435_color_frame:
-                        NX01/NX01_d435_color_optical_frame:
-                          {}
-                      NX01/NX01_d435_depth_optical_frame:
-                        {}
-                      NX01/NX01_d435_left_ir_frame:
-                        NX01/NX01_d435_left_ir_optical_frame:
-                          {}
-                      NX01/NX01_d435_right_ir_frame:
-                        NX01/NX01_d435_right_ir_optical_frame:
-                          {}
-                NX01/NX01_livox:
-                  {}
-              obstacle_0:
-                {}
-              obstacle_1:
-                {}
-              obstacle_2:
-                {}
-              obstacle_3:
-                {}
-              obstacle_4:
-                {}
-              obstacle_5:
-                {}
-              obstacle_6:
-                {}
-              obstacle_7:
-                {}
-              obstacle_8:
-                {}
-              obstacle_9:
-                {}
+            {}
           Update Interval: 0
           Value: true
         - Class: rviz_default_plugins/Marker
@@ -219,6 +134,29 @@ Visualization Manager:
       Name: Common
     - Class: rviz_common/Group
       Displays:
+        - Class: rviz_default_plugins/MarkerArray
+          Enabled: true
+          Name: Trajectories
+          Namespaces:
+            traj/dynus_N4: true
+            traj/dynus_N5: true
+            traj/dynus_N6: true
+            traj/faster_N4: true
+            traj/faster_N5: true
+            traj/faster_N6: true
+            traj/super: true
+            traj_label: true
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /local_traj_overlay
+          Value: true
+      Enabled: true
+      Name: Benchmarking
+    - Class: rviz_common/Group
+      Displays:
         - Class: rviz_common/Group
           Displays:
             - Class: rviz_default_plugins/MarkerArray
@@ -237,7 +175,7 @@ Visualization Manager:
               Enabled: true
               Name: NX01 DGP path
               Namespaces:
-                "": true
+                {}
               Topic:
                 Depth: 5
                 Durability Policy: Volatile
@@ -307,7 +245,7 @@ Visualization Manager:
               Enabled: true
               Name: NX01 Traj
               Namespaces:
-                state_vec: true
+                {}
               Topic:
                 Depth: 5
                 Durability Policy: Volatile
@@ -319,7 +257,7 @@ Visualization Manager:
               Enabled: true
               Name: NX01 Subopt Trajs
               Namespaces:
-                state_vec: true
+                {}
               Topic:
                 Depth: 5
                 Durability Policy: Volatile
@@ -6913,16 +6851,16 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 35.185302734375
+      Distance: 17.26943588256836
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 11.368721961975098
-        Y: -1.1569626331329346
-        Z: 3.7478954792022705
+        X: 0.7523229122161865
+        Y: -0.34424781799316406
+        Z: 3.7571184635162354
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false

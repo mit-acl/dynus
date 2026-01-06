@@ -1,0 +1,20 @@
+session_name: visualize_local_trajs
+windows:
+  - window_name: main
+    layout: tiled
+    shell_command_before:
+      - export ROS_DOMAIN_ID=7
+    
+    panes:
+      # base station
+      # - shell_command:
+      - shell_command:
+        - ros2 launch mighty simulator.launch.py
+
+      # run benchmark (dynus, dynus_star, faster)
+      - shell_command:
+        - sleep 5
+        - ros2 run mighty visualize_local_trajs_node
+
+
+

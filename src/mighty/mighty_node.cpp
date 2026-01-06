@@ -144,11 +144,15 @@ MIGHTY_NODE::MIGHTY_NODE() : Node("mighty_node")
 
   if (par_.sim_env == "fake_sim")
   {
-    sub_fake_sim_occupancy_map_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("sensor_point_cloud",
+
+    std::string topic_name = "sensor_point_cloud";
+    if (par_.use_global_pc)
+      topic_name = "/map_generator/global_cloud";
+
+    sub_fake_sim_occupancy_map_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(topic_name,
     rclcpp::QoS(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_sensor_data)),
     std::bind(&MIGHTY_NODE::occupancyMapCallback, this, std::placeholders::_1),
     options_map);
-
   }
   else
   {
@@ -181,6 +185,7 @@ void MIGHTY_NODE::declareParameters()
 
   // Sim enviroment
   this->declare_parameter("sim_env", "fake_sim");
+  this->declare_parameter("use_global_pc", true);
 
   // UAV or Ground robot
   this->declare_parameter("vehicle_type", "uav");
@@ -338,6 +343,7 @@ void MIGHTY_NODE::setParameters()
 
   // Sim enviroment
   par_.sim_env = this->get_parameter("sim_env").as_string();
+  par_.use_global_pc = this->get_parameter("use_global_pc").as_bool();
 
   // Vehicle type (UAV, Wheeled Robit, or Quadruped)
   par_.vehicle_type = this->get_parameter("vehicle_type").as_string();
@@ -493,6 +499,7 @@ void MIGHTY_NODE::printParameters()
 
   // Sim enviroment
   RCLCPP_INFO(this->get_logger(), "Sim Enviroment: %s", par_.sim_env.c_str());
+  RCLCPP_INFO(this->get_logger(), "Use Global Point Cloud: %d", par_.use_global_pc);
 
   // Vehicle type (UAV, Wheeled Robit, or Quadruped)
   RCLCPP_INFO(this->get_logger(), "Vehicle Type: %d", par_.vehicle_type);
@@ -1854,6 +1861,14 @@ void MIGHTY_NODE::occupancyMapCallback(
   pcl::fromROSMsg(*map_msg, *map_pc);
 
   mighty_ptr_->updateOccupancyMap(map_pc, this->now().seconds());
+
+  // If we use global point cloud, we don't need to update the map ever
+  if (par_.use_global_pc)
+  {
+    // stop the subscription
+    sub_fake_sim_occupancy_map_.reset();
+  }
+
 }
 
 // ----------------------------------------------------------------------------

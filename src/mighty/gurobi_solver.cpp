@@ -40,41 +40,6 @@ SolverGurobi::SolverGurobi()
     // Debug
     m_.set(GRB_IntParam_OutputFlag, 0); // 0: no output, 1: output
 
-    // MIPFocus
-    m_.set(GRB_IntParam_MIPFocus, 1); // 1: quick, 2: optimal, 3: bound
-
-    // MIPGap
-    m_.set(GRB_DoubleParam_MIPGap, 0.01);
-
-    // ScaleFlag
-    // m_.set(GRB_IntParam_ScaleFlag, 2);
-
-    // Nonconvex
-    // m_.set(GRB_IntParam_NonConvex, 2);
-
-    // // Solution pool
-    // m_.set(GRB_IntParam_SolutionNumber, 10);
-
-    // Presolve
-    m_.set(GRB_IntParam_Presolve, 2);
-
-    // Heuristics
-    m_.set(GRB_DoubleParam_Heuristics, 0.8);
-
-    // Cuts
-    m_.set(GRB_IntParam_Cuts, 2);
-
-    // Method
-    // m_.set(GRB_IntParam_Method, 2);  // Barrier method
-
-    // Numeric focus
-    m_.set(GRB_IntParam_NumericFocus, 0); // 0: automatic 1:speed, 3: stability
-
-    // ConcurrentMIP
-    // m_.set(GRB_IntParam_ConcurrentMIP, 8);
-
-    m_.set(GRB_IntParam_Threads, 4); // If 0, Gurobi will try to choose all the cores.
-
     // Set the callback
     m_.setCallback(&cb_); // The callback will be called periodically along the optimization
 
@@ -88,6 +53,106 @@ SolverGurobi::SolverGurobi()
 
 SolverGurobi::~SolverGurobi()
 {
+}
+
+bool SolverGurobi::usingFaster_() const
+{
+    return (planner_name_ == "FASTER" || planner_name_ == "faster");
+}
+
+void SolverGurobi::setPlannerName(const std::string &name)
+{
+    planner_name_ = name;
+}
+
+void SolverGurobi::createVarsFaster_()
+{
+    // Create cubic coefficients per interval, per axis: a,b,c,d for each interval
+    // Stored in the same flattened layout your getPos/getVel/getAccel expect:
+    // x_[axis][4*interval + 0..3]
+    x_faster_vars_.clear();
+    x_faster_vars_.resize(3);
+
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        x_faster_vars_[axis].reserve(4 * N_);
+        for (int interval = 0; interval < N_; ++interval)
+        {
+            const std::string s = "_ax" + std::to_string(axis) + "_k" + std::to_string(interval);
+            x_faster_vars_[axis].push_back(m_.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, "a" + s));
+            x_faster_vars_[axis].push_back(m_.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, "b" + s));
+            x_faster_vars_[axis].push_back(m_.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, "c" + s));
+            x_faster_vars_[axis].push_back(m_.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, "d" + s));
+        }
+    }
+}
+
+void SolverGurobi::setXFaster_()
+{
+    // Ensure x_ is a GRBLinExpr view into the vars
+    x_.clear();
+    x_.resize(3);
+
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        x_[axis].reserve(4 * N_);
+        for (int i = 0; i < 4 * N_; ++i)
+            x_[axis].push_back(GRBLinExpr(x_faster_vars_[axis][i]));
+    }
+}
+
+void SolverGurobi::getCoefficientsDoubleFaster_()
+{
+    x_double_.clear();
+    x_double_.resize(3);
+
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        x_double_[axis].resize(4 * N_);
+        for (int i = 0; i < 4 * N_; ++i)
+            x_double_[axis][i] = x_faster_vars_[axis][i].get(GRB_DoubleAttr_X);
+    }
+}
+
+void SolverGurobi::setDynamicConstraintsFaster_()
+{
+    // Remove previous dynamic constraints (reuse same dyn_cons_ vector)
+    if (!dyn_cons_.empty())
+    {
+        for (auto &c : dyn_cons_)
+            m_.remove(c);
+        dyn_cons_.clear();
+    }
+
+    for (int segment = 0; segment < N_; ++segment)
+    {
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            // constrain ALL velocity CPs
+            auto vel_cps = getVelCP(segment, axis);
+            for (int i = 0; i < (int)vel_cps.size(); ++i)
+            {
+                dyn_cons_.push_back(m_.addConstr(vel_cps[i] <= v_max_, "max_vel_f_k" + std::to_string(segment)));
+                dyn_cons_.push_back(m_.addConstr(vel_cps[i] >= -v_max_, "min_vel_f_k" + std::to_string(segment)));
+            }
+
+            // constrain ALL accel CPs
+            auto acc_cps = getAccelCP(segment, axis);
+            for (int i = 0; i < (int)acc_cps.size(); ++i)
+            {
+                dyn_cons_.push_back(m_.addConstr(acc_cps[i] <= a_max_, "max_acc_f_k" + std::to_string(segment)));
+                dyn_cons_.push_back(m_.addConstr(acc_cps[i] >= -a_max_, "min_acc_f_k" + std::to_string(segment)));
+            }
+
+            // constrain ALL jerk CPs (1 per segment/axis)
+            auto jerk_cps = getJerkCP(segment, axis);
+            for (int i = 0; i < (int)jerk_cps.size(); ++i)
+            {
+                dyn_cons_.push_back(m_.addConstr(jerk_cps[i] <= j_max_, "max_jerk_f_k" + std::to_string(segment)));
+                dyn_cons_.push_back(m_.addConstr(jerk_cps[i] >= -j_max_, "min_jerk_f_k" + std::to_string(segment)));
+            }
+        }
+    }
 }
 
 void SolverGurobi::initializeSolver(const parameters &par)
@@ -115,7 +180,14 @@ void SolverGurobi::initializeSolver(const parameters &par)
     // Time limit
     m_.set(GRB_DoubleParam_TimeLimit, par.max_gurobi_comp_time_sec);
 
-    createVars();
+    if (usingFaster_())
+    {
+        createVarsFaster_();
+    }
+    else
+    {
+        createVars(); // your current variable-elimination free vars (d3/d4/...)
+    }
 }
 
 void SolverGurobi::setT0(double t0)
@@ -791,54 +863,41 @@ void SolverGurobi::checkCollisionViolation(bool &is_collision_free_corridor_sati
 
 void SolverGurobi::fillGoalSetPoints()
 {
-    const int num_goal_setpoints = goal_setpoints_.size();
+    const int N = static_cast<int>(goal_setpoints_.size());
+    if (N <= 0) return;
 
-    for (int i = 0; i < num_goal_setpoints; i++)
+    const double T = total_traj_time_;
+    const double eps = 1e-9; // or 1e-6 if your time units are coarse
+
+    for (int i = 0; i < N; ++i)
     {
-        // Get the timestamp
+        // plan_ already ends at A, so start at dc_
         double t = (i + 1) * dc_;
 
-        // Find interval index and dt_interval (assumed thread-safe)
-        int interval_idx = 0;   // initialize to 0
-        double dt_interval = 0; // initialize to 0
+        // Clamp strictly inside [0, T]
+        if (t >= T) t = std::max(0.0, T - eps);
+
+        int interval_idx = 0;
+        double dt_interval = 0.0;
         findIntervalIdxAndDt(t, interval_idx, dt_interval);
 
-        // Compute positions
-        double posx = getPosDouble(interval_idx, dt_interval, 0);
-        double posy = getPosDouble(interval_idx, dt_interval, 1);
-        double posz = getPosDouble(interval_idx, dt_interval, 2);
+        state s;
+        s.setTimeStamp(t0_ + t);
+        s.setPos(getPosDouble(interval_idx, dt_interval, 0),
+                 getPosDouble(interval_idx, dt_interval, 1),
+                 getPosDouble(interval_idx, dt_interval, 2));
+        s.setVel(getVelDouble(interval_idx, dt_interval, 0),
+                 getVelDouble(interval_idx, dt_interval, 1),
+                 getVelDouble(interval_idx, dt_interval, 2));
+        s.setAccel(getAccelDouble(interval_idx, dt_interval, 0),
+                   getAccelDouble(interval_idx, dt_interval, 1),
+                   getAccelDouble(interval_idx, dt_interval, 2));
+        s.setJerk(getJerkDouble(interval_idx, dt_interval, 0),
+                  getJerkDouble(interval_idx, dt_interval, 1),
+                  getJerkDouble(interval_idx, dt_interval, 2));
 
-        // Compute velocities
-        double velx = getVelDouble(interval_idx, dt_interval, 0);
-        double vely = getVelDouble(interval_idx, dt_interval, 1);
-        double velz = getVelDouble(interval_idx, dt_interval, 2);
-
-        // Compute accelerations
-        double accelx = getAccelDouble(interval_idx, dt_interval, 0);
-        double accely = getAccelDouble(interval_idx, dt_interval, 1);
-        double accelz = getAccelDouble(interval_idx, dt_interval, 2);
-
-        // Compute jerks
-        double jerkx = getJerkDouble(interval_idx, dt_interval, 0);
-        double jerky = getJerkDouble(interval_idx, dt_interval, 1);
-        double jerkz = getJerkDouble(interval_idx, dt_interval, 2);
-
-        // Set the state (assuming thread-safe)
-        state state_i;
-        state_i.setTimeStamp(t0_ + t);
-        state_i.setPos(posx, posy, posz);
-        state_i.setVel(velx, vely, velz);
-        state_i.setAccel(accelx, accely, accelz);
-        state_i.setJerk(jerkx, jerky, jerkz);
-
-        // Set the state
-        goal_setpoints_[i] = state_i;
+        goal_setpoints_[i] = s;
     }
-
-    // Ensure the final input is explicitly zeroed (serially after parallel loop)
-    goal_setpoints_[num_goal_setpoints - 1].vel = Eigen::Vector3d::Zero().transpose();
-    goal_setpoints_[num_goal_setpoints - 1].accel = Eigen::Vector3d::Zero().transpose();
-    goal_setpoints_[num_goal_setpoints - 1].jerk = Eigen::Vector3d::Zero().transpose();
 }
 
 void SolverGurobi::getGoalSetpoints(std::vector<state> &goal_setpoints)
@@ -1197,16 +1256,27 @@ void SolverGurobi::setConstraintsX0()
     }
 }
 
+void SolverGurobi::getTotalTrajTime(double &total_traj_time)
+{
+    total_traj_time = total_traj_time_;
+}
+
 void SolverGurobi::initializeGoalSetpoints()
 {
-    int size = (int)(total_traj_time_ / dc_);
-    size = (size < 2) ? 2 : size; // force size to be at least 2
-    goal_setpoints_.clear();
-    goal_setpoints_.resize(size);
+    const double T = total_traj_time_;
+    int size = static_cast<int>(std::ceil(T / dc_)); // ceil, not floor
+    size = std::max(size, 2);
+    goal_setpoints_.assign(size, state{});
 }
 
 void SolverGurobi::setDynamicConstraints()
 {
+
+    if (usingFaster_())
+    {
+        setDynamicConstraintsFaster_();
+        return;
+    }
 
     // Remove previous dynamic constraints
     if (!dyn_cons_.empty())
@@ -1643,60 +1713,157 @@ bool SolverGurobi::controlPointDependsOnD3OrD4OrD5(ConstraintType type, int seg,
     return false; // Default if type not recognized.
 }
 
-bool SolverGurobi::generateNewTrajectory(bool &gurobi_error_detected, double &gurobi_computation_time, double factor)
+double SolverGurobi::getFactorThatWorked()
 {
+    return factor_that_worked_;
+}
+
+bool SolverGurobi::generateNewTrajectory(bool &gurobi_error_detected,
+                                         double &gurobi_computation_time,
+                                         double factor,
+                                         bool use_single_thread)
+{
+
+    // Use sequential factor sweeping for FASTER
+    if (use_single_thread)
+    {
+        double factor_used = 0.0;
+        // ignore the provided `factor` and sweep internally
+        const bool ok = generateNewTrajectorySequentialFactors(
+            gurobi_error_detected, gurobi_computation_time, factor_used);
+        factor_that_worked_ = factor_used; // store for reporting
+        return ok;
+    }
 
     bool solved = false;
 
     try
     {
-        // Check if cancellation was requested before starting.
         if (cb_.should_terminate_)
-        {
-            // std::cout << "Cancellation requested before optimization started." << std::endl;
             return false;
-        }
 
-        // Find the new dt using the factor.
         findDT(factor);
-        setX();                    // creates variables
-        setPolytopesConstraints(); // create polytopes constraints
-        setDynamicConstraints();   // create dynamic constraints
-        setObjective();            // create objective function
-        setMapSizeConstraints();   // create map size constraints for z axis
 
-        // Check again before calling the optimizer.
-        if (cb_.should_terminate_)
+        if (usingFaster_())
         {
-            // std::cout << "Cancellation requested before calling optimizer." << std::endl;
-            return false;
+            // FASTER formulation: coefficients are vars, so we must add explicit constraints
+            setXFaster_();
+            setConstraintsX0();
+            setConstraintsXf();
+            setContinuityConstraints();
+        }
+        else
+        {
+            // DYNUS formulation: elimination builds x_ expressions internally
+            setX();
+            // (No need to call setConstraintsX0/Xf/continuity if elimination already encodes them)
         }
 
-        // Call the optimizer.
+        setPolytopesConstraints();
+        setDynamicConstraints();
+        setObjective();
+        setMapSizeConstraints();
+
+        if (cb_.should_terminate_)
+            return false;
+
         solved = callOptimizer();
 
         if (solved)
         {
-            // Get Gurobi solve time.
             gurobi_computation_time = m_.get(GRB_DoubleAttr_Runtime) * 1000;
-
-            // Housekeeping: initialize goal setpoints for output.
             initializeGoalSetpoints();
 
-            // Retrieve the solution (update x_double_).
-            if (N_ == 4)
-                getDependentCoefficientsN4Double();
-            else if (N_ == 5)
-                getDependentCoefficientsN5Double();
-            else if (N_ == 6)
-                getDependentCoefficientsN6Double();
+            if (usingFaster_())
+            {
+                getCoefficientsDoubleFaster_();
+            }
+            else
+            {
+                if (N_ == 4)
+                    getDependentCoefficientsN4Double();
+                else if (N_ == 5)
+                    getDependentCoefficientsN5Double();
+                else if (N_ == 6)
+                    getDependentCoefficientsN6Double();
+            }
         }
     }
-    catch (GRBException e)
+    catch (GRBException &)
     {
         gurobi_error_detected = true;
     }
 
+    return solved;
+}
+
+bool SolverGurobi::generateNewTrajectorySequentialFactors(
+    bool &gurobi_error_detected,
+    double &gurobi_computation_time_ms,
+    double &factor_that_worked)
+{
+    bool solved = false;
+    gurobi_error_detected = false;
+    gurobi_computation_time_ms = 0.0;
+    factor_that_worked = 0.0;
+
+    // factor_initial_, factor_final_, factor_constant_step_size should come from par_
+    for (double f = factor_initial_;
+         f <= factor_final_ + 1e-9 && !solved && !cb_.should_terminate_;
+         f += factor_constant_step_size_)
+    {
+        try
+        {
+            findDT(f);
+            if (usingFaster_())
+            {
+                setXFaster_();
+            }
+            else
+            {
+                setX();
+            }
+
+            // FASTER formulation requires explicit constraints (no elimination)
+            setConstraintsX0();
+            setConstraintsXf();
+            setContinuityConstraints(); // if your FASTER formulation needs it
+            setPolytopesConstraints();
+            setDynamicConstraints(); // in FASTER mode this must constrain all CPs
+            setObjective();
+            setMapSizeConstraints();
+
+            solved = callOptimizer();
+            if (solved)
+            {
+                initializeGoalSetpoints();
+                factor_that_worked = f;
+                gurobi_computation_time_ms = m_.get(GRB_DoubleAttr_Runtime) * 1000.0;
+
+                if (usingFaster_())
+                {
+                    getCoefficientsDoubleFaster_();
+                }
+                else
+                {
+                    if (N_ == 4)
+                        getDependentCoefficientsN4Double();
+                    else if (N_ == 5)
+                        getDependentCoefficientsN5Double();
+                    else if (N_ == 6)
+                        getDependentCoefficientsN6Double();
+                }
+            }
+        }
+        catch (GRBException &)
+        {
+            gurobi_error_detected = true;
+            solved = false;
+            break;
+        }
+    }
+
+    cb_.should_terminate_ = false;
     return solved;
 }
 
@@ -1891,6 +2058,7 @@ bool SolverGurobi::callOptimizer()
     if (optimstatus == GRB_OPTIMAL)
     {
         solved = true;
+        objective_value_ = m_.get(GRB_DoubleAttr_ObjVal);
         // m_.write("/media/kkondo/T7/dynus/debug/num_" + std::to_string(file_t_) + ".lp");
     }
     else

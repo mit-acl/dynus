@@ -127,6 +127,32 @@ MIGHTY has been tested on both Docker and native installations on Ubuntu 22.04 w
 ### Notes
 
 <details>
+  <summary><b>Generate Safety Corridor </b></summary>
+  - ```bash
+   colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select mighty && . install/setup.bash && tmuxp load src/dynus/launch/generate_sfc.yaml
+    ```
+  This generates safety corridors for the benchmark environments and saves them in `sfc_dir` (e.g. `/home/kkondo/code/dynus_ws/src/dynus/data`).
+</details>
+
+<details>
+  <summary><b>Benchmark Local Trajectory </b></summary>
+  - ```bash
+   colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select mighty && . install/setup.bash && tmuxp load src/dynus/launch/local_traj_benchmark.yaml
+    ```
+  This runs the local trajectory benchmark and saves the results in `/home/kkondo/code/dynus_ws/src/dynus/benchmark_data`.
+  
+</details>
+
+<details>
+  <summary><b>Visualize Trajectories from Different Planners </b></summary>
+  - ```bash
+   colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select mighty && . install/setup.bash && tmuxp load src/dynus/launch/visualize_local_trajs.yaml
+    ```
+  This reads trajectories from `traj_dump_root_dirs_` and visualizes them in RViz.
+  
+</details>
+
+<details>
   <summary><b>MIGHTY with Gazebo (and hence ACL mapper) </b></summary>
   Make sure `sim_env` parameter in mighty.yaml is set to `gazebo` and run the following commands:
   - ```bash

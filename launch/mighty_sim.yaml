@@ -13,23 +13,25 @@ windows:
     
     panes:
       # base station
+      # - shell_command:
+      #   - ros2 launch mighty base_mighty.launch.py use_dyn_obs:=true use_gazebo_gui:=false use_rviz:=true env:=empty
       - shell_command:
-        - ros2 launch mighty base_mighty.launch.py use_dyn_obs:=true use_gazebo_gui:=false use_rviz:=true env:=empty
+        - ros2 launch mighty simulator.launch.py
 
       # NX01 ACL Mapper
-      - shell_command:
-        - sleep 5
-        - ros2 launch global_mapper_ros global_mapper_node.launch.py quad:=NX01 depth_pointcloud_topic:=mid360_PointCloud2
+      # - shell_command:
+      #   - sleep 5
+      #   - ros2 launch global_mapper_ros global_mapper_node.launch.py quad:=NX01 depth_pointcloud_topic:=mid360_PointCloud2
       
       # NX01 Planner
       - shell_command:
         - sleep 5
-        - ros2 launch mighty onboard_mighty.launch.py namespace:=NX01 x:=0.0 y:=0.0 z:=3.0 yaw:=0.0
+        - ros2 launch mighty onboard_mighty.launch.py namespace:=NX01 x:=-7.5 y:=0.0 z:=1.0 yaw:=0.0
 
       # goal monitor (spawns GoalMonitorNode for NX01..NX08)
-      - shell_command:
-        - sleep 10
-        - ros2 launch mighty goal_monitor.launch.py
+      # - shell_command:
+      #   - sleep 10
+      #   - ros2 launch mighty goal_monitor.launch.py
 
 
 

@@ -175,12 +175,6 @@ bool GraphSearch::static_jps_plan(StatePtr &currNode_ptr, int max_expand, int st
       break;
     }
 
-    // // early stopping for planning horizon
-    if (currNode_ptr->g > 70.0)
-    {
-      break;
-    }
-
     std::vector<int> succ_ids;
     std::vector<double> succ_costs;
 

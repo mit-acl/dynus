@@ -347,7 +347,7 @@ bool DGPPlanner::plan(const Vecf<3> &start, const Vecf<3> &start_vel, const Vecf
   graph_search_->setBounds(max_values);
 
   // Run Initial guess module
-  int max_expand = 10000;
+  int max_expand = 100000;
   graph_search_->plan(start_int(0), start_int(1), start_int(2), goal_int(0), goal_int(1), goal_int(2), initial_g, global_planning_time_, dgp_static_jps_time_, dgp_check_path_time_, dgp_dynamic_astar_time_, dgp_recover_path_time_, current_time, start_vel, max_expand, dgp_timeout_duration_ms_);
 
   const auto path = graph_search_->getPath();
@@ -358,14 +358,6 @@ bool DGPPlanner::plan(const Vecf<3> &start, const Vecf<3> &start_vel, const Vecf
     status_ = -1;
     return false;
   }
-
-  // print the path
-  // std::cout << "initial guess path found" << std::endl;
-  // for (int i = 0; i < path.size(); i++)
-  // {
-  //   Vecf<3> p = map_util_->intToFloat(Veci<3>(path[i]->x, path[i]->y, path[i]->z));
-  //   printf("path[%d]: %f %f %f and g: %f\n", i, p(0), p(1), p(2), path[i]->g);
-  // }
 
   // get the final g value
   final_g = path.front()->g;
