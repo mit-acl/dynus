@@ -124,6 +124,39 @@ static inline std_msgs::msg::ColorRGBA makeColor(float r, float g, float b, floa
     return c;
 }
 
+// --- Fixed palette (7 planners) ---------------------------------------------
+
+static inline std_msgs::msg::ColorRGBA makeColorHex(std::string hex, float a)
+{
+    // Accept "#RRGGBB" or "RRGGBB"
+    if (!hex.empty() && hex[0] == '#')
+        hex = hex.substr(1);
+
+    if (hex.size() != 6)
+        return makeColor(1.0f, 1.0f, 1.0f, a); // fallback: white
+
+    auto byte01 = [&](int pos) -> float
+    {
+        unsigned int v = 255;
+        std::stringstream ss;
+        ss << std::hex << hex.substr(pos, 2);
+        ss >> v;
+        return static_cast<float>(v) / 255.0f;
+    };
+
+    return makeColor(byte01(0), byte01(2), byte01(4), a);
+}
+
+static const std::vector<std::string> kPlannerPaletteHex = {
+    "#e51010", // red
+    "#ff6600", // orange
+    "#fc4589", // pink
+    "#fffc5d", // yellow
+    "#4adeaf", // mint
+    "#00b2ff", // cyan
+    "#420e87"  // purple
+};
+
 // ------------------------ overlap-visibility controls ------------------------
 // Improves visibility when trajectories overlap by:
 //  (1) Drawing a translucent "halo" behind each trajectory line
@@ -729,7 +762,16 @@ static void appendPlannerLegendOnce(
         text.pose.position.z = anchor.z + label_z_offset;
 
         text.scale.z = text_scale * label_height;
-        text.color = makeColor((float)rr, (float)gg, (float)bb, alpha_text);
+
+        if (N != 7)
+        {
+            text.color = makeColor((float)rr, (float)gg, (float)bb, alpha_text);
+        }
+        else
+        {
+            const std::string &hex = kPlannerPaletteHex[(size_t)i % kPlannerPaletteHex.size()];
+            text.color = makeColorHex(hex, alpha_text);
+        }
         text.text = prettyPlannerName(planner);
 
         arr.markers.push_back(text);
@@ -946,9 +988,17 @@ static void appendTrajOverlayMarkers(
         // Optional Z stacking offset (helps when overlapping)
         const double z_off = g_traj_viz.enable_z_offset ? (((double)i - mid) * g_traj_viz.z_step) : 0.0;
 
-        const auto col_line = makeColor((float)rr, (float)gg, (float)bb, a_line);
-        const auto col_pts = makeColor((float)rr, (float)gg, (float)bb, a_pts);
-        const auto col_text = makeColor((float)rr, (float)gg, (float)bb, alpha_text);
+        // const auto col_line = makeColor((float)rr, (float)gg, (float)bb, a_line);
+        // const auto col_pts = makeColor((float)rr, (float)gg, (float)bb, a_pts);
+        // const auto col_text = makeColor((float)rr, (float)gg, (float)bb, alpha_text);
+
+        // Fixed palette color by planner index (stable across cases when global_planner_index is used)
+        const int idx = (i < 0) ? 0 : i;
+        const std::string &hex = kPlannerPaletteHex[(size_t)idx % kPlannerPaletteHex.size()];
+
+        const auto col_line = makeColorHex(hex, a_line);
+        const auto col_pts = makeColorHex(hex, a_pts);
+        const auto col_text = makeColorHex(hex, alpha_text);
 
         const std::string ns_traj = (ns_prefix.empty() ? "" : (ns_prefix + "/")) + "traj/" + planner;
         const std::string ns_pts = (ns_prefix.empty() ? "" : (ns_prefix + "/")) + "traj_pts/" + planner;

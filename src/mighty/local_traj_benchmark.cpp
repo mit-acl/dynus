@@ -834,6 +834,15 @@ public:
                 planner_name_ = planner_name;
                 par_.num_N = num_N;
 
+                if (planner_name_ == "faster")
+                {
+                    par_.goal_pull_weight = 0.0;
+                }
+                else
+                {
+                    par_.goal_pull_weight = get_parameter("goal_pull_weight").as_double();
+                }
+
                 std::string thread_string = use_single_threaded_ ? "single_thread" : "multi_thread";
                 csv_out_ = "/home/kkondo/code/dynus_ws/src/dynus/benchmark_data/" + thread_string + "/" +
                            planner_name_ + "_" + std::to_string(par_.num_N) + "_benchmark.csv";
