@@ -12,7 +12,7 @@ mighty_node:
     ros__parameters:
 
         # Sim environment
-        sim_env: "fake_sim"                            # ["gazebo", "fake_sim"]
+        sim_env: "gazebo"                            # ["gazebo", "fake_sim"]
         use_global_pc: true                          # [-] Use global pointcloud (treat the environment as known environment)
 
         # Vehicle type
@@ -31,7 +31,7 @@ mighty_node:
         # Gloabl planner parameters
         global_planner: "sjps"                                  # ["sjps"]
         factor_dgp: 1.0                                         # do not change - [m] actual_resolution = factor_dgp * (resolution of the map)
-        inflation_dgp: 0.45                                     # [m] The obstacles are inflated (to run DGP) by this amount
+        inflation_dgp: 0.6                                     # [m] The obstacles are inflated (to run DGP) by this amount
         x_min: -1000.0                                          # [m] x_min of the map
         x_max: 1000.0                                           # [m] x_max of the map
         y_min: -1000.0                                          # [m] y_min of the map
@@ -44,7 +44,7 @@ mighty_node:
         use_free_goal: false                                    # [-] Use free goal for the DGP
         free_goal_factor: 2.0                                   # [-] Factor for the free goal
         global_planner_huristic_weight: 2.0         # [-] Weight for the heuristic in the global planner
-        max_dist_vertexes: 2.0                      # [m] Maximum distance between two consecutive vertexes
+        max_dist_vertexes: 3.0                      # [m] Maximum distance between two consecutive vertexes
         w_unknown: 0.0                              # [-] Weight for the unknown cells in the global planner
         w_align: 0.0                              # [-] Weight for the alignment with the initial velocity in the global planner
         decay_len_cells: 100.0                     # [-] Decay length for the alignment with the initial velocity in the global planner
@@ -62,25 +62,25 @@ mighty_node:
         shrinked_box_size: 0.0                  # [m] Size of the shrinked box
 
         # Optimization parameters
-        horizon: 15.0                               # [m] Horizon
+        horizon: 10.0                               # [m] Horizon
         dc: 0.01                                    # [s] Duration for the interpolation=Value of the timer pubGoal
         v_max: 2.0                                  # [m/s]  max velocity
         a_max: 5.0                                 # [m/s2] max acceleration
         j_max: 10.0                                 # [m/s3] max jerk
-        drone_bbox: [0.2, 0.2, 0.2]                 # [m] Size of the bounding box for the obstacles
+        drone_bbox: [0.4, 0.4, 0.4]                 # [m] Size of the bounding box for the obstacles
         goal_radius: 0.5                           # [m] Radius of the goal
         goal_seen_radius: 5.0                       # [m] Radius of the goal that the drone can see and stop replanning. Note that if this number is too small, the trajectory planning becomes extremely difficult.
         
         # DYNUS specific parameters
-        num_P: 3                                    # [-] Number of polytopes (num_P <= num_N)
+        num_P: 2                                    # [-] Number of polytopes (num_P <= num_N)
         num_N: 6                                    # [-] Number of trajectory pieces        
         factor_initial: 1.0                       # [-] Initial factor for the trajectory time allocation
-        factor_final: 3.0                         # [-] Final factor for the trajectory time allocation
+        factor_final: 1.6                         # [-] Final factor for the trajectory time allocation
         factor_constant_step_size: 0.1          # [-] Step size for the constant factor increase
         obst_max_vel: 0.5                         # [m/s] Maximum velocity of the dynamic obstacles
-        max_gurobi_comp_time_sec: 0.2            # [s] Maximum Gurobi computation time per replanning
+        max_gurobi_comp_time_sec: 0.025            # [s] Maximum Gurobi computation time per replanning
         jerk_smooth_weight: 1.0e+1                # [-] Weight for the jerk smoothness
-        goal_pull_weight: 1.0e+2                   # [-] Weight for pulling the trajectory to the goal
+        goal_pull_weight: 1.0e-1                   # [-] Weight for pulling the trajectory to the goal
         goal_pull_time_buffer: 1.5                # [-] goal_pull_time = goal_pull_time_buffer * prev_replanning_time
         
         # L-BFGS parameters
@@ -111,7 +111,7 @@ mighty_node:
         yaw_spinning_dyaw: 1.0                  # [rd/s] Spinning dyaw
 
         # Simulation env parameters
-        force_goal_z: true                     # [-] Force the goal to be at the certain height since Rviz GUI's goal's z is 0
+        force_goal_z: false                     # [-] Force the goal to be at the certain height since Rviz GUI's goal's z is 0
         default_goal_z: 3.0                     # [m] Default goal height
         
         # Debug flags
@@ -122,11 +122,11 @@ mighty_node:
         # Map parameters
         map_buffer: 1.0                         # [m] buffer for goal & A point
         center_shift_factor: 0.5                # [-] Factor for the center shift
-        initial_wdx: 20.0                       # [m] Width of the map (should be the same as wdy assumed in trajCallback)
-        initial_wdy: 20.0                       # [m] Depth of the map (should be the same as wdx assumed in trajCallback)
+        initial_wdx: 25.0                       # [m] Width of the map (should be the same as wdy assumed in trajCallback)
+        initial_wdy: 25.0                       # [m] Depth of the map (should be the same as wdx assumed in trajCallback)
         initial_wdz: 6.0                       # [m] Height of the map
-        min_wdx: 20.0                           # [m] Minimum width of the map
-        min_wdy: 20.0                           # [m] Minimum depth of the map
+        min_wdx: 25.0                           # [m] Minimum width of the map
+        min_wdy: 25.0                           # [m] Minimum depth of the map
         min_wdz: 6.0                           # [m] Minimum height of the map
         mighty_map_res: 0.15              # [m] Resolution of the map
         

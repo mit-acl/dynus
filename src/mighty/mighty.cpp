@@ -395,7 +395,6 @@ void MIGHTY::resetData()
   dgp_dynamic_astar_time_ = 0.0;
   dgp_recover_path_time_ = 0.0;
   cvx_decomp_time_ = 0.0;
-  initial_guess_computation_time_ = 0.0;
   local_traj_computation_time_ = 0.0;
   safe_paths_time_ = 0.0;
   safety_check_time_ = 0.0;
@@ -421,7 +420,6 @@ void MIGHTY::retrieveData(double &final_g,
                           double &dgp_dynamic_astar_time,
                           double &dgp_recover_path_time,
                           double &cvx_decomp_time,
-                          double &initial_guess_computation_time,
                           double &local_traj_computatoin_time,
                           double &safety_check_time,
                           double &safe_paths_time,
@@ -435,7 +433,6 @@ void MIGHTY::retrieveData(double &final_g,
   dgp_dynamic_astar_time = dgp_dynamic_astar_time_;
   dgp_recover_path_time = dgp_recover_path_time_;
   cvx_decomp_time = cvx_decomp_time_;
-  initial_guess_computation_time = initial_guess_computation_time_;
   local_traj_computatoin_time = local_traj_computation_time_;
   safe_paths_time = safe_paths_time_;
   safety_check_time = safety_check_time_;
@@ -898,41 +895,81 @@ void MIGHTY::getPieceWisePol(PieceWisePol &pwp)
 
 // ----------------------------------------------------------------------------
 
-// Computes worst-case polytope end times (cumulative) under the rule:
-// - last (P-1) polytopes each get 1 segment
-// - first polytope gets the remaining segments
-// Returns seg_end_times with size P, where seg_end_times[p] is cumulative end time at polytope p.
+// Computes worst-case segment end times (cumulative) for corridor inflation,
+// while respecting the "worst assignment" idea over polytopes:
+//
+// - You have num_seg segments (from global_path.size()-1).
+// - You have P polytopes (par_.num_P).
+// - Worst assignment rule:
+//     * Give 1 segment to as many of the last (P-1) polytopes as possible
+//     * First polytope gets the remaining segments
+//
+// Returns seg_end_times with size = num_seg,
+// where seg_end_times[i] is cumulative end time at end of segment i.
 std::vector<double> MIGHTY::computeWorstSegEndTimesPoly(
-    double initial_dt, double factor)
+    double initial_dt, double factor, size_t num_seg)
 {
   std::vector<double> seg_end_times;
-  seg_end_times.reserve(std::max(0, par_.num_P));
+  seg_end_times.reserve(num_seg);
 
-  // You cannot allocate at least one segment to each polytope if N < P.
-  // In that case, the "worst assignment" cannot satisfy your constraint.
-  // Workaround: assign 1 to as many last polytopes as possible, remainder to first.
-  const int min_one = std::min(par_.num_P - 1, par_.num_N - 1); // number of "last" polytopes guaranteed 1 segment
-  const int first_segments = par_.num_N - min_one;
+  if (num_seg == 0)
+    return seg_end_times;
 
-  // segments_per_poly: [first_segments, 1, 1, ..., 1] (length = par_.num_P, but may have zeros if N < P)
-  std::vector<int> segments_per_poly(par_.num_P, 0);
-  segments_per_poly[0] = std::max(first_segments, 0);
+  const int P = std::max(0, par_.num_P);
+  if (P <= 0)
+  {
+    // Fallback: still produce valid per-segment times
+    const double dt = initial_dt * factor;
+    double t_acc = 0.0;
+    for (size_t i = 0; i < num_seg; ++i)
+    {
+      t_acc += dt;
+      seg_end_times.push_back(t_acc);
+    }
+    return seg_end_times;
+  }
 
-  // Give 1 segment to the last min_one polytopes
+  // Assign segments to polytopes under your rule, but using num_seg (NOT par_.num_N-1).
+  // Number of last polytopes that can be guaranteed 1 segment:
+  const int max_last_ones = P - 1;
+  const int min_one = std::min<int>(max_last_ones, static_cast<int>(num_seg));
+
+  std::vector<int> segments_per_poly(P, 0);
+
+  // Last min_one polytopes get 1 segment each
   for (int k = 0; k < min_one; ++k)
   {
-    const int p = par_.num_P - 1 - k;
+    const int p = (P - 1) - k;
     segments_per_poly[p] = 1;
   }
 
-  // Convert to cumulative end times
-  double t_acc = 0.0;
-  const double dt = initial_dt * factor;
+  // First polytope gets the remainder
+  const int assigned_to_last = min_one;
+  const int first_segments = static_cast<int>(num_seg) - assigned_to_last;
+  if (first_segments > 0)
+    segments_per_poly[0] += first_segments;
 
-  for (int p = 0; p < par_.num_P; ++p)
+  // Convert to per-segment cumulative end times
+  const double dt = initial_dt * factor;
+  double t_acc = 0.0;
+
+  size_t produced = 0;
+  for (int p = 0; p < P && produced < num_seg; ++p)
   {
-    t_acc += dt * static_cast<double>(segments_per_poly[p]);
-    seg_end_times.push_back(t_acc); // end time at end of polytope p
+    const int k = segments_per_poly[p];
+    for (int s = 0; s < k && produced < num_seg; ++s)
+    {
+      t_acc += dt;
+      seg_end_times.push_back(t_acc);
+      ++produced;
+    }
+  }
+
+  // Safety fallback: if anything went odd, pad to length num_seg
+  while (seg_end_times.size() < num_seg)
+  {
+    t_acc += dt;
+    seg_end_times.push_back(t_acc);
   }
 
   return seg_end_times;
@@ -956,7 +993,17 @@ bool MIGHTY::generateLocalTrajectory(
 {
 
   // Compute worst-case (conservative) segment end times for safe corridor generation
-  std::vector<double> seg_end_times = computeWorstSegEndTimesPoly(initial_dt, factor);
+  const size_t num_seg = (global_path.size() >= 2) ? (global_path.size() - 1) : 0;
+  std::vector<double> seg_end_times = computeWorstSegEndTimesPoly(initial_dt, factor, num_seg);
+
+  if (seg_end_times.size() != num_seg)
+  {
+    std::cout << "[BUG] seg_end_times.size()=" << seg_end_times.size()
+              << " num_seg=" << num_seg
+              << " global_path.size()=" << global_path.size()
+              << " par_.num_P=" << par_.num_P
+              << std::endl;
+  }
 
   // Timer for computing the safe corridor
   MyTimer cvx_decomp_timer(true);
@@ -981,13 +1028,13 @@ bool MIGHTY::generateLocalTrajectory(
   cvx_decomp_time = cvx_decomp_timer.getElapsedMicros() / 1000.0;
 
   // Initialize the solver.
-  whole_traj_solver_ptr->setX0(local_A);              // Initial condition
-  whole_traj_solver_ptr->setXf(local_E);              // Final condition
-  whole_traj_solver_ptr->setPolytopes(l_constraints); // Safe corridor polytopes
-  whole_traj_solver_ptr->setT0(A_time);               // Initial time
-  whole_traj_solver_ptr->setInitialDt(initial_dt);    // Initial dt
-  whole_traj_solver_ptr->setSubGoal(sub_goal);         // Subgoal for goal pulling
-  whole_traj_solver_ptr->setGoalPullTime(goal_pull_time);        // Goal pull time
+  whole_traj_solver_ptr->setX0(local_A);                  // Initial condition
+  whole_traj_solver_ptr->setXf(local_E);                  // Final condition
+  whole_traj_solver_ptr->setPolytopes(l_constraints);     // Safe corridor polytopes
+  whole_traj_solver_ptr->setT0(A_time);                   // Initial time
+  whole_traj_solver_ptr->setInitialDt(initial_dt);        // Initial dt
+  whole_traj_solver_ptr->setSubGoal(sub_goal);            // Subgoal for goal pulling
+  whole_traj_solver_ptr->setGoalPullTime(goal_pull_time); // Goal pull time
 
   // Solve the optimization problem.
   bool gurobi_error_detected = false;

@@ -150,9 +150,9 @@ MIGHTY_NODE::MIGHTY_NODE() : Node("mighty_node")
       topic_name = "/map_generator/global_cloud";
 
     sub_fake_sim_occupancy_map_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(topic_name,
-    rclcpp::QoS(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_sensor_data)),
-    std::bind(&MIGHTY_NODE::occupancyMapCallback, this, std::placeholders::_1),
-    options_map);
+                                                                                           rclcpp::QoS(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_sensor_data)),
+                                                                                           std::bind(&MIGHTY_NODE::occupancyMapCallback, this, std::placeholders::_1),
+                                                                                           options_map);
   }
   else
   {
@@ -515,8 +515,8 @@ void MIGHTY_NODE::printParameters()
   // DGP parameters
   RCLCPP_INFO(this->get_logger(), "File Path: %s", file_path_.c_str());
   RCLCPP_INFO(this->get_logger(), "Perform Benchmark?: %d", use_benchmark_);
-  RCLCPP_INFO(this->get_logger(), "Initial Guess Planner: %s", par_.global_planner.c_str());
-  RCLCPP_INFO(this->get_logger(), "DGP Planner Verbose: %d", par_.global_planner_verbose);
+  RCLCPP_INFO(this->get_logger(), "Global Planner: %s", par_.global_planner.c_str());
+  RCLCPP_INFO(this->get_logger(), "Global Planner Verbose: %d", par_.global_planner_verbose);
   RCLCPP_INFO(this->get_logger(), "Global Planner Huristic Weight: %f", par_.global_planner_huristic_weight);
   RCLCPP_INFO(this->get_logger(), "Factor DGP: %f", par_.factor_dgp);
   RCLCPP_INFO(this->get_logger(), "Inflation DGP: %f", par_.inflation_dgp);
@@ -1158,7 +1158,6 @@ void MIGHTY_NODE::setComputationTimesToZero()
   dgp_dynamic_astar_time_ = 0.0;
   dgp_recover_path_time_ = 0.0;
   cvx_decomp_time_ = 0.0;
-  initial_guess_computation_time_ = 0.0;
   local_traj_computation_time_ = 0.0;
   safe_paths_time_ = 0.0;
   safety_check_time_ = 0.0;
@@ -1180,7 +1179,6 @@ void MIGHTY_NODE::retrieveData()
                             dgp_dynamic_astar_time_,
                             dgp_recover_path_time_,
                             cvx_decomp_time_,
-                            initial_guess_computation_time_,
                             local_traj_computation_time_,
                             safety_check_time_,
                             safe_paths_time_,
@@ -1202,19 +1200,11 @@ void MIGHTY_NODE::printComputationTime(bool result)
   RCLCPP_INFO(this->get_logger(), "Total replanning time [ms]: %f", replanning_computation_time_ * 1000.0);
   RCLCPP_INFO(this->get_logger(), "Global Planning Time [ms]: %f", global_planning_time_);
   RCLCPP_INFO(this->get_logger(), "CVX Decomposition Time [ms]: %f", cvx_decomp_time_);
-  RCLCPP_INFO(this->get_logger(), "Initial Guess Time [ms]: %f", initial_guess_computation_time_);
   RCLCPP_INFO(this->get_logger(), "Local Traj Time [ms]: %f", local_traj_computation_time_);
   RCLCPP_INFO(this->get_logger(), "Safe Paths Time [ms]: %f", safe_paths_time_);
   RCLCPP_INFO(this->get_logger(), "Safety Check Time [ms]: %f", safety_check_time_);
   RCLCPP_INFO(this->get_logger(), "Yaw Sequence Time [ms]: %f", yaw_sequence_time_);
   RCLCPP_INFO(this->get_logger(), "Yaw Fitting Time [ms]: %f", yaw_fitting_time_);
-  if (par_.global_planner == "dgp")
-  {
-    RCLCPP_INFO(this->get_logger(), "Static JPS Time [ms]: %f", dgp_static_jps_time_);
-    RCLCPP_INFO(this->get_logger(), "Check Path Time [ms]: %f", dgp_check_path_time_);
-    RCLCPP_INFO(this->get_logger(), "Dynamic A* Time [ms]: %f", dgp_dynamic_astar_time_);
-    RCLCPP_INFO(this->get_logger(), "Recover Path Time [ms]: %f", dgp_recover_path_time_);
-  }
   RCLCPP_INFO(this->get_logger(), "------------------------");
 }
 
@@ -1228,15 +1218,9 @@ void MIGHTY_NODE::recordData(bool result)
 {
 
   // Record all the data into global_path_benchmark_
-  std::tuple<bool, double, double, double, double, double, double, double, double, double, double, double, double, double, double> data;
-  if (par_.global_planner == "dgp")
-  {
-    data = std::make_tuple(result, final_g_, replanning_computation_time_, global_planning_time_, cvx_decomp_time_, initial_guess_computation_time_, local_traj_computation_time_, safe_paths_time_, safety_check_time_, yaw_sequence_time_, yaw_fitting_time_, dgp_static_jps_time_, dgp_check_path_time_, dgp_dynamic_astar_time_, dgp_recover_path_time_);
-  }
-  else
-  {
-    data = std::make_tuple(result, final_g_, replanning_computation_time_, global_planning_time_, cvx_decomp_time_, initial_guess_computation_time_, local_traj_computation_time_, safe_paths_time_, safety_check_time_, yaw_sequence_time_, yaw_fitting_time_, 0.0, 0.0, 0.0, 0.0);
-  }
+  std::tuple<bool, double, double, double, double, double, double, double, double, double, double, double, double, double> data;
+
+  data = std::make_tuple(result, final_g_, replanning_computation_time_, global_planning_time_, cvx_decomp_time_, local_traj_computation_time_, safe_paths_time_, safety_check_time_, yaw_sequence_time_, yaw_fitting_time_, 0.0, 0.0, 0.0, 0.0);
 
   global_path_benchmark_.push_back(data);
 }
@@ -1254,28 +1238,15 @@ void MIGHTY_NODE::logData()
   std::ofstream log_file(file_path_); // Open the file in overwrite mode
   if (log_file.is_open())
   {
-    if (par_.global_planner == "dgp")
-    {
-      // Header
-      log_file << "Planner,Result,Cost (final node's g),Total replanning time [ms],Global Planning Time [ms],CVX Decomposition Time [ms],Initial Guess Time [ms],Local Traj Time [ms],Safe Paths Time [ms],Safety Check Time [ms],Yaw Sequence Time [ms],Yaw Fitting Time [ms],Static JPS Time [ms],Check Path Time [ms],Dynamic A* Time [ms],Recover Path Time [ms]\n";
-    }
-    else
-    {
-      // Header
-      log_file << "Planner,Result,Cost (final node's g),Total replanning time [ms],Global Planning Time [ms],CVX Decomposition Time [ms],Initial Guess Time [ms],Local Traj Time [ms],Safe Paths Time [ms],Safety Check Time [ms],Yaw Sequence Time [ms],Yaw Fitting Time [ms]\n";
-    }
+
+    // Header
+    log_file << "Planner,Result,Cost (final node's g),Total replanning time [ms],Global Planning Time [ms],CVX Decomposition Time [ms],Local Traj Time [ms],Safe Paths Time [ms],Safety Check Time [ms],Yaw Sequence Time [ms],Yaw Fitting Time [ms]\n";
 
     // Data
     for (const auto &row : global_path_benchmark_)
     {
-      if (par_.global_planner == "dgp")
-      {
-        log_file << par_.global_planner << "," << std::get<0>(row) << "," << std::get<1>(row) << "," << std::get<2>(row) * 1000.0 << "," << std::get<3>(row) << "," << std::get<4>(row) << "," << std::get<5>(row) << "," << std::get<6>(row) << "," << std::get<7>(row) << "," << std::get<8>(row) << "," << std::get<9>(row) << "," << std::get<10>(row) << "," << std::get<11>(row) << "," << std::get<12>(row) << "," << std::get<13>(row) << std::get<14>(row) << "\n";
-      }
-      else
-      {
-        log_file << par_.global_planner << "," << std::get<0>(row) << "," << std::get<1>(row) << "," << std::get<2>(row) * 1000.0 << "," << std::get<3>(row) << "," << std::get<4>(row) << "," << std::get<5>(row) << "," << std::get<6>(row) << "," << std::get<7>(row) << "," << std::get<8>(row) << "," << std::get<9>(row) << "," << std::get<10>(row) << "\n";
-      }
+
+      log_file << par_.global_planner << "," << std::get<0>(row) << "," << std::get<1>(row) << "," << std::get<2>(row) * 1000.0 << "," << std::get<3>(row) << "," << std::get<4>(row) << "," << std::get<5>(row) << "," << std::get<6>(row) << "," << std::get<7>(row) << "," << std::get<8>(row) << "," << std::get<9>(row) << "\n";
     }
 
     log_file.close();
@@ -1868,7 +1839,6 @@ void MIGHTY_NODE::occupancyMapCallback(
     // stop the subscription
     sub_fake_sim_occupancy_map_.reset();
   }
-
 }
 
 // ----------------------------------------------------------------------------

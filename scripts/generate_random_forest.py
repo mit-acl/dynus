@@ -7,6 +7,7 @@ Then:
   ros2 run mighty generate_random_forest.py --ros-args -p difficulty:=hard -p min_clearance:=2.0 -p shape_mode:=mixed -p box_probability:=0.5
 
 Add this to .world for ROS2 bridge:
+  <plugin name="disable_physics" filename="libdisable_physics.so"/>
   <plugin name='gazebo_ros_state' filename='libgazebo_ros_state.so'>
     <ros>
       <namespace>/plug</namespace>
@@ -23,7 +24,10 @@ ros2 run mighty generate_random_forest.py --ros-args -p shape_mode:=box
 
 # mixed (70% boxes), random yaw, 2.0 m clearance
 ros2 run mighty generate_random_forest.py --ros-args -p shape_mode:=mixed -p box_probability:=0.7 -p min_clearance:=2.0
-  
+
+# used in dynus paper benchmarking
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select mighty && . install/setup.bash && ros2 run mighty generate_random_forest.py --ros-args -p shape_mode:=cylindar -p min_clearance:=2.0
+
 Parameters (new ones starred ★):
 - seed (int)
 - difficulty (easy, medium, hard, dynamic)   # "dynamic" leaves x∈[35,65] free of static obstacles
@@ -140,7 +144,7 @@ class ForestSpawner(Node):
 
         # ---------------- Params ----------------
         self.declare_parameter("seed", 0)
-        self.declare_parameter("difficulty", "dynamic")
+        self.declare_parameter("difficulty", "hard")
         self.declare_parameter("min_clearance", 2.0)
         self.declare_parameter("max_place_tries", 2000)
         self.declare_parameter("shrink_after_ratio", 0.5)
@@ -197,7 +201,7 @@ class ForestSpawner(Node):
 
         # Map bounds
         self.min_x = 3.0
-        self.max_x = 303.0
+        self.max_x = 103.0
         self.min_y = -20.0
         self.max_y =  20.0
         self.size_z = 5.0
@@ -224,9 +228,9 @@ class ForestSpawner(Node):
         self.spawn_ground_plane()
 
         # Footprint/height ranges
-        self.kMinHeight = 1.0 if difficulty in ("easy", "dynamic") else 6.0
-        self.kMaxHeight = 5.0 if difficulty in ("easy", "dynamic") else 6.0
-        self.kMinRadius = 1.0
+        self.kMinHeight = 6.0
+        self.kMaxHeight = 6.0
+        self.kMinRadius = 1.5
         self.kMaxRadius = 1.5
 
         # Shrink thresholds

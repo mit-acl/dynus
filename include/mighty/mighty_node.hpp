@@ -245,7 +245,6 @@ namespace mighty
                                double, // Total replanning time
                                double, // Global planning time
                                double, // CVX decomposition time
-                               double, // Initial guess computation time
                                double, // Local trajectory time
                                double, // Safe paths time
                                double, // Safety Check time
@@ -268,7 +267,6 @@ namespace mighty
         double dgp_dynamic_astar_time_ = 0.0;
         double dgp_recover_path_time_ = 0.0;
         double cvx_decomp_time_ = 0.0;
-        double initial_guess_computation_time_ = 0.0; // Time for computing initial guess
         double local_traj_computation_time_ = 0.0;
         double safe_paths_time_ = 0.0;
         double safety_check_time_ = 0.0;
