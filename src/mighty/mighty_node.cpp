@@ -291,6 +291,9 @@ void MIGHTY_NODE::declareParameters()
   // DYNUS specific parameters
   this->declare_parameter("num_P", 3);
   this->declare_parameter("num_N", 6);
+  this->declare_parameter("use_dynamic_factor", false);
+  this->declare_parameter("dynamic_factor_k_radius", 0.3);
+  this->declare_parameter("dynamic_factor_initial_mean", 0.5);
   this->declare_parameter("factor_initial", 1.0);
   this->declare_parameter("factor_final", 5.0);
   this->declare_parameter("factor_constant_step_size", 0.1);
@@ -437,6 +440,9 @@ void MIGHTY_NODE::setParameters()
   // DYNUS specific parameters
   par_.num_P = this->get_parameter("num_P").as_int();
   par_.num_N = this->get_parameter("num_N").as_int();
+  par_.use_dynamic_factor = this->get_parameter("use_dynamic_factor").as_bool();
+  par_.dynamic_factor_k_radius = this->get_parameter("dynamic_factor_k_radius").as_double();
+  par_.dynamic_factor_initial_mean = this->get_parameter("dynamic_factor_initial_mean").as_double();
   par_.factor_initial = this->get_parameter("factor_initial").as_double();
   par_.factor_final = this->get_parameter("factor_final").as_double();
   par_.factor_constant_step_size = this->get_parameter("factor_constant_step_size").as_double();
@@ -591,6 +597,9 @@ void MIGHTY_NODE::printParameters()
   // DYNUS specific parameters
   RCLCPP_INFO(this->get_logger(), "Num P: %d", par_.num_P);
   RCLCPP_INFO(this->get_logger(), "Num N: %d", par_.num_N);
+  RCLCPP_INFO(this->get_logger(), "Use Dynamic Factor: %d", par_.use_dynamic_factor);
+  RCLCPP_INFO(this->get_logger(), "Dynamic Factor K Radius: %f", par_.dynamic_factor_k_radius);
+  RCLCPP_INFO(this->get_logger(), "Dynamic Factor Initial Mean: %f", par_.dynamic_factor_initial_mean);
   RCLCPP_INFO(this->get_logger(), "Factor Initial: %f", par_.factor_initial);
   RCLCPP_INFO(this->get_logger(), "Factor Final: %f", par_.factor_final);
   RCLCPP_INFO(this->get_logger(), "Factor Constant Step Size: %f", par_.factor_constant_step_size);
@@ -1594,11 +1603,22 @@ void MIGHTY_NODE::publishGlobalPath()
 
   if (!global_path.empty())
   {
-    // Publish global_path
+    // Publish global_path (thin line + dots)
     clearMarkerArray(dgp_path_marker_, pub_dgp_path_marker_);
-    vectorOfVectors2MarkerArray(global_path, &dgp_path_marker_, color(global_path_color));
+  
+    pathLineDotsToMarkerArray(
+        global_path,
+        &dgp_path_marker_,
+        color(global_path_color),
+        /*line_width=*/0.03,      // meters
+        /*dot_diameter=*/0.06,    // meters
+        /*base_id=*/50000,
+        /*frame_id=*/"map",
+        /*lifetime_sec=*/1.0);
+  
     pub_dgp_path_marker_->publish(dgp_path_marker_);
   }
+  
 
   // Get the original global path
   vec_Vecf<3> original_global_path;

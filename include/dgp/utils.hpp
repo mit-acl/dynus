@@ -53,6 +53,16 @@ void printStateVector(std::vector<state> &data);
 void vectorOfVectors2MarkerArray(vec_Vecf<3> traj, visualization_msgs::msg::MarkerArray *m_array, std_msgs::msg::ColorRGBA color,
                                  int type = visualization_msgs::msg::Marker::ARROW,
                                  std::vector<double> radii = std::vector<double>());
+                                 
+void pathLineDotsToMarkerArray(
+    const vec_Vecf<3> &traj,
+    visualization_msgs::msg::MarkerArray *m_array,
+    const std_msgs::msg::ColorRGBA &color,
+    double line_width = 0.03,
+    double dot_diameter = 0.06,
+    int base_id = 50000,
+    const std::string &frame_id = "map",
+    double lifetime_sec = 1.0);
 
 std_msgs::msg::ColorRGBA getColorJet(double v, double vmin, double vmax);
 

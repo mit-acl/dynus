@@ -161,7 +161,9 @@ private:
   double v_max_;                                                      // Maximum speed
   double max_dist_vertexes_;                                          // Maximum velocity
   std::vector<double> factors_;                                       // Factors for time allocation
-
+  int num_dynamic_factors_;
+  bool dynamic_factor_inital_sucess_ = false;
+  
   // Flags
   bool state_initialized_ = false;         // State initialized
   bool terminal_goal_initialized_ = false; // Terminal goal initialized

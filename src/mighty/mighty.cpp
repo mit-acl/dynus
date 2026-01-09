@@ -26,15 +26,30 @@ MIGHTY::MIGHTY(parameters par) : par_(par)
   dgp_manager_.setParameters(par_);
 
   // Compute factors_ for time allocation
-  const int num_factors = static_cast<int>((par_.factor_final - par_.factor_initial) / par_.factor_constant_step_size) + 1;
-  for (int i = 0; i < num_factors; i++)
+  if (par_.use_dynamic_factor)
   {
-    double factor = par_.factor_initial + i * par_.factor_constant_step_size;
-    factors_.push_back(factor);
+    // Dynamic factor search
+    num_dynamic_factors_ = static_cast<int>((2 * par_.dynamic_factor_k_radius) / par_.factor_constant_step_size) + 1;
+    for (int i = 0; i < num_dynamic_factors_; i++)
+    {
+      double factor = par_.dynamic_factor_initial_mean - par_.dynamic_factor_k_radius + i * par_.factor_constant_step_size;
+      if (factor >= 1.0)
+        factors_.push_back(factor);
+    }
+  }
+  else
+  {
+    // Constant factor search
+    num_dynamic_factors_ = static_cast<int>((par_.factor_final - par_.factor_initial) / par_.factor_constant_step_size) + 1;
+    for (int i = 0; i < num_dynamic_factors_; i++)
+    {
+      double factor = par_.factor_initial + i * par_.factor_constant_step_size;
+      factors_.push_back(factor);
+    }
   }
 
   // Set up unconstrained optimization solver for whole trajectory
-  for (int i = 0; i < num_factors; i++)
+  for (int i = 0; i < num_dynamic_factors_; i++)
   {
     whole_traj_solver_ptrs_.push_back(std::make_shared<SolverGurobi>());
     whole_traj_solver_ptrs_[i]->initializeSolver(par_);
@@ -753,9 +768,9 @@ bool MIGHTY::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning
   const double goal_pull_time = par_.goal_pull_time_buffer * last_replaning_computation_time;
 
   std::vector<std::future<std::tuple<bool, double, double, double, vec_E<Polyhedron<3>>>>> futures;
-  futures.reserve(whole_traj_solver_ptrs_.size());
+  futures.reserve(factors_.size());
 
-  for (size_t i = 0; i < whole_traj_solver_ptrs_.size(); ++i)
+  for (size_t i = 0; i < factors_.size(); ++i)
   {
     const double factor = factors_[i]; // corresponding factor for solver i
 
@@ -807,13 +822,13 @@ bool MIGHTY::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning
   std::vector<double> vec_convx_decomp_times;
   std::vector<vec_E<Polyhedron<3>>> vec_poly_out_safe;
 
-  vec_optimization_succeeded.resize(whole_traj_solver_ptrs_.size(), false);
-  vec_goal_setpoints.resize(whole_traj_solver_ptrs_.size());
-  vec_pwp_to_share.resize(whole_traj_solver_ptrs_.size());
-  vec_cps.resize(whole_traj_solver_ptrs_.size());
-  vec_gurobi_times.resize(whole_traj_solver_ptrs_.size(), 0.0);
-  vec_convx_decomp_times.resize(whole_traj_solver_ptrs_.size(), 0.0);
-  vec_poly_out_safe.resize(whole_traj_solver_ptrs_.size());
+  vec_optimization_succeeded.resize(factors_.size(), false);
+  vec_goal_setpoints.resize(factors_.size());
+  vec_pwp_to_share.resize(factors_.size());
+  vec_cps.resize(factors_.size());
+  vec_gurobi_times.resize(factors_.size(), 0.0);
+  vec_convx_decomp_times.resize(factors_.size(), 0.0);
+  vec_poly_out_safe.resize(factors_.size());
 
   for (size_t i = 0; i < futures.size(); ++i)
   {
@@ -823,7 +838,7 @@ bool MIGHTY::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning
       continue;
 
     // One thread succeeded. Stop all the other solver instances.
-    for (size_t j = 0; j < whole_traj_solver_ptrs_.size(); ++j)
+    for (size_t j = 0; j < factors_.size(); ++j)
     {
       if (j == i)
         continue;
@@ -879,6 +894,43 @@ bool MIGHTY::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning
       if (i != successful_index && !vec_goal_setpoints[i].empty())
       {
         list_subopt_goal_setpoints_.push_back(vec_goal_setpoints[i]);
+      }
+    }
+
+    // update the factors_ vector
+    if (par_.use_dynamic_factor)
+    {
+      // clear factors_ first
+      factors_.clear();
+
+      // Set the successful factor to be the mean of k-radius factors
+      double successful_factor = factors_[successful_index];
+      for (int i = 0; i < num_dynamic_factors_; i++)
+      {
+        double factor = successful_factor - par_.dynamic_factor_k_radius + i * par_.factor_constant_step_size;
+        if (factor >= 1.0)
+          factors_.push_back(factor);
+      }
+
+      if (!dynamic_factor_inital_sucess_)
+        dynamic_factor_inital_sucess_ = true;
+
+    }
+  }
+  else
+  {
+
+    // if the initial optimization failed, we increase the factors_ for next replanning
+    if (par_.use_dynamic_factor && !dynamic_factor_inital_sucess_)
+    {
+
+      double last_unsuccessful_factor = factors_.back();
+      int num_factors = factors_.size();
+      factors_.clear();
+      for (size_t i = 0; i < num_factors; ++i)
+      {
+        double factor = last_unsuccessful_factor + (i + 1) * par_.factor_constant_step_size;
+        factors_.push_back(factor);
       }
     }
   }

@@ -126,6 +126,12 @@ struct parameters
   // DYNUS specific parameters
   int num_P;                        // number of polytopes
   int num_N;                        // number of trajectory pieces
+  bool use_dynamic_factor;          // use dynamic factor for the trajectory time allocation
+  double dynamic_factor_k_radius;   // the factors are [prev_successful_factor - k
+                                      // radius, prev_successful_factor - k_radius +
+                                      // factor_constant_step_size, ..., prev_successful_factor,
+                                      // ... prev_successful_factor + k_radius]
+  double dynamic_factor_initial_mean; // initial factor for the dynamic factor search (only used when use_dynamic_factor is true)
   double factor_initial;            // initial factor for the trajectory time allocation
   double factor_final;              // final factor for the trajectory time allocation
   double factor_constant_step_size; // step size for the constant factor increase

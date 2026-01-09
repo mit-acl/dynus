@@ -160,7 +160,7 @@ def generate_launch_description():
                     parameters=[{"start_pos": [float(x), float(y), float(z)], 
                                  "start_yaw": float(yaw),
                                  "send_state_to_gazebo": parameters['sim_env'] == 'gazebo',
-                                #  "visual_level": parameters['visual_level'],
+                                 "visual_level": parameters['visual_level'],
                                  "publish_odom": publish_odom,
                                  "odom_topic": odom_topic,
                                  "odom_frame_id": odom_frame_id,
