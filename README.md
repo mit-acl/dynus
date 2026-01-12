@@ -127,6 +127,20 @@ MIGHTY has been tested on both Docker and native installations on Ubuntu 22.04 w
 ### Notes
 
 <details>
+  <summary><b>Static Environment Benchmarking </b></summary>
+  - ```bash
+   colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select mighty global_mapper_ros && . install/setup.bash && ros2 run mighty unc_benchmark_node.py
+    ```
+</details>
+
+<details>
+  <summary><b>Collision Checker for Static Environment Benchmarking </b></summary>
+  - ```bash
+   python3 collision_checker.py /home/kkondo/data/hard_forest_obstacle_parameters.csv /media/kkondo/T7/dynus/static/hard_forest/bags/dynus 0.1 /NX01/goal dynus_interfaces/msg/Goal
+    ```
+</details>
+
+<details>
   <summary><b>Generate Safety Corridor </b></summary>
   - ```bash
    colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select mighty && . install/setup.bash && tmuxp load src/dynus/launch/generate_sfc.yaml
