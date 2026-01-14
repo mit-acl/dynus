@@ -140,6 +140,7 @@ struct parameters
   double jerk_smooth_weight; // weight for the jerk smoothness
   double goal_pull_weight;   // weight for pulling the trajectory to the goal
   double goal_pull_time_buffer; // goal_pull_time = goal_pull_time_buffer * previous_replanning_time
+  bool using_variable_elimination = true;
 
   // L-BFGS parameters
   double f_dec_coeff;     // allow larger Armijo steps

@@ -64,7 +64,7 @@ public:
     void stopExecution();
     void resetToNominalState();
 
-    void setPolytopes(std::vector<LinearConstraint3D> polytopes, bool use_closed_form = false);
+    void setPolytopes(std::vector<LinearConstraint3D> polytopes);
     void setPolytopesConstraints();
     void setPolyConsts();
     void setMapSizeConstraints();
@@ -78,7 +78,7 @@ public:
     void findInitialGuessABCDFromRefPoints(double &a, double &b, double &c, double &d, double q0, double q1, double q2, double q3, double dt);
     void checkDynamicViolation(bool &is_dyn_constraints_satisfied);
     void checkCollisionViolation(bool &is_collision_free_corridor_satisfied);
-    void createSafeCorridorConstraintsForPolytope(int t);
+    void createSafeCorridorConstraintsFixedPolytope(int t, int n_poly);
     void createSafeCorridorConstraintsForPolytopeAtleastOne(int t);
 
     // For the jackal
@@ -134,6 +134,11 @@ public:
     inline GRBLinExpr getBn(int t, int ii) const;
     inline GRBLinExpr getCn(int t, int ii) const;
     inline GRBLinExpr getDn(int t, int ii) const;
+
+    inline double getADouble(int interval, int axis) const;
+    inline double getBDouble(int interval, int axis) const;
+    inline double getCDouble(int interval, int axis) const;
+    inline double getDDouble(int interval, int axis) const;
 
     inline double getAnDouble(int t, int ii) const;
     inline double getBnDouble(int t, int ii) const;
@@ -204,7 +209,6 @@ public:
     int trials_ = 0;
     int file_t_ = 0;
     double factor_that_worked_ = 0;
-    bool use_miqp_ = false;
     int N_ = 6;
     mycallback cb_;
 
@@ -232,7 +236,6 @@ protected:
     PieceWisePol pwp_;
     vec_Vecf<3> global_path_;
     std::vector<float> local_box_size_;
-    int current_polytopes_size_ = 3;
     double x_min_;
     double x_max_;
     double y_min_;
@@ -240,6 +243,7 @@ protected:
     double z_min_;
     double z_max_;
     double initial_dt_;
+    bool using_variable_elimination_ = true;
 
     // Basis converter
     BasisConverter basis_converter_;

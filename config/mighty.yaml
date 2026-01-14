@@ -73,7 +73,7 @@ mighty_node:
         
         # DYNUS specific parameters
         num_P: 2                                    # [-] Number of polytopes (num_P <= num_N)
-        num_N: 6                                    # [-] Number of trajectory pieces
+        num_N: 5                                    # [-] Number of trajectory pieces
         use_dynamic_factor: true                  # [-] Use dynamic factor for the trajectory time allocation
         dynamic_factor_k_radius: 0.2              # [-] the factors are [prev_successful_factor - k_radius, prev_successful_factor - k_radius + factor_constant_step_size, ..., prev_successful_factor, ... prev_successful_factor + k_radius]        
         dynamic_factor_initial_mean: 1.5               # [-] Initial factor for the dynamic factor search (only used when use_dynamic_factor is true)

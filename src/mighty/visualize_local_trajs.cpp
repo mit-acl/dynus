@@ -1126,7 +1126,7 @@ public:
             "traj_dump_root_dirs",
             std::vector<std::string>{
                 traj_dump_root_dir_,                               // dynus/faster dumps
-                "/media/kkondo/kota_elements/super/traj_dump_ros1" // SUPER dumps
+                "/media/kkondo/kota_elements/super/standardized_benchmark/traj_dump_ros1" // SUPER dumps
             });
 
         // Topics

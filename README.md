@@ -149,7 +149,7 @@ MIGHTY has been tested on both Docker and native installations on Ubuntu 22.04 w
 </details>
 
 <details>
-  <summary><b>Benchmark Local Trajectory </b></summary>
+  <summary><b>Standardized Benchmark </b></summary>
   - ```bash
    colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select mighty && . install/setup.bash && tmuxp load src/dynus/launch/local_traj_benchmark.yaml
     ```

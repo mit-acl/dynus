@@ -716,10 +716,10 @@ public:
         declare_parameter<int>("num_N", 6);
         declare_parameter<double>("dc", 0.01);
 
-        declare_parameter<double>("x_min", -100.0);
-        declare_parameter<double>("x_max", 100.0);
-        declare_parameter<double>("y_min", -100.0);
-        declare_parameter<double>("y_max", 100.0);
+        declare_parameter<double>("x_min", -10.0);
+        declare_parameter<double>("x_max", 10.0);
+        declare_parameter<double>("y_min", -10.0);
+        declare_parameter<double>("y_max", 10.0);
         declare_parameter<double>("z_min", 0.0);
         declare_parameter<double>("z_max", 5.0);
 
@@ -749,9 +749,12 @@ public:
         declare_parameter<std::string>("planner_name", "DYNUS");
         declare_parameter<bool>("use_single_threaded", false);
 
+        declare_parameter<bool>("using_variable_elimination", true);
+
         // Read params
         std::vector<std::string> planner_names = this->get_parameter("planner_names").as_string_array();
         std::vector<int64_t> num_N_list_64 = this->get_parameter("num_N_list").as_integer_array();
+
 
         if (planner_names.empty())
             planner_names.push_back(this->get_parameter("planner_name").as_string());
@@ -811,6 +814,8 @@ public:
         par_.goal_pull_time_buffer = get_parameter("goal_pull_time_buffer").as_double();
 
         par_.debug_verbose = get_parameter("debug_verbose").as_bool();
+
+        par_.using_variable_elimination = get_parameter("using_variable_elimination").as_bool();
 
         poly_seed_eps_ = get_parameter("poly_seed_eps").as_double();
         debug_poly_check_ = get_parameter("debug_poly_check").as_bool();
@@ -1052,7 +1057,6 @@ private:
 
         for (auto &r : results_)
         {
-            const auto t0 = steady_clock::now();
             const std::string fname = fs::path(r.file).filename().string();
 
             try
@@ -1092,7 +1096,7 @@ private:
                     r.status = "SKIP: polytopes(" + std::to_string(num_seg) +
                                ") > num_N(" + std::to_string(par_.num_N) + ")";
                     const auto t1 = steady_clock::now();
-                    r.total_opt_runtime_ms = 1e3 * duration<double>(t1 - t0).count();
+                    r.total_opt_runtime_ms = 1000000.0;
                     continue;
                 }
 
@@ -1122,7 +1126,7 @@ private:
                     r.gurobi_error = false;
                     r.status = "BAD_CONSTRAINTS: start/goal/mid violates corridor (see logs)";
                     const auto t1 = steady_clock::now();
-                    r.total_opt_runtime_ms = 1e3 * duration<double>(t1 - t0).count();
+                    r.total_opt_runtime_ms = 1000000.0;
                     continue;
                 }
 
@@ -1158,7 +1162,10 @@ private:
                     bool gurobi_error = false;
                     double gurobi_ms = 0.0;
 
+                    const auto t0 = steady_clock::now();
                     const bool ok = solver->generateNewTrajectory(gurobi_error, gurobi_ms, /*factor=*/1.0, true);
+                    const auto t1 = steady_clock::now();
+                    r.total_opt_runtime_ms = 1e3 * duration<double>(t1 - t0).count();
 
                     r.per_opt_runtime_ms = gurobi_ms;
                     r.factor_used = solver->getFactorThatWorked();
@@ -1197,6 +1204,8 @@ private:
                     // Launch async workers
                     std::vector<std::future<ThreadRet>> futures;
                     futures.reserve(whole_traj_solver_ptrs_.size());
+
+                    const auto t0 = steady_clock::now();
 
                     for (size_t i = 0; i < whole_traj_solver_ptrs_.size(); ++i)
                     {
@@ -1237,6 +1246,7 @@ private:
 
                     if (planner_name_ == "dynus" || planner_name_ == "faster")
                     {
+
                         // Stop-at-first-success mode
                         int success_idx = -1;
                         bool any_gurobi_error = false;
@@ -1288,36 +1298,8 @@ private:
                                 std::this_thread::sleep_for(1ms);
                         }
 
-                        // Join remaining
-                        for (size_t i = 0; i < futures.size(); ++i)
-                        {
-                            if (!got[i])
-                            {
-                                auto [succ, gurobi_error, gurobi_ms, factor, msg] = futures[i].get();
-                                any_gurobi_error = any_gurobi_error || gurobi_error;
-                                last_fail_msg = msg;
-
-                                if (succ && success_idx < 0)
-                                {
-                                    success_idx = (int)i;
-                                    r.per_opt_runtime_ms = gurobi_ms;
-                                    r.factor_used = factor;
-
-                                    for (size_t j = 0; j < whole_traj_solver_ptrs_.size(); ++j)
-                                    {
-                                        if ((int)j == success_idx)
-                                            continue;
-                                        try
-                                        {
-                                            whole_traj_solver_ptrs_[j]->stopExecution();
-                                        }
-                                        catch (...)
-                                        {
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        const auto t1 = steady_clock::now();
+                        r.total_opt_runtime_ms = 1e3 * duration<double>(t1 - t0).count();
 
                         if (success_idx < 0)
                         {
@@ -1372,6 +1354,9 @@ private:
                             }
                         }
 
+                        const auto t1 = steady_clock::now();
+                        r.total_opt_runtime_ms = 1e3 * duration<double>(t1 - t0).count();
+
                         if (best_idx < 0)
                         {
                             r.success = false;
@@ -1416,8 +1401,6 @@ private:
                 r.status = std::string("EXCEPTION: ") + e.what();
             }
 
-            const auto t1 = steady_clock::now();
-            r.total_opt_runtime_ms = 1e3 * duration<double>(t1 - t0).count();
         }
     }
 

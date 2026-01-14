@@ -1,3 +1,4 @@
+
 /* ----------------------------------------------------------------------------
  * Copyright 2024, Kota Kondo, Aerospace Controls Laboratory
  * Massachusetts Institute of Technology
@@ -42,6 +43,13 @@ SolverGurobi::SolverGurobi()
 
     // Set the callback
     m_.setCallback(&cb_); // The callback will be called periodically along the optimization
+
+    // m_.set(GRB_DoubleParam_OptimalityTol, 1e-3);
+    // m_.set(GRB_DoubleParam_FeasibilityTol, 1e-3);
+    // m_.set(GRB_DoubleParam_IntFeasTol, 1e-3);
+    // m_.set(GRB_IntParam_MIPFocus, 1);
+    // m_.set(GRB_DoubleParam_MIPGapAbs, 1e-2);
+    // m_.set(GRB_IntParam_Threads, 0);
 
     // Get basis converter (Q_{MINVO} = M_{BE2MV} * Q_{BEZIER})
     // Get std version of the basis converter
@@ -128,29 +136,40 @@ void SolverGurobi::setDynamicConstraintsFaster_()
     {
         for (int axis = 0; axis < 3; ++axis)
         {
-            // constrain ALL velocity CPs
-            auto vel_cps = getVelCP(segment, axis);
-            for (int i = 0; i < (int)vel_cps.size(); ++i)
-            {
-                dyn_cons_.push_back(m_.addConstr(vel_cps[i] <= v_max_, "max_vel_f_k" + std::to_string(segment)));
-                dyn_cons_.push_back(m_.addConstr(vel_cps[i] >= -v_max_, "min_vel_f_k" + std::to_string(segment)));
-            }
 
-            // constrain ALL accel CPs
-            auto acc_cps = getAccelCP(segment, axis);
-            for (int i = 0; i < (int)acc_cps.size(); ++i)
-            {
-                dyn_cons_.push_back(m_.addConstr(acc_cps[i] <= a_max_, "max_acc_f_k" + std::to_string(segment)));
-                dyn_cons_.push_back(m_.addConstr(acc_cps[i] >= -a_max_, "min_acc_f_k" + std::to_string(segment)));
-            }
+            // FASTER actually only constrains the very first point -> actually leads to constraint violation
+            dyn_cons_.push_back(m_.addConstr(getVel(segment, 0, axis) <= v_max_, "MaxVel_t" + std::to_string(segment) + "_axis_" + std::to_string(axis)));
+            dyn_cons_.push_back(m_.addConstr(getVel(segment, 0, axis) >= -v_max_, "MinVel_t" + std::to_string(segment) + "_axis_" + std::to_string(axis)));
 
-            // constrain ALL jerk CPs (1 per segment/axis)
-            auto jerk_cps = getJerkCP(segment, axis);
-            for (int i = 0; i < (int)jerk_cps.size(); ++i)
-            {
-                dyn_cons_.push_back(m_.addConstr(jerk_cps[i] <= j_max_, "max_jerk_f_k" + std::to_string(segment)));
-                dyn_cons_.push_back(m_.addConstr(jerk_cps[i] >= -j_max_, "min_jerk_f_k" + std::to_string(segment)));
-            }
+            dyn_cons_.push_back(m_.addConstr(getAccel(segment, 0, axis) <= a_max_, "MaxAccel_t" + std::to_string(segment) + "_axis_" + std::to_string(axis)));
+            dyn_cons_.push_back(m_.addConstr(getAccel(segment, 0, axis) >= -a_max_, "MinAccel_t" + std::to_string(segment) + "_axis_" + std::to_string(axis)));
+
+            dyn_cons_.push_back(m_.addConstr(getJerk(segment, 0, axis) <= j_max_, "MaxJerk_t" + std::to_string(segment) + "_axis_" + std::to_string(axis)));
+            dyn_cons_.push_back(m_.addConstr(getJerk(segment, 0, axis) >= -j_max_, "MinJerk_t" + std::to_string(segment) + "_axis_" + std::to_string(axis)));
+
+            // // constrain ALL velocity CPs
+            // auto vel_cps = getVelCP(segment, axis);
+            // for (int i = 0; i < (int)vel_cps.size(); ++i)
+            // {
+            //     dyn_cons_.push_back(m_.addConstr(vel_cps[i] <= v_max_, "max_vel_f_k" + std::to_string(segment)));
+            //     dyn_cons_.push_back(m_.addConstr(vel_cps[i] >= -v_max_, "min_vel_f_k" + std::to_string(segment)));
+            // }
+
+            // // constrain ALL accel CPs
+            // auto acc_cps = getAccelCP(segment, axis);
+            // for (int i = 0; i < (int)acc_cps.size(); ++i)
+            // {
+            //     dyn_cons_.push_back(m_.addConstr(acc_cps[i] <= a_max_, "max_acc_f_k" + std::to_string(segment)));
+            //     dyn_cons_.push_back(m_.addConstr(acc_cps[i] >= -a_max_, "min_acc_f_k" + std::to_string(segment)));
+            // }
+
+            // // constrain ALL jerk CPs (1 per segment/axis)
+            // auto jerk_cps = getJerkCP(segment, axis);
+            // for (int i = 0; i < (int)jerk_cps.size(); ++i)
+            // {
+            //     dyn_cons_.push_back(m_.addConstr(jerk_cps[i] <= j_max_, "max_jerk_f_k" + std::to_string(segment)));
+            //     dyn_cons_.push_back(m_.addConstr(jerk_cps[i] >= -j_max_, "min_jerk_f_k" + std::to_string(segment)));
+            // }
         }
     }
 }
@@ -176,13 +195,15 @@ void SolverGurobi::initializeSolver(const parameters &par)
     debug_verbose_ = par.debug_verbose;
     jerk_smooth_weight_ = par.jerk_smooth_weight;
     goal_pull_weight_ = par.goal_pull_weight;
+    using_variable_elimination_ = par.using_variable_elimination; // benchmark param for DYNUS with/without var elimination
 
     // Time limit
     m_.set(GRB_DoubleParam_TimeLimit, par.max_gurobi_comp_time_sec);
 
-    if (usingFaster_())
+    if (usingFaster_() || !using_variable_elimination_)
     {
         createVarsFaster_();
+        using_variable_elimination_ = false; // FASTER does not use variable elimination
     }
     else
     {
@@ -197,89 +218,77 @@ void SolverGurobi::setT0(double t0)
 
 void SolverGurobi::createVars()
 {
+    // Conservative position bounds for "free" position-like parameters.
+    // Widened beyond map bounds to avoid restricting feasible solutions near edges.
+    const double margin_xy = 5.0;
+    const double margin_z = 2.0;
+
+    const double xmin = x_min_ - margin_xy, xmax = x_max_ + margin_xy;
+    const double ymin = y_min_ - margin_xy, ymax = y_max_ + margin_xy;
+    const double zmin = z_min_ - margin_z, zmax = z_max_ + margin_z;
+
+    // Utility lambda to create bounded vars per axis.
+    auto add_pos_like_var = [&](const std::string &name, int axis) -> GRBVar
+    {
+        if (axis == 0)
+            return m_.addVar(xmin, xmax, 0.0, GRB_CONTINUOUS, name);
+        if (axis == 1)
+            return m_.addVar(ymin, ymax, 0.0, GRB_CONTINUOUS, name);
+        return m_.addVar(zmin, zmax, 0.0, GRB_CONTINUOUS, name); // axis == 2
+    };
 
     if (N_ >= 4)
     {
-        // Create free parameter for each coordinate:
-        GRBVar d3x = m_.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, "d3x");
-        GRBVar d3y = m_.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, "d3y");
-        GRBVar d3z = m_.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, "d3z");
-
-        // Save them in a member variable for later use in constraints and objective.
         d3_.clear();
-        d3_.push_back(d3x);
-        d3_.push_back(d3y);
-        d3_.push_back(d3z);
+        d3_.reserve(3);
+        d3_.push_back(add_pos_like_var("d3x", 0));
+        d3_.push_back(add_pos_like_var("d3y", 1));
+        d3_.push_back(add_pos_like_var("d3z", 2));
     }
 
     if (N_ >= 5)
     {
-        // Create free parameter for each coordinate:
-        GRBVar d4x = m_.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, "d4x");
-        GRBVar d4y = m_.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, "d4y");
-        GRBVar d4z = m_.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, "d4z");
-
-        // Save them in a member variable for later use in constraints and objective.
         d4_.clear();
-        d4_.push_back(d4x);
-        d4_.push_back(d4y);
-        d4_.push_back(d4z);
+        d4_.reserve(3);
+        d4_.push_back(add_pos_like_var("d4x", 0));
+        d4_.push_back(add_pos_like_var("d4y", 1));
+        d4_.push_back(add_pos_like_var("d4z", 2));
     }
 
     if (N_ >= 6)
     {
-        // Create free parameter for each coordinate:
-        GRBVar d5x = m_.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, "d5x");
-        GRBVar d5y = m_.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, "d5y");
-        GRBVar d5z = m_.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, "d5z");
-
-        // Save them in a member variable for later use in constraints and objective.
         d5_.clear();
-        d5_.push_back(d5x);
-        d5_.push_back(d5y);
-        d5_.push_back(d5z);
+        d5_.reserve(3);
+        d5_.push_back(add_pos_like_var("d5x", 0));
+        d5_.push_back(add_pos_like_var("d5y", 1));
+        d5_.push_back(add_pos_like_var("d5z", 2));
     }
 
     if (N_ >= 7)
     {
-        // Create free parameter for each coordinate:
-        GRBVar d6x = m_.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, "d6x");
-        GRBVar d6y = m_.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, "d6y");
-        GRBVar d6z = m_.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, "d6z");
-
-        // Save them in a member variable for later use in constraints and objective.
         d6_.clear();
-        d6_.push_back(d6x);
-        d6_.push_back(d6y);
-        d6_.push_back(d6z);
+        d6_.reserve(3);
+        d6_.push_back(add_pos_like_var("d6x", 0));
+        d6_.push_back(add_pos_like_var("d6y", 1));
+        d6_.push_back(add_pos_like_var("d6z", 2));
     }
 
     if (N_ >= 8)
     {
-        // Create free parameter for each coordinate:
-        GRBVar d7x = m_.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, "d7x");
-        GRBVar d7y = m_.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, "d7y");
-        GRBVar d7z = m_.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, "d7z");
-
-        // Save them in a member variable for later use in constraints and objective.
         d7_.clear();
-        d7_.push_back(d7x);
-        d7_.push_back(d7y);
-        d7_.push_back(d7z);
+        d7_.reserve(3);
+        d7_.push_back(add_pos_like_var("d7x", 0));
+        d7_.push_back(add_pos_like_var("d7y", 1));
+        d7_.push_back(add_pos_like_var("d7z", 2));
     }
 
     if (N_ >= 9)
     {
-        // Create free parameter for each coordinate:
-        GRBVar d8x = m_.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, "d8x");
-        GRBVar d8y = m_.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, "d8y");
-        GRBVar d8z = m_.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, "d8z");
-
-        // Save them in a member variable for later use in constraints and objective.
         d8_.clear();
-        d8_.push_back(d8x);
-        d8_.push_back(d8y);
-        d8_.push_back(d8z);
+        d8_.reserve(3);
+        d8_.push_back(add_pos_like_var("d8x", 0));
+        d8_.push_back(add_pos_like_var("d8y", 1));
+        d8_.push_back(add_pos_like_var("d8z", 2));
     }
 }
 
@@ -864,7 +873,8 @@ void SolverGurobi::checkCollisionViolation(bool &is_collision_free_corridor_sati
 void SolverGurobi::fillGoalSetPoints()
 {
     const int N = static_cast<int>(goal_setpoints_.size());
-    if (N <= 0) return;
+    if (N <= 0)
+        return;
 
     const double T = total_traj_time_;
     const double eps = 1e-9; // or 1e-6 if your time units are coarse
@@ -875,7 +885,8 @@ void SolverGurobi::fillGoalSetPoints()
         double t = (i + 1) * dc_;
 
         // Clamp strictly inside [0, T]
-        if (t >= T) t = std::max(0.0, T - eps);
+        if (t >= T)
+            t = std::max(0.0, T - eps);
 
         int interval_idx = 0;
         double dt_interval = 0.0;
@@ -905,32 +916,10 @@ void SolverGurobi::getGoalSetpoints(std::vector<state> &goal_setpoints)
     goal_setpoints = goal_setpoints_;
 }
 
-void SolverGurobi::setPolytopes(std::vector<LinearConstraint3D> polytopes, bool use_closed_form)
+void SolverGurobi::setPolytopes(std::vector<LinearConstraint3D> polytopes)
 {
-
     // Set polytopes
     polytopes_ = polytopes;
-
-    // Set polytopes size
-    current_polytopes_size_ = polytopes.size();
-
-    // If this is for closed_form, we don't care about the relations between N and P
-    if (use_closed_form)
-        return;
-
-    // If N_ > current_polytopes_size_, set use_miqp_ to true
-    if (N_ > current_polytopes_size_)
-    {
-        use_miqp_ = true;
-    }
-    else if (N_ == current_polytopes_size_)
-    {
-        use_miqp_ = false;
-    }
-    else
-    {
-        std::cerr << "Error: N_ cannot be smaller than the number of polytopes. N=" << N_ << ", polytopes size=" << current_polytopes_size_ << std::endl;
-    }
 }
 
 void SolverGurobi::setMapSizeConstraints()
@@ -1037,87 +1026,70 @@ void SolverGurobi::setPolyConsts()
     if (!polytopes_.empty()) // If there are polytope constraints
     {
 
-        // MIQP approach
-        if (use_miqp_)
-        {
+        const int P = static_cast<int>(polytopes_.size());
 
-            // Declare binary variables
-            for (int t = 0; t < N_; t++)
+        for (int t = 0; t < N_; t++)
+        {
+            std::vector<GRBVar> row;
+
+            if (usingFaster_())
             {
-                std::vector<GRBVar> row;
-                for (int i = 0; i < polytopes_.size(); i++) // For all the polytopes
+                // Declare binary variables
+                for (int t = 0; t < N_; t++)
                 {
-                    GRBVar variable =
-                        m_.addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_BINARY, "s" + std::to_string(i) + "_" + std::to_string(t));
-                    row.push_back(variable);
+                    std::vector<GRBVar> row;
+                    for (int i = 0; i < polytopes_.size(); i++)
+                    {
+                        GRBVar variable =
+                            m_.addVar(0.0, 1.0, 0, GRB_BINARY,
+                                      "s" + std::to_string(i) + "_" + std::to_string(t));
+                        row.push_back(variable);
+                    }
+                    b_.push_back(row);
+                }
+            }
+            else // DYNUS implementation
+            {
+                // No binary assignment variables for the last segments
+                if (t == N_ - 1)
+                {
+                    b_.push_back(row); // empty row; keeps indexing consistent
+                    continue;
+                }
+
+                row.reserve(P);
+                for (int i = 0; i < P; i++)
+                {
+                    GRBVar v = m_.addVar(0.0, 1.0, 0.0, GRB_BINARY,
+                                         "s" + std::to_string(i) + "_" + std::to_string(t));
+                    row.push_back(v);
                 }
                 b_.push_back(row);
             }
+        }
 
-            // Polytope constraints (if binary_varible==1 --> In that polytope) and at_least_1_pol_cons_ (at least one polytope)
-            // constraints
-            for (int t = 0; t < N_; t++)
+        // Polytope constraints (if binary_varible==1 --> In that polytope) and at_least_1_pol_cons_ (at least one polytope)
+        // loop over each segment
+        for (int t = 0; t < N_; t++)
+        {
+
+            if (usingFaster_())
             {
-                // At least one polytope for other segments
                 createSafeCorridorConstraintsForPolytopeAtleastOne(t);
             }
-        }
-        else // QP approach
-        {
-            // constraints
-            for (int t = 0; t < N_; t++)
+            else // DYNUS implementation
             {
-                createSafeCorridorConstraintsForPolytope(t);
-            } // End for t
-
-        } // End else DYNUS approach
+                if (t == N_ - 1)
+                {
+                    createSafeCorridorConstraintsFixedPolytope(t, P - 1);
+                }
+                else
+                {
+                    createSafeCorridorConstraintsForPolytopeAtleastOne(t);
+                }
+            }
+        }
     }
-}
-
-void SolverGurobi::createSafeCorridorConstraintsForPolytope(int t)
-{
-    // Get MINVO control points
-    // auto minvo_cps = getMinvoPosControlPoints(t);
-    // std::vector<GRBLinExpr> cp0 = minvo_cps[0];
-    // std::vector<GRBLinExpr> cp1 = minvo_cps[1];
-    // std::vector<GRBLinExpr> cp2 = minvo_cps[2];
-    // std::vector<GRBLinExpr> cp3 = minvo_cps[3];
-    std::vector<GRBLinExpr> cp0 = getCP0(t);
-    std::vector<GRBLinExpr> cp1 = getCP1(t);
-    std::vector<GRBLinExpr> cp2 = getCP2(t);
-    std::vector<GRBLinExpr> cp3 = getCP3(t);
-
-    // Constraint Ax<=b
-    Eigen::MatrixXd A;
-    Eigen::VectorXd bb;
-
-    // If it's the last segment, use the last polytope
-    if (t == N_ - 1)
-    {
-        A = polytopes_[polytopes_.size() - 1].A();
-        bb = polytopes_[polytopes_.size() - 1].b();
-    }
-    else // Otherwise, use the corresponding polytope
-    {
-        A = polytopes_[t].A();
-        bb = polytopes_[t].b();
-    }
-
-    // Compute A times control points (x)
-    std::vector<std::vector<double>> Astd = eigenMatrix2std(A);
-    std::vector<GRBLinExpr> Acp0 = MatrixMultiply(Astd, cp0); // A times control point 0
-    std::vector<GRBLinExpr> Acp1 = MatrixMultiply(Astd, cp1); // A times control point 1
-    std::vector<GRBLinExpr> Acp2 = MatrixMultiply(Astd, cp2); // A times control point 2
-    std::vector<GRBLinExpr> Acp3 = MatrixMultiply(Astd, cp3); // A times control point 3
-
-    // Loop through the number of faces
-    for (int i = 0; i < bb.rows(); i++)
-    {
-        polytopes_cons_.push_back(m_.addConstr(Acp0[i] <= bb[i], "safe_corridor_interval_" + std::to_string(t) + "_face" + std::to_string(i) + "_cp0"));
-        polytopes_cons_.push_back(m_.addConstr(Acp1[i] <= bb[i], "safe_corridor_interval_" + std::to_string(t) + "_face" + std::to_string(i) + "_cp1"));
-        polytopes_cons_.push_back(m_.addConstr(Acp2[i] <= bb[i], "safe_corridor_interval_" + std::to_string(t) + "_face" + std::to_string(i) + "_cp2"));
-        polytopes_cons_.push_back(m_.addConstr(Acp3[i] <= bb[i], "safe_corridor_interval_" + std::to_string(t) + "_face" + std::to_string(i) + "_cp3"));
-    } // End for i
 }
 
 void SolverGurobi::createSafeCorridorConstraintsForPolytopeAtleastOne(int t)
@@ -1130,12 +1102,6 @@ void SolverGurobi::createSafeCorridorConstraintsForPolytopeAtleastOne(int t)
     }
     at_least_1_pol_cons_.push_back(m_.addConstr(sum >= 1, "At_least_1_pol_t_" + std::to_string(t))); // at least in one polytope
 
-    // Get MINVO control points
-    // auto minvo_cps = getMinvoPosControlPoints(t);
-    // std::vector<GRBLinExpr> cp0 = minvo_cps[0];
-    // std::vector<GRBLinExpr> cp1 = minvo_cps[1];
-    // std::vector<GRBLinExpr> cp2 = minvo_cps[2];
-    // std::vector<GRBLinExpr> cp3 = minvo_cps[3];
     std::vector<GRBLinExpr> cp0 = getCP0(t);
     std::vector<GRBLinExpr> cp1 = getCP1(t);
     std::vector<GRBLinExpr> cp2 = getCP2(t);
@@ -1162,6 +1128,43 @@ void SolverGurobi::createSafeCorridorConstraintsForPolytopeAtleastOne(int t)
             miqp_polytopes_cons_.push_back(m_.addGenConstrIndicator(b_[t][n_poly], 1, Acp2[i], GRB_LESS_EQUAL, bb[i], "safe_corridor_interval_" + std::to_string(t) + "_face" + std::to_string(i) + "_cp2"));
             miqp_polytopes_cons_.push_back(m_.addGenConstrIndicator(b_[t][n_poly], 1, Acp3[i], GRB_LESS_EQUAL, bb[i], "safe_corridor_interval_" + std::to_string(t) + "_face" + std::to_string(i) + "_cp3"));
         }
+    }
+}
+
+void SolverGurobi::createSafeCorridorConstraintsFixedPolytope(int t, int n_poly)
+{
+    // Control points of segment t
+    std::vector<GRBLinExpr> cp0 = getCP0(t);
+    std::vector<GRBLinExpr> cp1 = getCP1(t);
+    std::vector<GRBLinExpr> cp2 = getCP2(t);
+    std::vector<GRBLinExpr> cp3 = getCP3(t);
+
+    // Polytope: A x <= b
+    Eigen::MatrixXd A1 = polytopes_[n_poly].A();
+    auto bb = polytopes_[n_poly].b();
+
+    std::vector<std::vector<double>> A1std = eigenMatrix2std(A1);
+
+    std::vector<GRBLinExpr> Acp0 = MatrixMultiply(A1std, cp0);
+    std::vector<GRBLinExpr> Acp1 = MatrixMultiply(A1std, cp1);
+    std::vector<GRBLinExpr> Acp2 = MatrixMultiply(A1std, cp2);
+    std::vector<GRBLinExpr> Acp3 = MatrixMultiply(A1std, cp3);
+
+    for (int i = 0; i < bb.rows(); i++)
+    {
+        // Direct (non-indicator) constraints; store them in polytopes_cons_ so they get removed properly
+        polytopes_cons_.push_back(
+            m_.addConstr(Acp0[i] <= bb[i],
+                         "safe_fixed_t" + std::to_string(t) + "_poly" + std::to_string(n_poly) + "_face" + std::to_string(i) + "_cp0"));
+        polytopes_cons_.push_back(
+            m_.addConstr(Acp1[i] <= bb[i],
+                         "safe_fixed_t" + std::to_string(t) + "_poly" + std::to_string(n_poly) + "_face" + std::to_string(i) + "_cp1"));
+        polytopes_cons_.push_back(
+            m_.addConstr(Acp2[i] <= bb[i],
+                         "safe_fixed_t" + std::to_string(t) + "_poly" + std::to_string(n_poly) + "_face" + std::to_string(i) + "_cp2"));
+        polytopes_cons_.push_back(
+            m_.addConstr(Acp3[i] <= bb[i],
+                         "safe_fixed_t" + std::to_string(t) + "_poly" + std::to_string(n_poly) + "_face" + std::to_string(i) + "_cp3"));
     }
 }
 
@@ -1744,7 +1747,7 @@ bool SolverGurobi::generateNewTrajectory(bool &gurobi_error_detected,
 
         findDT(factor);
 
-        if (usingFaster_())
+        if (usingFaster_() || !using_variable_elimination_)
         {
             // FASTER formulation: coefficients are vars, so we must add explicit constraints
             setXFaster_();
@@ -1774,7 +1777,7 @@ bool SolverGurobi::generateNewTrajectory(bool &gurobi_error_detected,
             gurobi_computation_time = m_.get(GRB_DoubleAttr_Runtime) * 1000;
             initializeGoalSetpoints();
 
-            if (usingFaster_())
+            if (usingFaster_() || !using_variable_elimination_)
             {
                 getCoefficientsDoubleFaster_();
             }
@@ -1815,7 +1818,7 @@ bool SolverGurobi::generateNewTrajectorySequentialFactors(
         try
         {
             findDT(f);
-            if (usingFaster_())
+            if (usingFaster_() || !using_variable_elimination_)
             {
                 setXFaster_();
             }
@@ -1840,7 +1843,7 @@ bool SolverGurobi::generateNewTrajectorySequentialFactors(
                 factor_that_worked = f;
                 gurobi_computation_time_ms = m_.get(GRB_DoubleAttr_Runtime) * 1000.0;
 
-                if (usingFaster_())
+                if (usingFaster_() || !using_variable_elimination_)
                 {
                     getCoefficientsDoubleFaster_();
                 }
