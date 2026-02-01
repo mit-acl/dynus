@@ -37,7 +37,7 @@ def generate_launch_description():
 
         # GoalToCmdVel Node
         node = Node(
-            package='mighty',  # Replace with your actual package name
+            package='dynus',  # Replace with your actual package name
             executable='convert_goal_to_cmd_vel',  # The name of your compiled executable
             name='convert_goal_to_cmd_vel',
             namespace=namespace,

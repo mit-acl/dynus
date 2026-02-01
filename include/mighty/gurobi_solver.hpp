@@ -65,6 +65,7 @@ public:
     void resetToNominalState();
 
     void setPolytopes(std::vector<LinearConstraint3D> polytopes);
+    void setPolytopesTimeLayered(const std::vector<std::vector<LinearConstraint3D>> &polytopes_by_time);
     void setPolytopesConstraints();
     void setPolyConsts();
     void setMapSizeConstraints();
@@ -78,7 +79,6 @@ public:
     void findInitialGuessABCDFromRefPoints(double &a, double &b, double &c, double &d, double q0, double q1, double q2, double q3, double dt);
     void checkDynamicViolation(bool &is_dyn_constraints_satisfied);
     void checkCollisionViolation(bool &is_collision_free_corridor_satisfied);
-    void createSafeCorridorConstraintsFixedPolytope(int t, int n_poly);
     void createSafeCorridorConstraintsForPolytopeAtleastOne(int t);
 
     // For the jackal
@@ -213,7 +213,6 @@ public:
     mycallback cb_;
 
 protected:
-
     std::string planner_name_{"DYNUS"};              // "DYNUS" or "FASTER"
     std::vector<std::vector<GRBVar>> x_faster_vars_; // [axis][4*N] coefficient vars for FASTER
     bool usingFaster_() const;
@@ -221,6 +220,9 @@ protected:
     void setXFaster_();
     void getCoefficientsDoubleFaster_();
     void setDynamicConstraintsFaster_();
+    const LinearConstraint3D &polyAt_(int t, int p) const;
+    bool hasPolytopes_() const;
+    int numSpatialPolys_() const;
 
     // parameters
     double cost_;
@@ -304,5 +306,10 @@ protected:
     double factor_final_ = 2.0;
     double factor_constant_step_size_ = 0.1;
     double w_max_ = 1;
+
+    // Time-layered corridor support
+    bool use_time_layered_polytopes_{false};
+    int P_spatial_{0};
+    std::vector<LinearConstraint3D> polytopes_time_layered_; // flattened: [t * P_spatial_ + p]
 };
 #endif

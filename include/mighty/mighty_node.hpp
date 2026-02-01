@@ -49,6 +49,7 @@
 #include "nav_msgs/msg/occupancy_grid.hpp"
 #include "std_msgs/msg/color_rgba.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
+#include <sensor_msgs/point_cloud2_iterator.hpp>
 #include "std_srvs/srv/empty.hpp"
 #include "pcl_conversions/pcl_conversions.h"
 #include "pcl_ros/transforms.hpp"
@@ -82,11 +83,10 @@ namespace mighty
     {
 
     public:
-        MIGHTY_NODE();  
-        ~MIGHTY_NODE(); 
+        MIGHTY_NODE();
+        ~MIGHTY_NODE();
 
     private:
-
         // Callbacks
         void replanCallback();
         void trajCallback(const dynus_interfaces::msg::DynTraj::SharedPtr msg);
@@ -100,16 +100,15 @@ namespace mighty
         void getInitialPoseHwCallback();
 
         // Others
-        void declareParameters();                                                                       
-        void setParameters();                                                                           
-        void printParameters();                                                                         
+        void declareParameters();
+        void setParameters();
+        void printParameters();
         void createMarkerArrayFromVec_Vec3f(const vec_Vec3f &occupied_cells, const std_msgs::msg::ColorRGBA &color, int namespace_id, double scale, visualization_msgs::msg::MarkerArray *marker_array);
-        void clearMarkerArray(visualization_msgs::msg::MarkerArray &path_marker, rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr publisher); 
-        void clearMarkerActualTraj();                                                                                                                           
-        void runSim();                                                                                                                                          
-        void printComputationTime(bool result);                                                                                                              
-        void recordData(bool result);                                                                                                                          
-        void logData();                                                                                                                         
+        void clearMarkerArray(visualization_msgs::msg::MarkerArray &path_marker, rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr publisher);
+        void runSim();
+        void printComputationTime(bool result);
+        void recordData(bool result);
+        void logData();
         void setComputationTimesToZero();
         void constructFOVMarker();
         void retrieveData();
@@ -133,6 +132,7 @@ namespace mighty
         void publishStaticPushPoints();
         void publishLocalGlobalPath();
         void publishVelocityInText(const Eigen::Vector3d &position, double velocity);
+        void publishDynamicHeatCloud();
 
         // Timers for callback
         rclcpp::TimerBase::SharedPtr timer_replanning_;
@@ -193,13 +193,14 @@ namespace mighty
         rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr pub_current_state_;
         rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr pub_goal_reached_;
         rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr pub_setpoint_;
-        rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr pub_actual_traj_;
+        rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_actual_traj_;
         rclcpp::Publisher<dynus_interfaces::msg::YawOutput>::SharedPtr pub_yaw_output_;
         rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr pub_fov_;
         rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_cp_;
         rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_static_push_points_;
         rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_p_points_;
         rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr pub_vel_text_;
+        rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_dynamic_heat_cloud_;
 
         // Subscribers
         rclcpp::Subscription<dynus_interfaces::msg::DynTraj>::SharedPtr sub_traj_;
@@ -300,15 +301,10 @@ namespace mighty
         PieceWisePol pwp_to_share_; // Piecewise polynomial
 
         // Flags
-        bool state_initialized_ = false;             // State initialized
-        bool replan_timer_started_ = false;          // Replan timer started
-        bool publish_actual_traj_called_ = false;    // Publish actual trajectory called
-        bool use_benchmark_ = false;                 // Use benchmark
-
-        // Actual trajectory variables for ground robots
-        Eigen::Vector3d actual_traj_prev_pos_;
-        double actual_traj_prev_time_;
-
+        bool state_initialized_ = false;          // State initialized
+        bool replan_timer_started_ = false;       // Replan timer started
+        bool publish_actual_traj_called_ = false; // Publish actual trajectory called
+        bool use_benchmark_ = false;              // Use benchmark
         int last_subopt_count_{0}; // tracks how many subopt strips we drew last time
 
         // D435 parameters
@@ -329,6 +325,18 @@ namespace mighty
         rclcpp::Time last_lidar_callback_time_;
         rclcpp::Time last_depth_camera_callback_time_;
 
+        // ---- Actual trajectory history (for smooth RViz line) ----
+        std::vector<state> actual_traj_hist_;
+        bool actual_traj_initialized_ = false;
+
+        // For ground-robot velocity approximation
+        Eigen::Vector3d actual_traj_prev_pos_{0.0, 0.0, 0.0};
+        double actual_traj_prev_time_ = 0.0;
+
+        // Optional: hard caps / visualization knobs
+        size_t actual_traj_max_hist_ = 4000;      // max stored states
+        size_t actual_traj_max_points_vis_ = 300; // max points shown in RViz after downsampling
+        double actual_traj_line_width_ = 0.15;    // meters
     };
 
 } // namespace mighty

@@ -53,7 +53,7 @@ void printStateVector(std::vector<state> &data);
 void vectorOfVectors2MarkerArray(vec_Vecf<3> traj, visualization_msgs::msg::MarkerArray *m_array, std_msgs::msg::ColorRGBA color,
                                  int type = visualization_msgs::msg::Marker::ARROW,
                                  std::vector<double> radii = std::vector<double>());
-                                 
+
 void pathLineDotsToMarkerArray(
     const vec_Vecf<3> &traj,
     visualization_msgs::msg::MarkerArray *m_array,
@@ -168,8 +168,6 @@ Eigen::Vector3d getLastIntersectionWithSphere(vec_Vecf<3> path, double r, Eigen:
 // inside Sb
 vec_Vecf<3> getPointsBw2Spheres(vec_Vecf<3> path, double ra, double rb, Eigen::Vector3d center);
 
-vec_Vecf<3> copyJPS(vec_Vecf<3> path);
-
 // Overload to be able to print a std::vector
 template <typename T>
 std::ostream &operator<<(std::ostream &out, const std::vector<T> &v)
@@ -187,6 +185,15 @@ visualization_msgs::msg::MarkerArray stateVector2ColoredMarkerArray(const std::v
                                                                     double max_value,
                                                                     const rclcpp::Time &stamp);
 
-void deleteVertexes(vec_Vecf<3> &JPS_path, int max_value);
+visualization_msgs::msg::MarkerArray stateVector2ColoredLineStripMarkerArray(
+    const std::vector<state> &data,
+    int id,
+    const std::string &ns,
+    double max_value,
+    const rclcpp::Time &stamp,
+    double line_width,
+    size_t max_points_vis);
+
+    void deleteVertexes(vec_Vecf<3> &JPS_path, int max_value);
 
 #endif

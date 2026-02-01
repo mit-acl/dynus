@@ -119,7 +119,7 @@ def _spawn_static_block(context):
         print("[dyn_obstacles][spawn] num_obstacles:", num_obstacles,
               "seed:", seed, "spawn_interval:", spawn_interval)
 
-    urdf_path = os.path.join(get_package_share_directory('mighty'), 'urdf', urdf_xacro)
+    urdf_path = os.path.join(get_package_share_directory('dynus'), 'urdf', urdf_xacro)
 
     actions = []
     obstacles_meta = []
@@ -272,9 +272,9 @@ def generate_launch_description():
 
         # Spatial ranges
         DeclareLaunchArgument('x_min', default_value='5.0'),
-        DeclareLaunchArgument('x_max', default_value='50.0'),
-        DeclareLaunchArgument('y_min', default_value='-3.0'),
-        DeclareLaunchArgument('y_max', default_value='3.0'),
+        DeclareLaunchArgument('x_max', default_value='100.0'),
+        DeclareLaunchArgument('y_min', default_value='-7.0'),
+        DeclareLaunchArgument('y_max', default_value='7.0'),
         DeclareLaunchArgument('z_min', default_value='3.0'),
         DeclareLaunchArgument('z_max', default_value='3.0'),
 

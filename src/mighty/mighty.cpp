@@ -58,6 +58,18 @@ MIGHTY::MIGHTY(parameters par) : par_(par)
   // Set up decomp ellip workers for each thread
   ellip_workers_.resize(whole_traj_solver_ptrs_.size());
 
+  // Pre-compute the worst initial_dt * par_.num_N (this is the worst case time allocated for the whole trajectory)
+  auto tmp_traj_solver_ptr = std::make_shared<SolverGurobi>();
+  tmp_traj_solver_ptr->initializeSolver(par_);
+  tmp_traj_solver_ptr->resetToNominalState();
+  state tmp_start_state, tmp_end_state;
+  tmp_end_state.setPos(par_.num_P * par_.max_dist_vertexes, 0.0, 0.0);
+  tmp_traj_solver_ptr->setX0(tmp_start_state);
+  tmp_traj_solver_ptr->setXf(tmp_end_state);
+  worst_traj_time_ = tmp_traj_solver_ptr->getInitialDt() * par_.num_N;
+
+  std::cout << bold << green << "[MIGHTY] Worst case trajectory time for pre-computation: " << worst_traj_time_ << " [s]" << reset << std::endl;
+
   // Set up basis converter
   BasisConverter basis_converter;
   A_rest_pos_basis_ = basis_converter.getArestMinvo(); // Use Minvo basis
@@ -250,71 +262,169 @@ bool MIGHTY::checkIfPointFree(const Vec3f &point)
 
 void MIGHTY::findSafeSubGoal(vec_Vecf<3> &global_path)
 {
-
   // Keep the original global path
   vec_Vecf<3> original_global_path = global_path;
 
   // Reset goal path
   global_path.clear();
 
+  if (original_global_path.empty())
+    return;
+
   // Initialize it with the start point
   global_path.push_back(original_global_path[0]);
 
   // Kd-tree search parameters
-  int n = 1; // find one neighbour
-  std::vector<int> pointIdxNKNSearch(n);
-  std::vector<float> pointNKNSquaredDistance(n);
+  const int k = 1; // nearest neighbor
+  std::vector<int> pointIdxNKNSearch(k);
+  std::vector<float> pointNKNSquaredDistance(k);
 
-  // sample parameters (TODO: make these parameters configurable)
-  double sample_dist = 0.1; // [m] distance between two samples along the trajectory
+  // Sampling parameters (TODO: make these parameters configurable)
+  const double sample_dist = 0.1; // [m] distance between two samples along the trajectory
 
-  // flag for finding unknown space
-  bool found_unk = false;
+  // Inflation radius for unknown space (max extent)
+  const double r_inflate = par_.obst_max_vel * traj_max_time_; // [m]
+  const double thr_orig = par_.drone_radius;                   // [m]
+  const double thr_infl = par_.drone_radius + r_inflate;       // [m]
+  const double thr_orig2 = thr_orig * thr_orig;
+  const double thr_infl2 = thr_infl * thr_infl;
 
-  // mutex lock
+  // Mutex lock (KD-tree shared)
   std::lock_guard<std::mutex> lk(mtx_kdtree_unk_);
 
-  // loop through the global path and check if the points are in unknown space
-  for (int i = 0; i < original_global_path.size() - 1; i++)
+  // Helper: returns true if pt is within (unknown KD-tree distance) <= threshold^2.
+  auto isWithinUnknown = [&](const Eigen::Vector3d &pt, double thr2) -> bool
   {
-    // Set the current and next global path point
+    pcl::PointXYZ searchPoint(pt(0), pt(1), pt(2));
+    if (kdtree_unk_.nearestKSearch(searchPoint, k, pointIdxNKNSearch, pointNKNSquaredDistance) > 0)
+    {
+      return static_cast<double>(pointNKNSquaredDistance[0]) < thr2;
+    }
+    return false;
+  };
+
+  // Helper: backtrack from a hit location (segment i, arc-length s_hit along that segment)
+  // until outside inflated unknown. Returns the backtracked safe point.
+  auto backtrackToOutsideInflated = [&](int seg_i, double s_hit) -> Eigen::Vector3d
+  {
+    // We will walk backward in steps of sample_dist along the polyline.
+    int i = seg_i;
+    if (i < 0)
+      i = 0;
+    if (i >= static_cast<int>(original_global_path.size()) - 1)
+      i = static_cast<int>(original_global_path.size()) - 2;
+
+    Eigen::Vector3d A = original_global_path[i];
+    Eigen::Vector3d B = original_global_path[i + 1];
+
+    Eigen::Vector3d d = B - A;
+    double L = d.norm();
+    if (L < 1e-9)
+      return A; // degenerate segment
+
+    Eigen::Vector3d dir = d / L;
+
+    // Clamp s to [0, L]
+    double s = std::min(std::max(0.0, s_hit), L);
+
+    // Start from the hit point
+    Eigen::Vector3d pt = A + dir * s;
+
+    // If we're already outside inflated unknown, keep it (shouldn't happen in your described flow)
+    if (!isWithinUnknown(pt, thr_infl2))
+      return pt;
+
+    // Walk backward until outside inflated unknown or we reach the start.
+    // This can cross segment boundaries if inflation is large.
+    while (true)
+    {
+      // Step backward on current segment
+      s -= sample_dist;
+
+      if (s >= 0.0)
+      {
+        pt = A + dir * s;
+      }
+      else
+      {
+        // Need to go to previous segment
+        i -= 1;
+        if (i < 0)
+        {
+          // We reached the very beginning; return the start point (best we can do)
+          return original_global_path.front();
+        }
+
+        // New segment [i, i+1]
+        A = original_global_path[i];
+        B = original_global_path[i + 1];
+        d = B - A;
+        L = d.norm();
+        if (L < 1e-9)
+        {
+          // Skip degenerate segment
+          s = 0.0;
+          pt = A;
+          continue;
+        }
+        dir = d / L;
+
+        // We crossed into previous segment: set s at its end (B) plus leftover negative s
+        // Example: if s was -0.03, we start at L - 0.03 on the previous segment.
+        s = L + s; // s is negative here
+        if (s < 0.0)
+          s = 0.0;
+        if (s > L)
+          s = L;
+
+        pt = A + dir * s;
+      }
+
+      // Check inflated condition
+      if (!isWithinUnknown(pt, thr_infl2))
+        return pt;
+    }
+  };
+
+  // Loop through the global path and check for intersection with original unknown (NOT inflated)
+  const int M = static_cast<int>(original_global_path.size());
+  for (int i = 0; i < M - 1; i++)
+  {
     Eigen::Vector3d current_gp = original_global_path[i];
     Eigen::Vector3d next_gp = original_global_path[i + 1];
 
-    // Compute the direction and distance between the two points
     Eigen::Vector3d dir = next_gp - current_gp;
     double dist = dir.norm();
-    dir.normalize();
+    if (dist < 1e-9)
+    {
+      // Degenerate; just continue
+      continue;
+    }
+    dir /= dist;
 
     // Sample points along the line segment
-    int num_samples = static_cast<int>(dist / sample_dist);
+    const int num_samples = static_cast<int>(dist / sample_dist);
+
     for (int j = 0; j <= num_samples; j++)
     {
-      Eigen::Vector3d sample_point = current_gp + dir * sample_dist * j;
-      pcl::PointXYZ searchPoint(sample_point(0), sample_point(1), sample_point(2));
+      Eigen::Vector3d sample_point = current_gp + dir * (sample_dist * j);
 
-      // Nearest neighbor search
-      if (kdtree_unk_.nearestKSearch(searchPoint, n, pointIdxNKNSearch, pointNKNSquaredDistance) > 0)
+      // Detect intersection with original unknown (same as before, but squared distance)
+      if (isWithinUnknown(sample_point, thr_orig2))
       {
-        if (sqrt(pointNKNSquaredDistance[0]) < par_.drone_radius)
-        {
-          // Found a point in unknown space
-          found_unk = true;
+        // Found first contact with original unknown -> now backtrack until outside inflated unknown
+        const double s_hit = sample_dist * j;
+        Eigen::Vector3d safe_pt = backtrackToOutsideInflated(i, s_hit);
 
-          // Add the point to the safe sub goal path
-          if (j != 0) // avoid adding the same point twice
-            global_path.push_back(sample_point);
-        }
+        // Ensure we don't add duplicates
+        if ((safe_pt - global_path.back()).norm() > 1e-6)
+          global_path.push_back(safe_pt);
+
+        return; // Stop: this is the new last global path point
       }
-
-      if (found_unk)
-        break;
     }
 
-    if (found_unk)
-      break;
-
-    // add the next global path point to the safe sub goal path
+    // No unknown intersection on this segment; keep the next waypoint
     global_path.push_back(next_gp);
   }
 }
@@ -601,6 +711,16 @@ bool MIGHTY::generateGlobalPath(vec_Vecf<3> &global_path, double current_time, d
   // Compute G
   computeG(local_A, local_G_term, par_.horizon);
 
+  // Update Map
+  if (par_.sim_env == "fake_sim")
+  {
+    updateOccupancyMap(current_time);
+  }
+  else
+  {
+    updateMap(current_time);
+  }
+
   // Set up the DGP planner (since updateVmax() needs to be called after setupDGPPlanner, we use v_max_ from the last replan)
   dgp_manager_.setupDGPPlanner(par_.global_planner, par_.global_planner_verbose, map_res_, v_max_, par_.a_max, par_.j_max, par_.dgp_timeout_duration_ms, par_.w_unknown, par_.w_align, par_.decay_len_cells, par_.w_side, par_.los_cells, par_.min_len, par_.min_turn);
 
@@ -651,8 +771,8 @@ bool MIGHTY::generateGlobalPath(vec_Vecf<3> &global_path, double current_time, d
   Vec3f start_dir_hint(dir_hint.x(), dir_hint.y(), dir_hint.z());
 
   // Solve DGP
-  // if (!dgp_manager_.solveDGP(local_A.pos, local_A.vel, local_G.pos, final_g_, par_.global_planner_huristic_weight, A_time, global_path))
-  if (!dgp_manager_.solveDGP(local_A.pos, start_dir_hint, local_G.pos, final_g_, par_.global_planner_huristic_weight, A_time, global_path))
+  vec_Vecf<3> raw_global_path;
+  if (!dgp_manager_.solveDGP(local_A.pos, start_dir_hint, local_G.pos, final_g_, par_.global_planner_huristic_weight, A_time, global_path, raw_global_path))
   {
     if (par_.debug_verbose)
       std::cout << bold << red << "DGP did not find a solution" << reset << std::endl;
@@ -668,7 +788,7 @@ bool MIGHTY::generateGlobalPath(vec_Vecf<3> &global_path, double current_time, d
 
   // For visualization
   mtx_original_global_path_.lock();
-  original_global_path_ = global_path;
+  original_global_path_ = raw_global_path;
   mtx_original_global_path_.unlock();
 
   // Make sure global path does not exceed (num_P + 1)
@@ -914,7 +1034,6 @@ bool MIGHTY::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning
 
       if (!dynamic_factor_inital_sucess_)
         dynamic_factor_inital_sucess_ = true;
-
     }
   }
   else
@@ -1044,49 +1163,88 @@ bool MIGHTY::generateLocalTrajectory(
     double goal_pull_time)
 {
 
-  // Compute worst-case (conservative) segment end times for safe corridor generation
-  const size_t num_seg = (global_path.size() >= 2) ? (global_path.size() - 1) : 0;
-  std::vector<double> seg_end_times = computeWorstSegEndTimesPoly(initial_dt, factor, num_seg);
+  // P: spatial corridor pieces (global segments)
+  const size_t P = (global_path.size() >= 2) ? (global_path.size() - 1) : 0;
+  if (P == 0)
+    return false;
 
-  if (seg_end_times.size() != num_seg)
-  {
-    std::cout << "[BUG] seg_end_times.size()=" << seg_end_times.size()
-              << " num_seg=" << num_seg
-              << " global_path.size()=" << global_path.size()
-              << " par_.num_P=" << par_.num_P
-              << std::endl;
-  }
+  // N: local trajectory segments (time layers)
+  const size_t N = static_cast<size_t>(par_.num_N);
+  if (N == 0)
+    return false;
+
+  // Local time layers: end time of local segment n
+  // NOTE: this matches your solver's uniform dt assumption (dt = initial_dt * factor).
+  const double dt_layer = initial_dt * factor;
+  std::vector<double> time_end_times;
+  time_end_times.reserve(N);
+  for (size_t n = 0; n < N; ++n)
+    time_end_times.push_back((static_cast<double>(n) + 1.0) * dt_layer);
+
+  // For choosing a representative safe corridor for visualization, keep your existing "worst case per spatial segment"
+  // This gives seg_end_times size = P (global segments)
+  std::vector<double> seg_end_times = computeWorstSegEndTimesPoly(initial_dt, factor, P);
 
   // Timer for computing the safe corridor
   MyTimer cvx_decomp_timer(true);
 
-  // Get safe corridor polytopes
-  std::vector<LinearConstraint3D> l_constraints;
+  // Layered safe corridor polytopes: [N][P]
+  std::vector<std::vector<LinearConstraint3D>> l_constraints_by_time;
+  std::vector<vec_E<Polyhedron<3>>> poly_out_by_time; // [N][P], for picking representative poly_out_safe
 
-  if (!dgp_manager_.cvxEllipsoidDecomp(
+  if (!dgp_manager_.cvxEllipsoidDecompTimeLayered(
           ellip,
           global_path,
           base_uo,
           obst_pos,
-          seg_end_times,
-          l_constraints,
-          poly_out_safe))
+          time_end_times,
+          l_constraints_by_time,
+          poly_out_by_time))
   {
-    std::cout << bold << red << "Convex decomposition failed" << reset << std::endl;
+    std::cout << bold << red << "Time-layered convex decomposition failed" << reset << std::endl;
     poly_out_safe.clear();
     return false;
   }
 
   cvx_decomp_time = cvx_decomp_timer.getElapsedMicros() / 1000.0;
+  // std::cout << "Convex Decomposition Time (ms): " << cvx_decomp_time << std::endl;
+
+  // Pick one representative polytope per spatial segment p for visualization/debug:
+  // choose the smallest time layer n such that time_end_times[n] >= seg_end_times[p]
+  // poly_out_safe.clear();
+  // poly_out_safe.resize(P);
+
+  // for (size_t p = 0; p < P; ++p)
+  // {
+  //   const double t_need = (p < seg_end_times.size()) ? seg_end_times[p] : time_end_times.back();
+
+  //   size_t n_rep = 0;
+  //   while (n_rep + 1 < N && time_end_times[n_rep] < t_need)
+  //     ++n_rep;
+
+  //   poly_out_safe[p] = poly_out_by_time[n_rep][p];
+  // }
+
+  // Add ALL polytopes (all time layers, all segments) for visualization/debug.
+  poly_out_safe.clear();
+  poly_out_safe.reserve(N * P);
+
+  for (size_t n = 0; n < N; ++n)
+  {
+    for (size_t p = 0; p < P; ++p)
+    {
+      poly_out_safe.emplace_back(poly_out_by_time[n][p]);
+    }
+  }
 
   // Initialize the solver.
-  whole_traj_solver_ptr->setX0(local_A);                  // Initial condition
-  whole_traj_solver_ptr->setXf(local_E);                  // Final condition
-  whole_traj_solver_ptr->setPolytopes(l_constraints);     // Safe corridor polytopes
-  whole_traj_solver_ptr->setT0(A_time);                   // Initial time
-  whole_traj_solver_ptr->setInitialDt(initial_dt);        // Initial dt
-  whole_traj_solver_ptr->setSubGoal(sub_goal);            // Subgoal for goal pulling
-  whole_traj_solver_ptr->setGoalPullTime(goal_pull_time); // Goal pull time
+  whole_traj_solver_ptr->setX0(local_A);                                 // Initial condition
+  whole_traj_solver_ptr->setXf(local_E);                                 // Final condition
+  whole_traj_solver_ptr->setPolytopesTimeLayered(l_constraints_by_time); // <-- NEW
+  whole_traj_solver_ptr->setT0(A_time);                                  // Initial time (kept as-is)
+  whole_traj_solver_ptr->setInitialDt(initial_dt);                       // Initial dt
+  whole_traj_solver_ptr->setSubGoal(sub_goal);                           // Subgoal for goal pulling
+  whole_traj_solver_ptr->setGoalPullTime(goal_pull_time);                // Goal pull time
 
   // Solve the optimization problem.
   bool gurobi_error_detected = false;
@@ -1338,11 +1496,11 @@ void MIGHTY::addTraj(std::shared_ptr<dynTraj> new_traj, double current_time)
 {
 
   // Evaluate
-  // Eigen::Vector3d p = new_traj->pwp.eval(current_time);
-  // if (!checkPointWithinMap(p))
-  //   return;
-  // if ((p - state_.pos).norm() > par_.horizon)
-  //   return;
+  Eigen::Vector3d p = new_traj->eval(current_time);
+  if (!checkPointWithinMap(p))
+    return;
+  if ((p - state_.pos).norm() > par_.horizon)
+    return;
 
   {
     std::lock_guard<std::mutex> lock(mtx_trajs_);
@@ -1676,21 +1834,30 @@ bool MIGHTY::checkReadyToReplan()
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY::updateMap(
+void MIGHTY::updateMapPtr(
     const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_map,
-    const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_unk,
-    double current_time)
+    const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_unk)
 {
   // 1) Atomically store the incoming clouds
   {
-    std::lock_guard<std::mutex> lk(mtx_kdtree_map_);
+    std::lock_guard<std::mutex> lk(mtx_pclptr_map_);
     pclptr_map_ = pclptr_map;
   }
   {
-    std::lock_guard<std::mutex> lk(mtx_kdtree_unk_);
+    std::lock_guard<std::mutex> lk(mtx_pclptr_unk_);
     pclptr_unk_ = pclptr_unk;
   }
 
+  if (!dgp_manager_.isMapInitialized())
+  {
+    updateMap(0.0);
+  }
+}
+
+// ----------------------------------------------------------------------------
+
+void MIGHTY::updateMap(double current_time)
+{
   // Update the map size
   state local_state, local_G;
   getState(local_state);
@@ -1699,61 +1866,85 @@ void MIGHTY::updateMap(
 
   // Get dynamic obstacles' positions and traj_max_time
   vec_Vecf<3> obst_pos;
-  double traj_max_time = computeObstPosAndTrajMaxTimeForMapUpdate(obst_pos, current_time);
+  std::vector<vec_Vecf<3>> pred_samples;
+  std::vector<float> pred_times;
+
+  traj_max_time_ = computeObstPosAndTrajMaxTimeForMapUpdate(
+      obst_pos, pred_samples, pred_times, current_time);
+
+  dgp_manager_.setDynamicPredictedSamples(pred_samples, pred_times);
 
   // time the map update
   MyTimer timer_map(true);
 
-  // 2) map update (unlocked)
-  dgp_manager_.updateMap(wdx_, wdy_, wdz_, map_center_, pclptr_map_, obst_pos, traj_max_time);
-
-  if (par_.debug_verbose)
-    std::cout << "Map update time: " << timer_map.getElapsedMicros() / 1000.0 << " ms" << std::endl;
-
-  // 3) Known‐space KD‐tree
-  if (pclptr_map_ && !pclptr_map_->points.empty())
+  // 2) map update
   {
-    std::lock_guard<std::mutex> lk(mtx_kdtree_map_);
-    kdtree_map_.setInputCloud(pclptr_map_);
-    kdtree_map_initialized_ = true;
-    dgp_manager_.updateVecOccupied(pclptr_to_vec(pclptr_map_));
-  }
-  else
-  {
-    RCLCPP_WARN(
-        rclcpp::get_logger("mighty"),
-        "updateMap: member pclptr_map_ was null or empty; skipping KD-tree update");
+    std::lock_guard<std::mutex> lk(mtx_pclptr_map_);
+    std::lock_guard<std::mutex> lk2(mtx_pclptr_unk_);
+
+    dgp_manager_.updateMap(wdx_, wdy_, wdz_, map_center_, pclptr_map_, pclptr_unk_, obst_pos, traj_max_time_);
+
+    if (par_.debug_verbose)
+      std::cout << "Map update time: " << timer_map.getElapsedMicros() / 1000.0 << " ms" << std::endl;
+
+    // 3) Known‐space KD‐tree
+    if (pclptr_map_ && !pclptr_map_->points.empty())
+    {
+      std::lock_guard<std::mutex> lk(mtx_kdtree_map_);
+      kdtree_map_.setInputCloud(pclptr_map_);
+      kdtree_map_initialized_ = true;
+      dgp_manager_.updateVecOccupied(pclptr_to_vec(pclptr_map_));
+    }
+    else
+    {
+      RCLCPP_WARN(
+          rclcpp::get_logger("mighty"),
+          "updateMap: member pclptr_map_ was null or empty; skipping KD-tree update");
+    }
   }
 
   // 4) Unknown‐space KD‐tree
-  if (pclptr_unk_ && !pclptr_unk_->points.empty())
   {
-    std::lock_guard<std::mutex> lk(mtx_kdtree_unk_);
-    kdtree_unk_.setInputCloud(pclptr_unk_);
-    kdtree_unk_initialized_ = true;
-    // merge known into unknown vector
-    dgp_manager_.updateVecUnknownOccupied(pclptr_to_vec(pclptr_unk_));
-    dgp_manager_.insertVecOccupiedToVecUnknownOccupied();
-  }
-  else
-  {
-    RCLCPP_WARN(
-        rclcpp::get_logger("mighty"),
-        "updateMap: member pclptr_unk_ was null or empty; skipping KD‐tree update");
+    std::lock_guard<std::mutex> lk(mtx_pclptr_unk_);
+    if (pclptr_unk_ && !pclptr_unk_->points.empty())
+    {
+      std::lock_guard<std::mutex> lk(mtx_kdtree_unk_);
+      kdtree_unk_.setInputCloud(pclptr_unk_);
+      kdtree_unk_initialized_ = true;
+      // merge known into unknown vector
+      dgp_manager_.updateVecUnknownOccupied(pclptr_to_vec(pclptr_unk_));
+      dgp_manager_.insertVecOccupiedToVecUnknownOccupied();
+    }
+    else
+    {
+      RCLCPP_WARN(
+          rclcpp::get_logger("mighty"),
+          "updateMap: member pclptr_unk_ was null or empty; skipping KD‐tree update");
+    }
   }
 }
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY::updateOccupancyMap(
-    const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_map,
-    double current_time)
+void MIGHTY::updateOccupancyMapPtr(
+    const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_map)
 {
-  // 1) Atomically store the incoming clouds
+  // store the incoming clouds
   {
-    std::lock_guard<std::mutex> lk(mtx_kdtree_map_);
+    std::lock_guard<std::mutex> lk(mtx_pclptr_map_);
     pclptr_map_ = pclptr_map;
   }
+
+  if (!dgp_manager_.isMapInitialized())
+  {
+    updateOccupancyMap(0.0);
+  }
+}
+
+// ----------------------------------------------------------------------------
+
+void MIGHTY::updateOccupancyMap(double current_time)
+{
 
   // Update the map size
   state local_state, local_G;
@@ -1763,58 +1954,122 @@ void MIGHTY::updateOccupancyMap(
 
   // Get dynamic obstacles' positions and traj_max_time
   vec_Vecf<3> obst_pos;
-  double traj_max_time = computeObstPosAndTrajMaxTimeForMapUpdate(obst_pos, current_time);
+  std::vector<vec_Vecf<3>> pred_samples;
+  std::vector<float> pred_times;
+
+  traj_max_time_ = computeObstPosAndTrajMaxTimeForMapUpdate(
+      obst_pos, pred_samples, pred_times, current_time);
+
+  dgp_manager_.setDynamicPredictedSamples(pred_samples, pred_times);
 
   // 2) map update (unlocked)
-  dgp_manager_.updateMap(wdx_, wdy_, wdz_, map_center_, pclptr_map_, obst_pos, traj_max_time);
+  {
+    std::lock_guard<std::mutex> lk(mtx_pclptr_map_);
 
-  // 3) Known‐space KD‐tree
-  if (pclptr_map_ && !pclptr_map_->points.empty())
-  {
-    std::lock_guard<std::mutex> lk(mtx_kdtree_map_);
-    kdtree_map_.setInputCloud(pclptr_map_);
-    kdtree_map_initialized_ = true;
-    dgp_manager_.updateVecOccupied(pclptr_to_vec(pclptr_map_));
-  }
-  else
-  {
-    RCLCPP_WARN(
-        rclcpp::get_logger("mighty"),
-        "updateMap: member pclptr_map_ was null or empty; skipping KD-tree update");
+    pcl::PointCloud<pcl::PointXYZ>::Ptr empty_pclptr_unk(new pcl::PointCloud<pcl::PointXYZ>());
+
+    dgp_manager_.updateMap(wdx_, wdy_, wdz_, map_center_, pclptr_map_, empty_pclptr_unk, obst_pos, traj_max_time_);
+
+    // 3) Known‐space KD‐tree
+    if (pclptr_map_ && !pclptr_map_->points.empty())
+    {
+      std::lock_guard<std::mutex> lk(mtx_kdtree_map_);
+      kdtree_map_.setInputCloud(pclptr_map_);
+      kdtree_map_initialized_ = true;
+      dgp_manager_.updateVecOccupied(pclptr_to_vec(pclptr_map_));
+    }
+    else
+    {
+      RCLCPP_WARN(
+          rclcpp::get_logger("mighty"),
+          "updateMap: member pclptr_map_ was null or empty; skipping KD-tree update");
+    }
   }
 }
 
 // ----------------------------------------------------------------------------
 
-double MIGHTY::computeObstPosAndTrajMaxTimeForMapUpdate(vec_Vecf<3> &obst_pos, double current_time)
+double MIGHTY::computeObstPosAndTrajMaxTimeForMapUpdate(
+    vec_Vecf<3> &obst_pos,
+    std::vector<vec_Vecf<3>> &pred_samples, // [K][M]
+    std::vector<float> &pred_times,         // [M], relative times from now
+    double current_time)
 {
-  // Get a vector of obstacles' current positions
   obst_pos.clear();
+  pred_samples.clear();
+  pred_times.clear();
 
   std::vector<std::shared_ptr<dynTraj>> local_trajs;
   getTrajs(local_trajs);
 
+  // 1) Filter obstacles and build obst_pos in a consistent order
+  std::vector<std::shared_ptr<dynTraj>> selected_trajs;
+  selected_trajs.reserve(local_trajs.size());
+
   for (const auto &traj : local_trajs)
   {
     Eigen::Vector3d p = traj->eval(current_time);
-    if (!checkPointWithinMap(p) || (p - state_.pos).norm() > (par_.horizon / 2.0))
+    if (!checkPointWithinMap(p) || (p - state_.pos).norm() > (par_.horizon))
       continue;
+
     obst_pos.push_back(p);
+    selected_trajs.push_back(traj);
   }
 
-  // update obst_pos_
+  // Update obst_pos_ (kept as you already do)
   {
     std::lock_guard<std::mutex> lock(mtx_obst_pos_);
     obst_pos_ = obst_pos;
   }
 
-  // Get the traj_max_time
-  if (prev_traj_max_time_ == -1.0) // not initialized yet
+  // 2) Horizon for map update (your existing “worst possible”)
+  const double Th = worst_traj_time_ * factors_.back(); // [s]
+  if (!(Th > 0.0) || selected_trajs.empty())
+    return Th;
+
+  // 3) Build time samples between [0, Th]
+  const double dt = 0.5; // [s]
+  int M = static_cast<int>(std::ceil(Th / dt)) + 1;
+  // keep it bounded for cost (heat-map build is O(#voxels * K * M))
+  M = std::max(5, std::min(M, 10));
+
+  pred_times.resize(M);
+  for (int j = 0; j < M; ++j)
   {
-    return (par_.max_dist_vertexes * par_.num_P) / par_.v_max; // initial huristic value
+    const double a = (M == 1) ? 0.0 : (double)j / (double)(M - 1);
+    pred_times[j] = static_cast<float>(a * Th); // relative time from now
   }
 
-  return prev_traj_max_time_ * 1.2; // increase by 20% to be safe
+  // 4) Sample each obstacle trajectory at (current_time + pred_times[j])
+  pred_samples.resize(selected_trajs.size());
+  for (size_t k = 0; k < selected_trajs.size(); ++k)
+  {
+    pred_samples[k].resize(M);
+    for (int j = 0; j < M; ++j)
+    {
+      const double t_abs = current_time + (double)pred_times[j];
+      Eigen::Vector3d pk = selected_trajs[k]->eval(t_abs);
+
+      // NOTE: We do NOT drop samples outside the map, because the heat map
+      // will simply have no effect there. But we must avoid NaNs.
+      if (!std::isfinite(pk.x()) || !std::isfinite(pk.y()) || !std::isfinite(pk.z()))
+      {
+        // fallback: use current position (safe default)
+        pk = selected_trajs[k]->eval(current_time);
+      }
+
+      pred_samples[k][j] = pk;
+    }
+  }
+
+  return Th;
+}
+
+// ----------------------------------------------------------------------------
+
+std::shared_ptr<mighty::VoxelMapUtil> MIGHTY::getMapUtilSharedPtr()
+{
+  return dgp_manager_.getMapUtilSharedPtr();
 }
 
 // ----------------------------------------------------------------------------

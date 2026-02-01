@@ -29,7 +29,7 @@ def generate_launch_description():
         namespace = LaunchConfiguration('namespace').perform(context)
 
         node = Node(
-            package='mighty',  
+            package='dynus',  
             executable='convert_odom_to_state',
             name='convert_odom_to_state',
             namespace=namespace,

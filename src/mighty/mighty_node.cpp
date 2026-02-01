@@ -80,7 +80,7 @@ MIGHTY_NODE::MIGHTY_NODE() : Node("mighty_node")
   pub_traj_committed_colored_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("traj_committed_colored", 10);                           // visual level 1
   pub_traj_subopt_colored_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("traj_subopt_colored", 10);                                 // visual level 1
   pub_setpoint_ = this->create_publisher<geometry_msgs::msg::PointStamped>("setpoint_vis", 10);                                                       // visual level 1
-  pub_actual_traj_ = this->create_publisher<visualization_msgs::msg::Marker>("actual_traj", 10);                                                      // visual level 1
+  pub_actual_traj_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("actual_traj", 10);                                                      // visual level 1
   pub_fov_ = this->create_publisher<visualization_msgs::msg::Marker>("fov", 10);                                                                      // visual level 1
   pub_cp_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("cp", 10);                                                                   // visual level 1
   pub_static_push_points_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("static_push_points", 10);                                   // visual level 1
@@ -91,6 +91,7 @@ MIGHTY_NODE::MIGHTY_NODE() : Node("mighty_node")
   pub_point_G_term_ = this->create_publisher<geometry_msgs::msg::PointStamped>("point_G_term", 10);                                                   // visual level 1
   pub_current_state_ = this->create_publisher<geometry_msgs::msg::PointStamped>("point_current_state", 10);                                           // visual level 1
   pub_vel_text_ = this->create_publisher<visualization_msgs::msg::Marker>("vel_text", 10);                                                            // visual level 1
+  pub_dynamic_heat_cloud_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("dynamic_heat_cloud", 10);
 
   // Debug publishers
   pub_yaw_output_ = this->create_publisher<dynus_interfaces::msg::YawOutput>("yaw_output", 10);
@@ -223,6 +224,7 @@ void MIGHTY_NODE::declareParameters()
   this->declare_parameter("w_align", 60.0);
   this->declare_parameter("decay_len_cells", 20.0);
   this->declare_parameter("w_side", 0.2);
+  this->declare_parameter("heat_weight", 5.0);
 
   // LOS post processing parameters
   this->declare_parameter("los_cells", 3);
@@ -303,17 +305,9 @@ void MIGHTY_NODE::declareParameters()
   this->declare_parameter("goal_pull_weight", 1.0e+2);
   this->declare_parameter("goal_pull_time_buffer", 1.5);
 
-  // L-BFGS parameters
-  this->declare_parameter("f_dec_coeff", 1e-2);
-  this->declare_parameter("cautious_factor", 0.0);
-  this->declare_parameter("past", 5);
-  this->declare_parameter("max_linesearch", 64);
-  this->declare_parameter("max_iterations", 30);
-  this->declare_parameter("g_epsilon", 0.0);
-  this->declare_parameter("delta", 1e-6);
-
   // Dynamic obstacles parameters
   this->declare_parameter("traj_lifetime", 10.0);
+  this->declare_parameter("dynamic_obstacle_base_inflation", 0.2);
 
   // Dynamic k_value parameters
   this->declare_parameter("num_replanning_before_adapt", 10);
@@ -383,6 +377,7 @@ void MIGHTY_NODE::setParameters()
   par_.w_align = this->get_parameter("w_align").as_double();
   par_.decay_len_cells = this->get_parameter("decay_len_cells").as_double();
   par_.w_side = this->get_parameter("w_side").as_double();
+  par_.heat_weight = this->get_parameter("heat_weight").as_double();
 
   // LOS post processing parameters
   par_.los_cells = this->get_parameter("los_cells").as_int();
@@ -452,17 +447,9 @@ void MIGHTY_NODE::setParameters()
   par_.goal_pull_weight = this->get_parameter("goal_pull_weight").as_double();
   par_.goal_pull_time_buffer = this->get_parameter("goal_pull_time_buffer").as_double();
 
-  // L-BFGS parameters
-  par_.f_dec_coeff = this->get_parameter("f_dec_coeff").as_double();
-  par_.cautious_factor = this->get_parameter("cautious_factor").as_double();
-  par_.past = this->get_parameter("past").as_int();
-  par_.max_linesearch = this->get_parameter("max_linesearch").as_int();
-  par_.max_iterations = this->get_parameter("max_iterations").as_int();
-  par_.g_epsilon = this->get_parameter("g_epsilon").as_double();
-  par_.delta = this->get_parameter("delta").as_double();
-
   // Dynamic obstacles parameters
   par_.traj_lifetime = this->get_parameter("traj_lifetime").as_double();
+  par_.dynamic_obstacle_base_inflation = this->get_parameter("dynamic_obstacle_base_inflation").as_double();
 
   // Dynamic k_value parameters
   par_.num_replanning_before_adapt = this->get_parameter("num_replanning_before_adapt").as_int();
@@ -542,6 +529,7 @@ void MIGHTY_NODE::printParameters()
   RCLCPP_INFO(this->get_logger(), "w_align: %f", par_.w_align);
   RCLCPP_INFO(this->get_logger(), "decay_len_cells: %f", par_.decay_len_cells);
   RCLCPP_INFO(this->get_logger(), "w_side: %f", par_.w_side);
+  RCLCPP_INFO(this->get_logger(), "heat_weight: %f", par_.heat_weight);
 
   // LOS post processing parameters
   RCLCPP_INFO(this->get_logger(), "LOS Cells: %d", par_.los_cells);
@@ -609,17 +597,9 @@ void MIGHTY_NODE::printParameters()
   RCLCPP_INFO(this->get_logger(), "Goal Pull Weight: %f", par_.goal_pull_weight);
   RCLCPP_INFO(this->get_logger(), "Goal Pull Time Buffer: %f", par_.goal_pull_time_buffer);
 
-  // L-BFGS parameters
-  RCLCPP_INFO(this->get_logger(), "f_dec_coeff: %f", par_.f_dec_coeff);
-  RCLCPP_INFO(this->get_logger(), "Cautious Factor: %f", par_.cautious_factor);
-  RCLCPP_INFO(this->get_logger(), "Past: %d", par_.past);
-  RCLCPP_INFO(this->get_logger(), "Max Linesearch: %d", par_.max_linesearch);
-  RCLCPP_INFO(this->get_logger(), "Max Iterations: %d", par_.max_iterations);
-  RCLCPP_INFO(this->get_logger(), "g_epsilon: %f", par_.g_epsilon);
-  RCLCPP_INFO(this->get_logger(), "Delta: %f", par_.delta);
-
   // Dynamic obstacles parameters
   RCLCPP_INFO(this->get_logger(), "Traj Lifetime: %f", par_.traj_lifetime);
+  RCLCPP_INFO(this->get_logger(), "Dynamic Obstacle Base Inflation: %f", par_.dynamic_obstacle_base_inflation);
 
   // Dynamic k_value parameters
   RCLCPP_INFO(this->get_logger(), "Num Replanning Before Adapt: %d", par_.num_replanning_before_adapt);
@@ -774,6 +754,9 @@ void MIGHTY_NODE::replanCallback()
   if (dgp_result && par_.visual_level >= 1)
     publishLocalGlobalPath();
 
+  if (dgp_result && par_.visual_level >= 2)
+    publishDynamicHeatCloud();
+
   // For visualization of the local trajectory
   if (replanning_result && par_.visual_level >= 1)
     publishTraj();
@@ -857,8 +840,6 @@ void MIGHTY_NODE::terminalGoalCallback(const geometry_msgs::msg::PoseStamped &ms
   // Start replanning
   timer_replanning_->reset();
 
-  // clear all the trajectories on we receive a new goal
-  // clearMarkerActualTraj();
 }
 
 // ----------------------------------------------------------------------------
@@ -1374,91 +1355,114 @@ void MIGHTY_NODE::publishOwnTraj()
 /**
  * @brief Publish the trajectory the agent actually followed for visualization
  */
+/**
+ * @brief Publish the trajectory the agent actually followed for visualization
+ *        (smooth LINE_STRIP with velocity-based color, bounded history, persistent marker id)
+ */
 void MIGHTY_NODE::publishActualTraj()
 {
-  // Initialize the previous point
-  static geometry_msgs::msg::Point prev_p = pointOrigin();
+  if (!pub_actual_traj_)
+    return;
 
-  // Get the current state and position
+  // Get current state
   state current_state;
   mighty_ptr_->getState(current_state);
-  Eigen::Vector3d current_pos = current_state.pos;
+  const Eigen::Vector3d current_pos = current_state.pos;
 
+  // If state not initialized yet
   if (current_pos.norm() < 1e-2)
-    return; // because the state is not updated yet
+    return;
 
-  // If we use UAV, we can just use the state topic published by fake_sim, but if we use ground robot, since we use TF for state publisher, we cannot get velocity info from the state topic. So we will approximiate
+  const auto now = this->now();
+  const double tnow = now.seconds();
+
+  // Initialize on first valid sample
+  if (!actual_traj_initialized_)
+  {
+    actual_traj_prev_pos_ = current_pos;
+    actual_traj_prev_time_ = tnow;
+
+    // Ensure velocity is reasonable even on first point
+    if (par_.vehicle_type != "uav")
+      current_state.vel.setZero();
+
+    actual_traj_hist_.clear();
+    actual_traj_hist_.push_back(current_state);
+
+    actual_traj_initialized_ = true;
+    return; // wait for second sample to draw a line
+  }
+
+  // Velocity handling:
+  // - UAV: assume current_state.vel already valid from estimator/sim
+  // - non-UAV: approximate velocity from position difference (TF-based state publisher case)
   if (par_.vehicle_type != "uav")
   {
-
-    // Initialize the previous position and time
-    if (!publish_actual_traj_called_)
-    {
-      actual_traj_prev_pos_ = current_pos;
-      actual_traj_prev_time_ = this->now().seconds();
-      publish_actual_traj_called_ = true;
-      return;
-    }
-
-    // Get the velocity
-    current_state.vel = (current_pos - actual_traj_prev_pos_) / (this->now().seconds() - actual_traj_prev_time_);
+    const double dt = tnow - actual_traj_prev_time_;
+    if (dt > 1e-3)
+      current_state.vel = (current_pos - actual_traj_prev_pos_) / dt;
+    else
+      current_state.vel.setZero();
   }
 
-  // Set up the marker
-  visualization_msgs::msg::Marker m;
-  m.type = visualization_msgs::msg::Marker::ARROW;
-  m.action = visualization_msgs::msg::Marker::ADD;
-  m.id = actual_traj_id_;
-  m.ns = "actual_traj_" + id_str_;
-  m.color = getColorJet(current_state.vel.norm(), 0, par_.v_max); // note that par_.v_max is per axis
-  m.scale.x = 0.15;
-  m.scale.y = 0.0001;
-  m.scale.z = 0.0001;
-  m.header.stamp = this->now();
-  m.header.frame_id = "map";
+  // Update prev for next call (do this *after* computing vel)
+  actual_traj_prev_pos_ = current_pos;
+  actual_traj_prev_time_ = tnow;
 
-  // pose is actually not used in the marker, but if not RVIZ complains about the quaternion
-  m.pose.position = pointOrigin();
-  m.pose.orientation.x = 0.0;
-  m.pose.orientation.y = 0.0;
-  m.pose.orientation.z = 0.0;
-  m.pose.orientation.w = 1.0;
-
-  // Set the points
-  geometry_msgs::msg::Point p;
-  p = mighty_utils::convertEigen2Point(current_pos);
-  m.points.push_back(prev_p);
-  m.points.push_back(p);
-  prev_p = p;
-
-  // Return if the actual_traj_id_ is 0 - avoid publishing the first point which goes from the origin to the first point
-  if (actual_traj_id_ == 0)
+  // Append to history only if it moved enough (optional but helps reduce visual noise)
+  // You can tune eps; this prevents dense identical points from clogging the strip.
+  const double eps = 1e-3;
+  if (!actual_traj_hist_.empty())
   {
-    actual_traj_id_++;
-    return;
+    const Eigen::Vector3d last_pos = actual_traj_hist_.back().pos;
+    if ((current_pos - last_pos).norm() < eps)
+    {
+      // Still update the last sample's velocity (so color can reflect speed changes)
+      actual_traj_hist_.back().vel = current_state.vel;
+    }
+    else
+    {
+      actual_traj_hist_.push_back(current_state);
+    }
   }
-  actual_traj_id_++;
+  else
+  {
+    actual_traj_hist_.push_back(current_state);
+  }
 
-  // Publish the marker
-  pub_actual_traj_->publish(m);
-}
+  // Bound history (prevents RViz lag / “outdated” visuals)
+  if (actual_traj_hist_.size() > actual_traj_max_hist_)
+  {
+    const size_t overflow = actual_traj_hist_.size() - actual_traj_max_hist_;
+    actual_traj_hist_.erase(actual_traj_hist_.begin(), actual_traj_hist_.begin() + overflow);
+  }
 
-// ----------------------------------------------------------------------------
+  // Publish as a single persistent colored LINE_STRIP marker
+  // NOTE: par_.v_max is per-axis; for speed magnitude scaling you may prefer sqrt(3)*v_max.
+  const double vmax_for_color = par_.v_max; // or: std::sqrt(3.0) * par_.v_max;
 
-/**
- * @brief Clear the marker array
- */
-void MIGHTY_NODE::clearMarkerActualTraj()
-{
-  visualization_msgs::msg::Marker m;
-  m.type = visualization_msgs::msg::Marker::ARROW;
-  m.action = visualization_msgs::msg::Marker::DELETEALL;
-  m.id = 0;
-  m.scale.x = 0.02;
-  m.scale.y = 0.04;
-  m.scale.z = 1;
-  pub_actual_traj_->publish(m);
-  actual_traj_id_ = 0;
+  visualization_msgs::msg::MarkerArray ma;
+
+  // Optional: if you want to hard-reset the marker on re-init events, you can DELETEALL here.
+  // Usually not necessary because we reuse same ns+id and overwrite points.
+  // {
+  //   visualization_msgs::msg::Marker clear;
+  //   clear.header.frame_id = "map";
+  //   clear.header.stamp = now;
+  //   clear.action = visualization_msgs::msg::Marker::DELETEALL;
+  //   ma.markers.push_back(clear);
+  // }
+
+  ma = stateVector2ColoredLineStripMarkerArray(
+      actual_traj_hist_,
+      /*id=*/1,
+      /*ns=*/"actual_traj_" + id_str_,
+      /*max_value=*/vmax_for_color,
+      /*stamp=*/now,
+      /*line_width=*/actual_traj_line_width_,
+      /*max_points_vis=*/actual_traj_max_points_vis_);
+
+  pub_actual_traj_->publish(ma);
 }
 
 // ----------------------------------------------------------------------------
@@ -1605,20 +1609,19 @@ void MIGHTY_NODE::publishGlobalPath()
   {
     // Publish global_path (thin line + dots)
     clearMarkerArray(dgp_path_marker_, pub_dgp_path_marker_);
-  
+
     pathLineDotsToMarkerArray(
         global_path,
         &dgp_path_marker_,
         color(global_path_color),
-        /*line_width=*/0.03,      // meters
-        /*dot_diameter=*/0.06,    // meters
+        /*line_width=*/0.03,   // meters
+        /*dot_diameter=*/0.06, // meters
         /*base_id=*/50000,
         /*frame_id=*/"map",
         /*lifetime_sec=*/1.0);
-  
+
     pub_dgp_path_marker_->publish(dgp_path_marker_);
   }
-  
 
   // Get the original global path
   vec_Vecf<3> original_global_path;
@@ -1628,7 +1631,17 @@ void MIGHTY_NODE::publishGlobalPath()
   {
     // Publish original_global_path
     clearMarkerArray(original_dgp_path_marker_, pub_original_dgp_path_marker_);
-    vectorOfVectors2MarkerArray(original_global_path, &original_dgp_path_marker_, color(original_global_path_color));
+
+    pathLineDotsToMarkerArray(
+        original_global_path,
+        &original_dgp_path_marker_,
+        color(original_global_path_color),
+        /*line_width=*/0.03,   // meters
+        /*dot_diameter=*/0.06, // meters
+        /*base_id=*/60000,
+        /*frame_id=*/"map",
+        /*lifetime_sec=*/1.0);
+
     pub_original_dgp_path_marker_->publish(original_dgp_path_marker_);
   }
 }
@@ -1682,6 +1695,91 @@ void MIGHTY_NODE::publishLocalGlobalPath()
     vectorOfVectors2MarkerArray(local_global_path_after_push, &dgp_local_global_path_after_push_marker_, color(ORANGE));
     pub_local_global_path_after_push_marker_->publish(dgp_local_global_path_after_push_marker_);
   }
+}
+
+// ----------------------------------------------------------------------------
+
+void MIGHTY_NODE::publishDynamicHeatCloud()
+{
+  if (!pub_dynamic_heat_cloud_)
+    return;
+
+  auto map_util = mighty_ptr_->getMapUtilSharedPtr();
+  if (!map_util)
+    return;
+
+  const bool any_heat =
+      map_util->dynamicHeatEnabled() || map_util->staticHeatEnabled();
+
+  if (!any_heat)
+    return;
+
+  // -------- Tunables --------
+  const int stride = 2;             // 1 = every voxel, 2 = every 2 voxels, etc.
+  const float heat_min = 0.05f;     // only publish voxels with heat >= this
+  const size_t max_points = 200000; // hard cap for safety
+  // --------------------------
+
+  const auto dim = map_util->getDim(); // Veci<3>
+  const int nx = dim(0);
+  const int ny = dim(1);
+  const int nz = dim(2);
+
+  // Use Eigen-aligned vector type from your data_type.h
+  vec_Vec3f pts;
+  std::vector<float> intens;
+  pts.reserve(50000);
+  intens.reserve(50000);
+
+  for (int x = 0; x < nx; x += stride)
+  {
+    for (int y = 0; y < ny; y += stride)
+    {
+      for (int z = 0; z < nz; z += stride)
+      {
+        const float h = map_util->getHeat(x, y, z);
+        if (h < heat_min)
+          continue;
+
+        const Vec3f p = map_util->intToFloat(Veci<3>(x, y, z)); // Vec3f is double[3]
+        pts.push_back(p);
+        intens.push_back(h);
+
+        if (pts.size() >= max_points)
+          goto BUILD_MSG;
+      }
+    }
+  }
+
+BUILD_MSG:
+  sensor_msgs::msg::PointCloud2 msg;
+  msg.header.frame_id = "map";
+  msg.header.stamp = this->now();
+
+  sensor_msgs::PointCloud2Modifier modifier(msg);
+  modifier.setPointCloud2Fields(
+      4,
+      "x", 1, sensor_msgs::msg::PointField::FLOAT32,
+      "y", 1, sensor_msgs::msg::PointField::FLOAT32,
+      "z", 1, sensor_msgs::msg::PointField::FLOAT32,
+      "intensity", 1, sensor_msgs::msg::PointField::FLOAT32);
+  modifier.resize(pts.size());
+
+  sensor_msgs::PointCloud2Iterator<float> iter_x(msg, "x");
+  sensor_msgs::PointCloud2Iterator<float> iter_y(msg, "y");
+  sensor_msgs::PointCloud2Iterator<float> iter_z(msg, "z");
+  sensor_msgs::PointCloud2Iterator<float> iter_i(msg, "intensity");
+
+  for (size_t k = 0; k < pts.size(); ++k, ++iter_x, ++iter_y, ++iter_z, ++iter_i)
+  {
+    const auto &p = pts[k];
+    *iter_x = static_cast<float>(p(0));
+    *iter_y = static_cast<float>(p(1));
+    *iter_z = static_cast<float>(p(2));
+    *iter_i = intens[k];
+  }
+
+  pub_dynamic_heat_cloud_->publish(msg);
 }
 
 // ----------------------------------------------------------------------------
@@ -1839,7 +1937,7 @@ void MIGHTY_NODE::mapCallback(
   pcl::PointCloud<pcl::PointXYZ>::Ptr unk_pc(new pcl::PointCloud<pcl::PointXYZ>());
   pcl::fromROSMsg(*unk_msg, *unk_pc);
 
-  mighty_ptr_->updateMap(map_pc, unk_pc, this->now().seconds());
+  mighty_ptr_->updateMapPtr(map_pc, unk_pc);
 }
 
 // ----------------------------------------------------------------------------
@@ -1851,7 +1949,7 @@ void MIGHTY_NODE::occupancyMapCallback(
   pcl::PointCloud<pcl::PointXYZ>::Ptr map_pc(new pcl::PointCloud<pcl::PointXYZ>());
   pcl::fromROSMsg(*map_msg, *map_pc);
 
-  mighty_ptr_->updateOccupancyMap(map_pc, this->now().seconds());
+  mighty_ptr_->updateOccupancyMapPtr(map_pc);
 
   // If we use global point cloud, we don't need to update the map ever
   if (par_.use_global_pc)

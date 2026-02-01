@@ -20,7 +20,7 @@ def generate_launch_description():
     for ns in namespaces:
         nodes.append(
             Node(
-                package='mighty',
+                package='dynus',
                 executable='goal_monitor_node.py',
                 namespace=ns,
                 name='goal_monitor_node',  # this will live under /<ns>/goal_monitor_node

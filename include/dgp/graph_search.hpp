@@ -223,7 +223,7 @@ namespace mighty
     /// Main planning loop for Dynamic JPS++
     bool dgp_plan(StatePtr &currNode_ptr, int max_expand, int start_id, int goal_id, std::chrono::milliseconds timeout_duration);
     /// Get successor function for A*
-    void getSucc(const StatePtr &curr, std::vector<int> &succ_ids, std::vector<double> &succ_costs);
+    void getSucc(const StatePtr &curr, std::vector<int> &succ_ids, std::vector<double> &succ_costs, bool use_heat);
     /// Get successor function for JPS
     void getJpsSucc(const StatePtr &curr, std::vector<int> &succ_ids, std::vector<double> &succ_costs);
     /// Recover the optimal path
@@ -287,6 +287,7 @@ namespace mighty
 
     int xGoal_, yGoal_, zGoal_;
     bool use_jps_ = false;
+    bool use_heat_ = false; // only true when global_planner_=="astar_heat"
 
     priorityQueue pq_;
     std::vector<StatePtr> hm_;

@@ -144,10 +144,16 @@ public:
   void setInitialPose(const geometry_msgs::msg::TransformStamped &init_pose);
   void applyInitiPoseTransform(PieceWisePol &pwp);
   void applyInitiPoseInverseTransform(PieceWisePol &pwp);
-  void updateMap(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_map, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_unk, double current_time);
-  void updateOccupancyMap(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_map, double current_time);
-  double computeObstPosAndTrajMaxTimeForMapUpdate(vec_Vecf<3> &obst_pos, double current_time);
+  void updateMapPtr(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_map, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_unk);
+  void updateMap(double current_time);
+  void updateOccupancyMapPtr(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_map);
+  void updateOccupancyMap(double current_time);
+  double computeObstPosAndTrajMaxTimeForMapUpdate(vec_Vecf<3> &obst_pos,
+                                                  std::vector<vec_Vecf<3>> &pred_samples, // [K][M]
+                                                  std::vector<float> &pred_times,         // [M], relative times from now
+                                                  double current_time);
   void getPieceWisePol(PieceWisePol &pwp);
+  std::shared_ptr<mighty::VoxelMapUtil> getMapUtilSharedPtr();
 
 private:
   // Parameters
@@ -163,6 +169,8 @@ private:
   std::vector<double> factors_;                                       // Factors for time allocation
   int num_dynamic_factors_;
   bool dynamic_factor_inital_sucess_ = false;
+  double worst_traj_time_ = 0.0; // Worst case trajectory time for pre-computation
+  double traj_max_time_ = 0.0;   // Maximum trajectory time for map update
   
   // Flags
   bool state_initialized_ = false;         // State initialized
@@ -232,6 +240,8 @@ private:
   std::mutex mtx_kdtree_map_;           // Mutex for the map_
   std::mutex mtx_kdtree_unk_;           // Mutex for the unknown map_
   std::mutex mtx_obst_pos_;             // Mutex for the obst_pos_
+  std::mutex mtx_pclptr_map_;           // Mutex for the pclptr_map_
+  std::mutex mtx_pclptr_unk_;           // Mutex for the pclptr
   pcl::PointCloud<pcl::PointXYZ>::ConstPtr pclptr_map_;
   pcl::PointCloud<pcl::PointXYZ>::ConstPtr pclptr_unk_;
 
@@ -286,9 +296,6 @@ private:
   // kd-tree for the map
   pcl::KdTreeFLANN<pcl::PointXYZ> kdtree_map_; // kdtree of the point cloud of the occuppancy grid
   pcl::KdTreeFLANN<pcl::PointXYZ> kdtree_unk_; // kdtree of the point cloud of the unknown grid
-
-  // max trajectory time for dynamic obstacle map update
-  double prev_traj_max_time_ = -1.0; // [s]
 
   // Store data
   Eigen::VectorXd zopt_;

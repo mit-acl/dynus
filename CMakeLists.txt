@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(mighty)
+project(dynus)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -67,9 +67,9 @@ FILE(GLOB GurobiSOFiles $ENV{GUROBI_HOME}/lib/libgurobi*[0-9].so) #files that ar
 set(GUROBI_LIBRARIES "$ENV{GUROBI_HOME}/lib/libgurobi_c++.a;${GurobiSOFiles};$ENV{GUROBI_HOME}/lib/" )
 
 # add executables
-add_executable(mighty src/mighty/mighty_node.cpp src/mighty/mighty.cpp src/dgp/dgp_manager.cpp src/dgp/utils.cpp src/dgp/dgp_planner.cpp src/dgp/graph_search.cpp src/mighty/utils.cpp src/mighty/gurobi_solver.cpp)
-target_link_libraries(mighty ${GUROBI_LIBRARIES} ${PCL_LIBRARIES})
-ament_target_dependencies(mighty rclcpp example_interfaces dynus_interfaces visualization_msgs Eigen3 decomp_ros_msgs sensor_msgs std_msgs decomp_rviz_plugins decomp_test_node tf2_geometry_msgs tf2 tf2_ros tf2_eigen std_srvs pcl_ros)
+add_executable(dynus src/mighty/mighty_node.cpp src/mighty/mighty.cpp src/dgp/dgp_manager.cpp src/dgp/utils.cpp src/dgp/dgp_planner.cpp src/dgp/graph_search.cpp src/mighty/utils.cpp src/mighty/gurobi_solver.cpp)
+target_link_libraries(dynus ${GUROBI_LIBRARIES} ${PCL_LIBRARIES})
+ament_target_dependencies(dynus rclcpp example_interfaces dynus_interfaces visualization_msgs Eigen3 decomp_ros_msgs sensor_msgs std_msgs decomp_rviz_plugins decomp_test_node tf2_geometry_msgs tf2 tf2_ros tf2_eigen std_srvs pcl_ros)
 
 # Add the fake_sim executable
 add_executable(fake_sim src/mighty/fake_sim.cpp)
@@ -124,12 +124,7 @@ ament_target_dependencies(dynamic_forest_node
 )
 
 # For benchmark SFC generation
-add_executable(corridor_generator_node src/mighty/corridor_generator_node.cpp
-src/dgp/dgp_manager.cpp
-src/dgp/utils.cpp
-src/dgp/dgp_planner.cpp
-src/dgp/graph_search.cpp
-src/mighty/utils.cpp
+add_executable(corridor_generator_node src/mighty/corridor_generator_node.cpp src/dgp/dgp_manager.cpp src/dgp/utils.cpp src/dgp/dgp_planner.cpp src/dgp/graph_search.cpp src/mighty/utils.cpp
 )
 target_link_libraries(corridor_generator_node ${GUROBI_LIBRARIES} ${PCL_LIBRARIES})
 ament_target_dependencies(corridor_generator_node rclcpp example_interfaces dynus_interfaces visualization_msgs Eigen3 decomp_ros_msgs sensor_msgs std_msgs decomp_rviz_plugins decomp_test_node tf2_geometry_msgs tf2 tf2_ros tf2_eigen std_srvs pcl_ros)
@@ -141,6 +136,10 @@ ament_target_dependencies(local_traj_benchmark_node rclcpp example_interfaces dy
 add_executable(visualize_local_trajs_node src/mighty/visualize_local_trajs.cpp src/mighty/mighty.cpp src/dgp/dgp_manager.cpp src/dgp/utils.cpp src/dgp/dgp_planner.cpp src/dgp/graph_search.cpp src/mighty/utils.cpp src/mighty/gurobi_solver.cpp)
 target_link_libraries(visualize_local_trajs_node ${GUROBI_LIBRARIES} ${PCL_LIBRARIES})
 ament_target_dependencies(visualize_local_trajs_node rclcpp example_interfaces dynus_interfaces visualization_msgs Eigen3 decomp_ros_msgs sensor_msgs std_msgs decomp_rviz_plugins decomp_test_node tf2_geometry_msgs tf2 tf2_ros tf2_eigen std_srvs pcl_ros)
+
+add_executable(temporal_layered_corridor_test_node src/mighty/temporal_layered_corridor_test_node.cpp src/mighty/mighty.cpp src/dgp/dgp_manager.cpp src/dgp/utils.cpp src/dgp/dgp_planner.cpp src/dgp/graph_search.cpp src/mighty/utils.cpp src/mighty/gurobi_solver.cpp)
+target_link_libraries(temporal_layered_corridor_test_node ${GUROBI_LIBRARIES} ${PCL_LIBRARIES})
+ament_target_dependencies(temporal_layered_corridor_test_node rclcpp visualization_msgs std_msgs geometry_msgs Eigen3 decomp_util decomp_ros_msgs decomp_rviz_plugins decomp_test_node tf2 tf2_ros tf2_geometry_msgs tf2_eigen std_srvs pcl_ros pcl_conversions sensor_msgs dynus_interfaces)
 
 # install for launch and config files
 install(DIRECTORY
@@ -155,7 +154,7 @@ DESTINATION share/${PROJECT_NAME}
 
 # install for executables
 install(TARGETS
-  mighty
+  dynus
   fake_sim
   obstacle_tracker_node
   convert_goal_to_cmd_vel
@@ -166,6 +165,7 @@ install(TARGETS
   corridor_generator_node
   local_traj_benchmark_node
   visualize_local_trajs_node
+  temporal_layered_corridor_test_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

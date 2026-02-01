@@ -113,11 +113,28 @@ bool GraphSearch::plan(int xStart, int yStart, int zStart, int xGoal, int yGoal,
 bool GraphSearch::select_planner(StatePtr &currNode_ptr, int max_expand, int start_id, int goal_id, std::chrono::milliseconds timeout_duration)
 {
 
-  if (global_planner_ == "sjps") // Static JPS planner
+  // Make planner choice unambiguous:
+  //  - sjps         : JPS successors (getJpsSucc)
+  //  - astar        : A* grid successors (getSucc) with NO heat
+  //  - astar_heat   : A* grid successors (getSucc) WITH heat
+  use_jps_ = false;
+  use_heat_ = false;
+
+  if (global_planner_ == "sjps")
+  {
+    use_jps_ = true;
+    return static_jps_plan(currNode_ptr, max_expand, start_id, goal_id, timeout_duration);
+  }
+  else if (global_planner_ == "sastar")
   {
     return static_jps_plan(currNode_ptr, max_expand, start_id, goal_id, timeout_duration);
   }
-  else // Error
+  else if (global_planner_ == "astar_heat")
+  {
+    use_heat_ = true;
+    return static_jps_plan(currNode_ptr, max_expand, start_id, goal_id, timeout_duration);
+  }
+  else
   {
     printf("Unknown planner: %s\n", global_planner_.c_str());
     return false;
@@ -144,6 +161,13 @@ bool GraphSearch::static_jps_plan(StatePtr &currNode_ptr, int max_expand, int st
 
   int expand_iteration = 0;
   cMap_ = (map_util_->map_).data();
+
+  if (verbose_)
+  {
+    std::cout << "[GraphSearch] planner=\"" << global_planner_ << "\" use_jps="
+              << (use_jps_ ? 1 : 0) << " use_heat=" << (use_heat_ ? 1 : 0)
+              << std::endl;
+  }
 
   while (true)
   {
@@ -178,8 +202,15 @@ bool GraphSearch::static_jps_plan(StatePtr &currNode_ptr, int max_expand, int st
     std::vector<int> succ_ids;
     std::vector<double> succ_costs;
 
-    // getJpsSucc(currNode_ptr, succ_ids, succ_costs);
-    getSucc(currNode_ptr, succ_ids, succ_costs);
+    if (use_jps_)
+    {
+      getJpsSucc(currNode_ptr, succ_ids, succ_costs);
+    }
+    else
+    {
+      // Heat is applied ONLY when global_planner_=="astar_heat" (use_heat_==true).
+      getSucc(currNode_ptr, succ_ids, succ_costs, use_heat_);
+    }
 
     // Process successors
     for (int s = 0; s < (int)succ_ids.size(); s++)
@@ -194,33 +225,7 @@ bool GraphSearch::static_jps_plan(StatePtr &currNode_ptr, int max_expand, int st
         continue;
       }
 
-      // Directional bias: only on the very first expansion
-      // ----- Start-direction bias (first expansion only): penalize ONLY backward -----
-      double penalty = 0.0;
-      // if (currNode_ptr->id == start_id && start_vel_.squaredNorm() > 1e-8)
-      // {
-      //   Eigen::Vector3d pref = start_vel_.cast<double>();
-      //   Eigen::Vector3d toGoal(xGoal_ - currNode_ptr->x,
-      //                          yGoal_ - currNode_ptr->y,
-      //                          zGoal_ - currNode_ptr->z);
-      //   // If start_vel_ points >90° away from goal, flip it
-      //   if (pref.dot(toGoal) < 0)
-      //     pref = -pref;
-      //   pref.normalize();
-
-      //   Eigen::Vector3d step(static_cast<double>(child_ptr->x - currNode_ptr->x),
-      //                        static_cast<double>(child_ptr->y - currNode_ptr->y),
-      //                        static_cast<double>(child_ptr->z - currNode_ptr->z));
-      //   double n = step.norm();
-      //   if (n > 1e-9)
-      //   {
-      //     double cosang = (step / n).dot(pref);      // [-1, 1]
-      //     double k_back = 1.0;                       // try 0.5–1.0
-      //     penalty = k_back * std::max(0.0, -cosang); // penalize only backward
-      //   }
-      // }
-
-      double tentative_gval = currNode_ptr->g + succ_costs[s] + penalty;
+      double tentative_gval = currNode_ptr->g + succ_costs[s];
 
       if (tentative_gval < child_ptr->g)
       {
@@ -644,7 +649,7 @@ std::vector<StatePtr> GraphSearch::recoverPath(StatePtr node, int start_id)
   return path;
 }
 
-void GraphSearch::getSucc(const StatePtr &curr, std::vector<int> &succ_ids, std::vector<double> &succ_costs)
+void GraphSearch::getSucc(const StatePtr &curr, std::vector<int> &succ_ids, std::vector<double> &succ_costs, bool use_heat)
 {
   succ_ids.clear();
   succ_costs.clear();
@@ -689,41 +694,20 @@ void GraphSearch::getSucc(const StatePtr &curr, std::vector<int> &succ_ids, std:
     }
 
     // Base geometric step cost (1, √2, √3)
-    const double base = std::sqrt(double(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]));
-    double step_cost = base;
-    // const double dist_from_start = std::sqrt((new_x - start_(0)) * (new_x - start_(0)) + (new_y - start_(1)) * (new_y - start_(1)) + (new_z - start_(2)) * (new_z - start_(2)));
-    // // -------- Alignment (XY) + optional side tie-breaker --------
-    // if ((w_align_ > 0.0 || w_side_ > 0.0) && dist_from_start < 10.0)
-    // {
-    //   Eigen::Vector2d step2d(d[0], d[1]);
-    //   const double step_n = step2d.norm();
-    //   if (vref_n > 1e-9 && step_n > 1e-9)
-    //   {
-    //     // Decay by *pure* g if you track it; else use distance_score or path length in cells.
-    //     // Here we assume curr->g holds pure accumulated step costs.
-    //     const double decay = std::exp(-curr->g / std::max(1e-9, decay_len_cells_));
+    double step_cost = std::sqrt(double(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]));
 
-    //     const double cosang = std::clamp(step2d.dot(vref) / (step_n * vref_n), -1.0, 1.0);
-    //     // Misalignment penalty (0 when perfectly aligned; π gives 2*w_align_*step_n*decay)
-    //     step_cost += w_align_ * (1.0 - cosang) * decay * step_n;
-
-    //     // Optional: left/right tie-breaker (small!); gated to forward-ish (cos>=0)
-    //     if (w_side_ > 0.0)
-    //     {
-    //       const double crossz = (vref.x() * step2d.y() - vref.y() * step2d.x()) / (vref_n * step_n); // [-1,1]
-    //       Eigen::Vector2d vg(goal_(0) - start_(0), goal_(1) - start_(1));
-    //       const double sign_pref = (vref.x() * vg.y() - vref.y() * vg.x()) >= 0.0 ? 1.0 : -1.0;
-    //       const double cospos = std::max(0.0, cosang);
-    //       step_cost += -w_side_ * sign_pref * crossz * cospos * decay * step_n;
-    //     }
-    //   }
-    // }
-
-    // // -------- If unknown, add a penalty --------
-    // if (isUnknown(new_x, new_y, new_z))
-    // {
-    //   step_cost += w_unknown_ * base;
-    // }
+    // -------- Dynamic heat-map cost (soft) --------
+    // Static obstacles remain hard-blocked by isOccupied() above.
+    // Heat is time-invariant and precomputed in map_util_ during readMap().
+    if (use_heat && map_util_ && (map_util_->dynamicHeatEnabled() || map_util_->staticHeatEnabled()))
+    {
+      const float w_heat = map_util_->getHeatWeight();
+      if (w_heat > 0.0f)
+      {
+        const float h = map_util_->getHeat(new_x, new_y, new_z);
+        step_cost += (double)(w_heat * h);
+      }
+    }
 
     succ_ids.push_back(new_id);
     succ_costs.push_back(step_cost);

@@ -11,6 +11,10 @@
 #include <pcl/kdtree/kdtree_flann.h>
 #include "timer.hpp"
 #include <omp.h>
+#include <algorithm>
+#include <cmath>
+#include <functional>
+#include <cstdint>
 
 namespace mighty
 {
@@ -48,6 +52,7 @@ namespace mighty
     // assume Vec3f is Eigen::Vector3f and Vec3i is Eigen::Vector3i
     void readMap(
         const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &cloud,
+        const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &unknown_cloud,
         int cells_x, int cells_y, int cells_z,
         const Vec3f &center_map,
         double z_ground,
@@ -56,6 +61,7 @@ namespace mighty
         const vec_Vecf<3> &obst_pos,
         double traj_max_time)
     {
+      (void)unknown_cloud; // unknown-space soft costs removed
       // 1) Compute X/Y dims with inflation pad
       int pad = int(std::ceil(5.0 * inflation / res_));
       int dimX = cells_x + pad, dimY = cells_y + pad, dimZ = cells_z;
@@ -88,6 +94,19 @@ namespace mighty
       size_t total = size_t(dimX) * dimY * dimZ;
       map_.assign(total, val_unknown_);
 
+      // Optional: track which occupied voxels were introduced by dynamic obstacle hard-blocking,
+      // so static heat can exclude them and avoid double counting.
+      const bool need_dyn_mask = static_heat_enabled_ && static_heat_exclude_dynamic_;
+      std::vector<uint8_t> dyn_occ_mask;
+      if (need_dyn_mask)
+        dyn_occ_mask.assign(total, 0);
+
+      auto mark_dyn_occ = [&](size_t lin)
+      {
+        if (need_dyn_mask)
+          dyn_occ_mask[lin] = 1;
+      };
+
       // 5) Precompute inflation offsets
       int m = int(std::floor(inflation / res_));
       std::vector<Vec3i> offsets;
@@ -105,8 +124,8 @@ namespace mighty
         return size_t(x) + size_t(dimX) * y + size_t(dimX) * size_t(dimY) * z;
       };
 
-      // 7) Rasterize & inflate, skipping points outside z-bounds
-      #pragma omp parallel for schedule(dynamic)
+// 7) Rasterize & inflate, skipping points outside z-bounds
+#pragma omp parallel for schedule(dynamic)
       for (size_t i = 0; i < cloud->points.size(); ++i)
       {
         const auto &P = cloud->points[i];
@@ -128,22 +147,30 @@ namespace mighty
         }
       }
 
-      // 8) Mark dynamic-obstacle reachable sphere as occupied (with buffer)
-      const double obst_radius = (obst_max_vel_ * traj_max_time) + 0.8; // [m]
+      // 8) Dynamic obstacles:
+      // Option A (legacy): mark reachable sphere as occupied (hard).
+      // Option B (new): keep occupancy purely static/unknown and compute a soft heat map for global planning.
 
-      if (obst_radius > 0.0 && !obst_pos.empty())
+      // 8a) Always hard-block the *current* dynamic obstacle footprint (hard constraint).
+      //     This is complementary to heat-based planning:
+      //       - current pose is treated as occupied (planner must not go through it)
+      //       - future motion is represented via heat_ (soft cost) unless dynamic_as_occupied_ is true.
+      //
+      //     Radius choice:
+      //       - dyn_base_inflation_m_ is already used as the base radius for the heat tube (R0).
+      //       - We also include the map inflation to ensure consistency with static obstacle inflation.
+      const double curr_r = std::max((double)dyn_base_inflation_m_, (double)inflation);
+      if (curr_r > 0.0 && !obst_pos.empty())
       {
-        const double r2 = obst_radius * obst_radius;
-
+        const double r2 = curr_r * curr_r;
         for (const auto &O : obst_pos)
         {
-          // Bounding box of the sphere in index space (clamped)
-          int ix_min = int(std::floor((O.x() - obst_radius - origin.x()) / res_));
-          int ix_max = int(std::floor((O.x() + obst_radius - origin.x()) / res_));
-          int iy_min = int(std::floor((O.y() - obst_radius - origin.y()) / res_));
-          int iy_max = int(std::floor((O.y() + obst_radius - origin.y()) / res_));
-          int iz_min = int(std::floor((O.z() - obst_radius - origin.z()) / res_));
-          int iz_max = int(std::floor((O.z() + obst_radius - origin.z()) / res_));
+          int ix_min = int(std::floor((O.x() - curr_r - origin.x()) / res_));
+          int ix_max = int(std::floor((O.x() + curr_r - origin.x()) / res_));
+          int iy_min = int(std::floor((O.y() - curr_r - origin.y()) / res_));
+          int iy_max = int(std::floor((O.y() + curr_r - origin.y()) / res_));
+          int iz_min = int(std::floor((O.z() - curr_r - origin.z()) / res_));
+          int iz_max = int(std::floor((O.z() + curr_r - origin.z()) / res_));
 
           ix_min = std::clamp(ix_min, 0, dimX - 1);
           ix_max = std::clamp(ix_max, 0, dimX - 1);
@@ -152,24 +179,75 @@ namespace mighty
           iz_min = std::clamp(iz_min, 0, dimZ - 1);
           iz_max = std::clamp(iz_max, 0, dimZ - 1);
 
-          // Iterate all voxels in the bounding box; keep those inside the sphere
           for (int ix = ix_min; ix <= ix_max; ++ix)
           {
             const double xc = origin.x() + (ix + 0.5) * res_;
             const double dx = xc - O.x();
-
             for (int iy = iy_min; iy <= iy_max; ++iy)
             {
               const double yc = origin.y() + (iy + 0.5) * res_;
               const double dy = yc - O.y();
-
               for (int iz = iz_min; iz <= iz_max; ++iz)
               {
                 const double zc = origin.z() + (iz + 0.5) * res_;
                 const double dz = zc - O.z();
-
                 if (dx * dx + dy * dy + dz * dz <= r2)
-                  map_[idx3(ix, iy, iz)] = val_occ_;
+                {
+                  const size_t lin = idx3(ix, iy, iz);
+                  map_[lin] = val_occ_;
+                  mark_dyn_occ(lin);
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (dynamic_as_occupied_)
+      {
+        const double obst_radius = (obst_max_vel_ * traj_max_time); // [m]
+        if (obst_radius > 0.0 && !obst_pos.empty())
+        {
+          const double r2 = obst_radius * obst_radius;
+
+          for (const auto &O : obst_pos)
+          {
+            int ix_min = int(std::floor((O.x() - obst_radius - origin.x()) / res_));
+            int ix_max = int(std::floor((O.x() + obst_radius - origin.x()) / res_));
+            int iy_min = int(std::floor((O.y() - obst_radius - origin.y()) / res_));
+            int iy_max = int(std::floor((O.y() + obst_radius - origin.y()) / res_));
+            int iz_min = int(std::floor((O.z() - obst_radius - origin.z()) / res_));
+            int iz_max = int(std::floor((O.z() + obst_radius - origin.z()) / res_));
+
+            ix_min = std::clamp(ix_min, 0, dimX - 1);
+            ix_max = std::clamp(ix_max, 0, dimX - 1);
+            iy_min = std::clamp(iy_min, 0, dimY - 1);
+            iy_max = std::clamp(iy_max, 0, dimY - 1);
+            iz_min = std::clamp(iz_min, 0, dimZ - 1);
+            iz_max = std::clamp(iz_max, 0, dimZ - 1);
+
+            for (int ix = ix_min; ix <= ix_max; ++ix)
+            {
+              const double xc = origin.x() + (ix + 0.5) * res_;
+              const double dx = xc - O.x();
+
+              for (int iy = iy_min; iy <= iy_max; ++iy)
+              {
+                const double yc = origin.y() + (iy + 0.5) * res_;
+                const double dy = yc - O.y();
+
+                for (int iz = iz_min; iz <= iz_max; ++iz)
+                {
+                  const double zc = origin.z() + (iz + 0.5) * res_;
+                  const double dz = zc - O.z();
+
+                  if (dx * dx + dy * dy + dz * dz <= r2)
+                  {
+                    const size_t lin = idx3(ix, iy, iz);
+                    map_[lin] = val_occ_;
+                    mark_dyn_occ(lin);
+                  }
+                }
               }
             }
           }
@@ -181,6 +259,392 @@ namespace mighty
       total_size_ = total;
       origin_d_ = origin;
       center_map_ = center_map;
+      // 10) Build soft cost map (dynamic heat + unknown-space cost).
+      //     This stays separate from hard occupancy (map_) and is consumed by weighted A*:
+      //       edge_cost += heat_w_ * getHeat(...)
+      const bool need_heat = dynamic_heat_enabled_ || static_heat_enabled_;
+      if (need_heat)
+      {
+        heat_.assign(total_size_, 0.0f);
+      }
+      else
+      {
+        heat_.clear();
+      }
+
+      // 10a) Dynamic obstacle heat (time-invariant, max-over-time tube).
+      //      Heat is used only by weighted A* (global planner); static occupancy remains hard.
+      if (dynamic_heat_enabled_)
+      {
+        const float Th = std::max(0.0f, (float)traj_max_time);
+        const float tau_w = std::max(1e-3f, heat_tau_ratio_ * std::max(1e-3f, Th));
+
+        // Determine time samples:
+        std::vector<float> t_samples;
+        if (!dyn_pred_times_.empty())
+        {
+          t_samples = dyn_pred_times_;
+        }
+        else
+        {
+          const int M = std::max(2, heat_num_samples_);
+          t_samples.resize(M);
+          for (int j = 0; j < M; ++j)
+            t_samples[j] = (float)j * Th / (float)(M - 1);
+        }
+
+        const size_t K = obst_pos.size();
+        if (K > 0)
+        {
+          // Lightweight pow for small integer exponents.
+          auto pow_fast = [](float x, int p) -> float
+          {
+            x = std::max(0.0f, x);
+            switch (p)
+            {
+            case 1:
+              return x;
+            case 2:
+              return x * x;
+            case 3:
+              return x * x * x;
+            case 4:
+            {
+              const float x2 = x * x;
+              return x2 * x2;
+            }
+            default:
+              return std::pow(x, (float)p);
+            }
+          };
+
+          // Precompute obstacle centers (float) and reachable radii.
+          std::vector<Eigen::Vector3f> ck_list(K);
+          std::vector<float> Rreach_list(K);
+
+          const float R0 = std::max(0.0f, dyn_base_inflation_m_);
+          for (size_t k = 0; k < K; ++k)
+          {
+            ck_list[k] = obst_pos[k].cast<float>();
+            Rreach_list[k] = R0 + (float)obst_max_vel_ * Th;
+          }
+
+          // Precompute per-time-sample tube radii and time-decay weights.
+          const size_t J = t_samples.size();
+          std::vector<float> Rj(J), Wj(J);
+          for (size_t j = 0; j < J; ++j)
+          {
+            const float tj = std::max(0.0f, t_samples[j]);
+            Rj[j] = R0 + heat_gamma_ * tj;
+            Wj[j] = std::exp(-tj / tau_w);
+          }
+
+          // Precompute predicted centers (fallback to ck if unavailable).
+          std::vector<Eigen::Vector3f> cj_flat(K * J);
+          for (size_t k = 0; k < K; ++k)
+          {
+            for (size_t j = 0; j < J; ++j)
+            {
+              Eigen::Vector3f cj = ck_list[k];
+              if (k < dyn_pred_samples_.size() && j < dyn_pred_samples_[k].size())
+                cj = dyn_pred_samples_[k][j].cast<float>();
+              cj_flat[k * J + j] = cj;
+            }
+          }
+
+          const int dim0 = dim_(0);
+          const int dim1 = dim_(1);
+          const int plane = dim0 * dim1;
+
+#pragma omp parallel for schedule(static)
+          for (int idx = 0; idx < total_size_; ++idx)
+          {
+            // Heat is only relevant for traversable cells; skip hard obstacles early.
+            if (map_[idx] > val_free_)
+              continue;
+
+            const int ix = idx % dim0;
+            const int iy = (idx / dim0) % dim1;
+            const int iz = idx / plane;
+
+            const float xw = origin_d_.x() + (ix + 0.5f) * res_;
+            const float yw = origin_d_.y() + (iy + 0.5f) * res_;
+            const float zw = origin_d_.z() + (iz + 0.5f) * res_;
+
+            float best = 0.0f;
+
+            for (size_t k = 0; k < K; ++k)
+            {
+              // Base reachable radius (finite horizon)
+              float Hbase = 0.0f;
+              const float Rreach = Rreach_list[k];
+              if (Rreach > 1e-6f)
+              {
+                const Eigen::Vector3f &ck = ck_list[k];
+                const float dx = xw - ck.x();
+                const float dy = yw - ck.y();
+                const float dz = zw - ck.z();
+                const float d2 = dx * dx + dy * dy + dz * dz;
+                const float R2 = Rreach * Rreach;
+
+                if (d2 <= R2)
+                {
+                  const float d = std::sqrt(std::max(0.0f, d2));
+                  const float u = std::min(1.0f, std::max(0.0f, d / Rreach));
+                  Hbase = heat_alpha0_ * pow_fast(1.0f - u, heat_p_);
+                }
+              }
+
+              // Tube bonus (max over time), radius grows with time, time-decayed
+              float tube_max = 0.0f;
+              const Eigen::Vector3f *cj_ptr = &cj_flat[k * J];
+
+              for (size_t j = 0; j < J; ++j)
+              {
+                const float R = Rj[j];
+                if (R <= 1e-6f)
+                  continue;
+
+                const Eigen::Vector3f &cj = cj_ptr[j];
+                const float dx = xw - cj.x();
+                const float dy = yw - cj.y();
+                const float dz = zw - cj.z();
+                const float d2 = dx * dx + dy * dy + dz * dz;
+                const float R2 = R * R;
+
+                if (d2 > R2)
+                  continue;
+
+                const float d = std::sqrt(std::max(0.0f, d2));
+                const float u = std::min(1.0f, std::max(0.0f, d / R));
+                const float g = pow_fast(1.0f - u, heat_q_);
+                tube_max = std::max(tube_max, Wj[j] * g);
+              }
+
+              float Hk = Hbase + heat_alpha1_ * tube_max;
+              if (heat_Hmax_ > 0.0f)
+                Hk = std::min(Hk, heat_Hmax_);
+
+              best = std::max(best, Hk);
+            }
+
+            heat_[idx] = std::max(heat_[idx], best);
+          }
+        }
+      }
+
+      // 10c) Static obstacle heat (soft cost halo around occupied voxels).
+      // Performance strategy:
+      //  - Use only boundary occupied voxels as seeds (6-neighborhood boundary test).
+      //  - Apply a radial falloff halo in FREE (and optionally UNKNOWN) space.
+      //  - Radius is provided by a user function (lambda) evaluated at the seed voxel center.
+      if (static_heat_enabled_ && static_heat_alpha_ > 0.0f && static_heat_rmax_m_ > 1e-6f)
+      {
+        // Precompute offsets up to rmax once (distance stored in meters).
+        const int Rcell = int(std::ceil(static_heat_rmax_m_ / res_));
+
+        ensureStaticHeatOffsets(Rcell);
+        const auto &off = static_heat_off_;
+
+        auto idx3_local = [&](int x, int y, int z)
+        {
+          return size_t(x) + size_t(dimX) * size_t(y) + size_t(dimX) * size_t(dimY) * size_t(z);
+        };
+
+        // Collect seeds (boundary occupied voxels).
+        std::vector<size_t> seeds;
+        seeds.reserve(size_t(total_size_ / 50) + 1);
+
+        const int nx[6] = {+1, -1, 0, 0, 0, 0};
+        const int ny[6] = {0, 0, +1, -1, 0, 0};
+        const int nz[6] = {0, 0, 0, 0, +1, -1};
+
+        for (int z = 0; z < dimZ; ++z)
+        {
+          for (int y = 0; y < dimY; ++y)
+          {
+            for (int x = 0; x < dimX; ++x)
+            {
+              const size_t lin = idx3_local(x, y, z);
+              if (map_[lin] != val_occ_)
+                continue;
+              if (need_dyn_mask && dyn_occ_mask[lin])
+                continue;
+
+              if (!static_heat_boundary_only_)
+              {
+                seeds.push_back(lin);
+                continue;
+              }
+
+              bool boundary = false;
+              for (int k = 0; k < 6; ++k)
+              {
+                const int x2 = x + nx[k], y2 = y + ny[k], z2 = z + nz[k];
+                if (x2 < 0 || x2 >= dimX || y2 < 0 || y2 >= dimY || z2 < 0 || z2 >= dimZ)
+                {
+                  boundary = true;
+                  break;
+                }
+                const size_t nlin = idx3_local(x2, y2, z2);
+                if (map_[nlin] != val_occ_)
+                {
+                  boundary = true;
+                  break;
+                }
+              }
+
+              if (boundary)
+                seeds.push_back(lin);
+            }
+          }
+        }
+
+        // Apply halo (max aggregation) around each seed
+        for (const auto &lin : seeds)
+        {
+          const int x0 = int(lin % size_t(dimX));
+          const int y0 = int((lin / size_t(dimX)) % size_t(dimY));
+          const int z0 = int(lin / (size_t(dimX) * size_t(dimY)));
+
+          // Seed voxel center in world coordinates (for radius function)
+          const float xc0 = origin_d_.x() + (x0 + 0.5f) * res_;
+          const float yc0 = origin_d_.y() + (y0 + 0.5f) * res_;
+          const float zc0 = origin_d_.z() + (z0 + 0.5f) * res_;
+          const Eigen::Vector3f seed_world(xc0, yc0, zc0);
+
+          float Rm = static_heat_default_radius_m_;
+          if (static_heat_radius_fn_)
+            Rm = static_heat_radius_fn_(seed_world);
+
+          // Clamp radius for safety/perf
+          Rm = std::clamp(Rm, 0.0f, static_heat_rmax_m_);
+          if (Rm <= 1e-6f)
+            continue;
+
+          for (const auto &o : off)
+          {
+
+            if (o.d_m > Rm)
+              continue;
+
+            const int x = x0 + o.dx, y = y0 + o.dy, z = z0 + o.dz;
+            if (x < 0 || x >= dimX || y < 0 || y >= dimY || z < 0 || z >= dimZ)
+              continue;
+
+            const size_t idx = idx3_local(x, y, z);
+
+            // Never override hard obstacles
+            if (map_[idx] > val_free_)
+              continue;
+
+            // By default apply halo only in FREE (not UNKNOWN).
+            // if (!static_heat_apply_on_unknown_ && map_[idx] != val_free_)
+            //   continue;
+
+            const float u = std::min(1.0f, std::max(0.0f, o.d_m / Rm));
+            float w = static_heat_alpha_ * std::pow(1.0f - u, float(static_heat_p_));
+
+            if (static_heat_Hmax_ > 0.0f)
+              w = std::min(w, static_heat_Hmax_);
+
+            if (w > 0.0f)
+            {
+              heat_[idx] = std::max(heat_[idx], w);
+            }
+          }
+        }
+      }
+    }
+
+    // ---------------- Dynamic heat-map API ----------------
+
+    // Enable/disable dynamic obstacles as occupied (legacy behavior)
+    void setDynamicAsOccupied(bool enabled) { dynamic_as_occupied_ = enabled; }
+
+    // Enable/disable heat map computation
+    void setDynamicHeatEnabled(bool enabled) { dynamic_heat_enabled_ = enabled; }
+
+    // Weight used by the global planner: edge_cost += w_heat * heat
+    void setHeatWeight(float w_heat) { heat_w_ = w_heat; }
+    float getHeatWeight() const { return heat_w_; }
+    bool dynamicHeatEnabled() const { return dynamic_heat_enabled_; }
+
+    // ---------------- Static obstacle heat-map API ----------------
+
+    // Enable/disable static obstacle heat accumulation into heat_.
+    void setStaticHeatEnabled(bool enabled) { static_heat_enabled_ = enabled; }
+    bool staticHeatEnabled() const { return static_heat_enabled_; }
+
+    // Parameters for static heat:
+    // - alpha: peak magnitude (heat units) at distance 0
+    // - p:     falloff power in (1 - d/R)^p
+    // - Hmax:  optional cap (<=0 disables cap)
+    // - rmax:  maximum radius we will consider (meters) for offset precompute + clamping
+    // - boundary_only: use only occupied boundary voxels as seeds (recommended for performance)
+    // - apply_on_unknown: if false, apply halo only to FREE cells; if true, also applies to UNKNOWN cells
+    void setStaticHeatParams(float alpha, int p, float Hmax, float rmax_m,
+                             bool boundary_only = true,
+                             bool apply_on_unknown = false,
+                             bool exclude_dynamic = true)
+    {
+      static_heat_alpha_ = std::max(0.0f, alpha);
+      static_heat_p_ = std::max(1, p);
+      static_heat_Hmax_ = Hmax;
+      static_heat_rmax_m_ = std::max(0.0f, rmax_m);
+      static_heat_boundary_only_ = boundary_only;
+      static_heat_apply_on_unknown_ = apply_on_unknown;
+      static_heat_exclude_dynamic_ = exclude_dynamic;
+    }
+
+    // Radius function for static heat. Called at the *seed obstacle voxel center* (world coords).
+    // If fn is empty, we fall back to static_heat_default_radius_m_.
+    void setStaticHeatRadiusFunction(const std::function<float(const Eigen::Vector3f &)> &fn,
+                                     float default_radius_m)
+    {
+      static_heat_radius_fn_ = fn;
+      static_heat_default_radius_m_ = std::max(0.0f, default_radius_m);
+    }
+
+    // Heat-map shaping parameters (dimensionless heat) (dimensionless heat)
+    void setDynamicHeatParams(
+        float alpha0, float alpha1,
+        int p, int q,
+        float tau_w_ratio,
+        float gamma,
+        float Hmax,
+        float base_inflation_m)
+    {
+      heat_alpha0_ = alpha0;
+      heat_alpha1_ = alpha1;
+      heat_p_ = std::max(1, p);
+      heat_q_ = std::max(1, q);
+      heat_tau_ratio_ = std::max(1e-3f, tau_w_ratio);
+      heat_gamma_ = std::max(0.0f, gamma);
+      heat_Hmax_ = std::max(0.0f, Hmax);
+      dyn_base_inflation_m_ = std::max(0.0f, base_inflation_m);
+    }
+
+    // Optional: predicted mean samples per obstacle (tube centers).
+    // pred_samples[k] is a vector of positions for obstacle k, aligned with pred_times.
+    void setDynamicPredictedSamples(const std::vector<vec_Vecf<3>> &pred_samples,
+                                    const std::vector<float> &pred_times)
+    {
+      dyn_pred_samples_ = pred_samples;
+      dyn_pred_times_ = pred_times;
+    }
+
+    // Query heat at integer voxel coordinates (planner coordinates)
+    float getHeat(int x, int y, int z) const
+    {
+      if (heat_.empty())
+        return 0.0f;
+      if (x < 0 || x >= dim_(0) || y < 0 || y >= dim_(1) || z < 0 || z >= dim_(2))
+        return 0.0f;
+      const int idx = x + y * dim_(0) + z * dim_(0) * dim_(1);
+      if (idx < 0 || idx >= (int)heat_.size())
+        return 0.0f;
+      return heat_[(size_t)idx];
     }
 
     // Pre-compute inflation
@@ -873,6 +1337,91 @@ namespace mighty
     // Map entity
     Tmap map_;
 
+    // ---------------- Dynamic heat-map state ----------------
+    std::vector<float> heat_;
+    bool dynamic_heat_enabled_{false};
+    bool dynamic_as_occupied_{true}; // legacy default; DGPManager will set false for heat-based planning
+    float heat_w_{0.0f};             // global planner weight
+
+    // Heat shaping parameters
+    float heat_alpha0_{1.0f};
+    float heat_alpha1_{2.0f};
+    int heat_p_{2};
+    int heat_q_{2};
+    float heat_tau_ratio_{0.5f}; // tau_w = heat_tau_ratio_ * T_h
+    float heat_gamma_{0.0f};     // tube radius growth rate [m/s]
+    float heat_Hmax_{10.0f};
+    float dyn_base_inflation_m_{0.5f}; // R0 in meters
+    int heat_num_samples_{15};         // fallback if no prediction samples
+    std::vector<vec_Vecf<3>> dyn_pred_samples_;
+    std::vector<float> dyn_pred_times_;
+
+    // ---------------- Static obstacle heat parameters ----------------
+    bool static_heat_enabled_{false};
+    float static_heat_alpha_{2.0f};
+    int static_heat_p_{2};
+    float static_heat_Hmax_{50.0f};
+
+    // Maximum radius used for precomputing offsets and clamping per-seed function outputs.
+    float static_heat_rmax_m_{1.0f};
+
+    // If radius function not set, use this constant radius.
+    float static_heat_default_radius_m_{0.5f};
+
+    // Use only boundary occupied voxels as seeds (recommended).
+    bool static_heat_boundary_only_{true};
+
+    // Apply halo only on FREE by default; set true to also apply on UNKNOWN.
+    bool static_heat_apply_on_unknown_{false};
+
+    // Exclude dynamic-occupied voxels from static heat to avoid double counting.
+    bool static_heat_exclude_dynamic_{true};
+
+    // User-provided radius function evaluated at seed voxel center (world coords).
+    std::function<float(const Eigen::Vector3f &)> static_heat_radius_fn_;
+
+    // Cached static-heat offsets (recomputed only when resolution/rmax changes).
+    struct StaticHeatOff
+    {
+      int dx, dy, dz;
+      float d_m;
+    };
+    mutable std::vector<StaticHeatOff> static_heat_off_;
+    mutable int static_heat_off_Rcell_{-1};
+    mutable float static_heat_off_res_{-1.0f};
+    mutable float static_heat_off_rmax_m_{-1.0f};
+
+    inline void ensureStaticHeatOffsets(int Rcell) const
+    {
+      if (static_heat_off_Rcell_ == Rcell &&
+          static_heat_off_res_ == (float)res_ &&
+          std::fabs(static_heat_off_rmax_m_ - static_heat_rmax_m_) < 1e-6f)
+      {
+        return;
+      }
+
+      static_heat_off_Rcell_ = Rcell;
+      static_heat_off_res_ = (float)res_;
+      static_heat_off_rmax_m_ = static_heat_rmax_m_;
+
+      static_heat_off_.clear();
+      static_heat_off_.reserve((2 * Rcell + 1) * (2 * Rcell + 1) * (2 * Rcell + 1));
+
+      for (int dx = -Rcell; dx <= Rcell; ++dx)
+      {
+        for (int dy = -Rcell; dy <= Rcell; ++dy)
+        {
+          for (int dz = -Rcell; dz <= Rcell; ++dz)
+          {
+            const float d_m = (float)res_ * std::sqrt(float(dx * dx + dy * dy + dz * dz));
+            if (d_m > static_heat_rmax_m_)
+              continue;
+            static_heat_off_.push_back({dx, dy, dz, d_m});
+          }
+        }
+      }
+    }
+
   protected:
     // Resolution
     decimal_t res_;
@@ -909,7 +1458,6 @@ namespace mighty
   };
 
   typedef MapUtil<3> VoxelMapUtil;
-
 } // namespace mighty
 
 #endif

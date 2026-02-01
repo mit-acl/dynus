@@ -81,14 +81,14 @@ void vectorOfVectors2MarkerArray(vec_Vecf<3> traj, visualization_msgs::msg::Mark
 }
 
 void pathLineDotsToMarkerArray(
-  const vec_Vecf<3>& traj,
-  visualization_msgs::msg::MarkerArray* m_array,
-  const std_msgs::msg::ColorRGBA& color,
-  double line_width,
-  double dot_diameter,
-  int base_id,
-  const std::string& frame_id,
-  double lifetime_sec)
+    const vec_Vecf<3> &traj,
+    visualization_msgs::msg::MarkerArray *m_array,
+    const std_msgs::msg::ColorRGBA &color,
+    double line_width,
+    double dot_diameter,
+    int base_id,
+    const std::string &frame_id,
+    double lifetime_sec)
 {
   if (!m_array || traj.empty())
     return;
@@ -1091,16 +1091,6 @@ vec_Vecf<3> getPointsBw2Spheres(vec_Vecf<3> path, double ra, double rb, Eigen::V
   return tmp;
 }
 
-vec_Vecf<3> copyJPS(vec_Vecf<3> path)
-{
-  vec_Vecf<3> tmp;
-  for (int i = 0; i < path.size(); i++)
-  {
-    tmp.push_back(path[i]);
-  }
-  return tmp;
-}
-
 visualization_msgs::msg::MarkerArray stateVector2ColoredMarkerArray(
     const std::vector<state> &data, int type, double max_value, const rclcpp::Time &stamp)
 {
@@ -1150,6 +1140,68 @@ visualization_msgs::msg::MarkerArray stateVector2ColoredMarkerArray(
     m.colors.push_back(c);
 
     p_last = p;
+  }
+
+  marker_array.markers.push_back(m);
+  return marker_array;
+}
+
+visualization_msgs::msg::MarkerArray stateVector2ColoredLineStripMarkerArray(
+    const std::vector<state> &data,
+    int id,
+    const std::string &ns,
+    double max_value,
+    const rclcpp::Time &stamp,
+    double line_width,
+    size_t max_points_vis)
+{
+  visualization_msgs::msg::MarkerArray marker_array;
+  if (data.size() < 2)
+    return marker_array;
+
+  visualization_msgs::msg::Marker m;
+  m.header.frame_id = "map";
+  m.header.stamp = stamp;
+  m.ns = ns;
+  m.id = id; // single persistent marker
+  m.action = visualization_msgs::msg::Marker::ADD;
+  m.type = visualization_msgs::msg::Marker::LINE_STRIP;
+  m.pose.orientation.w = 1.0;
+
+  // Line width
+  m.scale.x = line_width;
+
+  // Downsample to a fixed point budget (smooth + fast)
+  const size_t N = data.size();
+  const size_t step = std::max<size_t>(1, N / std::max<size_t>(2, max_points_vis));
+  const size_t visN = (N + step - 1) / step;
+
+  m.points.reserve(visN);
+  m.colors.reserve(visN);
+
+  for (size_t i = 0; i < N; i += step)
+  {
+    geometry_msgs::msg::Point p;
+    p.x = data[i].pos(0);
+    p.y = data[i].pos(1);
+    p.z = data[i].pos(2);
+    m.points.push_back(p);
+
+    const double v = data[i].vel.norm();
+    m.colors.push_back(getColorJet(v, 0.0, max_value));
+  }
+
+  // Ensure we include the very last point
+  if ((N - 1) % step != 0)
+  {
+    geometry_msgs::msg::Point p;
+    p.x = data.back().pos(0);
+    p.y = data.back().pos(1);
+    p.z = data.back().pos(2);
+    m.points.push_back(p);
+
+    const double v = data.back().vel.norm();
+    m.colors.push_back(getColorJet(v, 0.0, max_value));
   }
 
   marker_array.markers.push_back(m);

@@ -345,7 +345,10 @@ private:
         vec_Vecf<3> obst_pos_empty;
         const double traj_max_time = 0.0;
 
-        dgp_.updateMap(wdx_, wdy_, wdz_, map_center_, cloud, obst_pos_empty, traj_max_time);
+        // Create an empty point cloud for unknowns
+        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_unk(new pcl::PointCloud<pcl::PointXYZ>());
+
+        dgp_.updateMap(wdx_, wdy_, wdz_, map_center_, cloud, cloud_unk, obst_pos_empty, traj_max_time);
 
         // Also store occupied vector for decomp obstacle set
         dgp_.updateVecOccupied(pclToVec3f(*cloud));
@@ -424,9 +427,10 @@ private:
 
             double final_g = 0.0;
             vec_Vecf<3> path;
+            vec_Vecf<3> raw_path;
 
             const double tnow = now().seconds();
-            const bool ok = dgp_.solveDGP(start_, dir, goal, final_g, weight_, tnow, path);
+            const bool ok = dgp_.solveDGP(start_, dir, goal, final_g, weight_, tnow, path, raw_path);
 
             if (!ok || path.size() < 2)
             {
@@ -456,7 +460,7 @@ private:
 
             // Save
             const fs::path out = fs::path(output_dir_) /
-                     (output_prefix_ + "_g" + pad_int(gi, 3) + ".mysco2");
+                                 (output_prefix_ + "_g" + pad_int(gi, 3) + ".mysco2");
 
             saveCorridorBinary(out, start_, goal, path, seg_end_times, l_constraints);
 

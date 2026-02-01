@@ -74,7 +74,7 @@ RUN git clone https://github.com/Livox-SDK/Livox-SDK2.git
 ##########################################
 ### for decomp
 WORKDIR /home/kkondo/code/decomp_ws
-RUN . /opt/ros/humble/setup.sh && colcon build --packages-select decomp_util
+RUN . /opt/ros/humble/setup.sh && colcon build --packages-select decomp_util colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release
 RUN . /home/kkondo/code/decomp_ws/install/setup.sh && colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release
 
 ### for Livox-SDK2

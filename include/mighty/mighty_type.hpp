@@ -112,7 +112,8 @@ struct parameters
   double w_align;           // strength of alignment penalty (cells)
   double decay_len_cells;   // e-folding distance from the start (cells)
   double w_side;            // side (handedness) tie-break strength (cells)
-
+  double heat_weight;       // weight for heat in edge cost
+  
   // Optimiztion parameters
   double horizon;
   double dc;
@@ -132,9 +133,9 @@ struct parameters
                                       // factor_constant_step_size, ..., prev_successful_factor,
                                       // ... prev_successful_factor + k_radius]
   double dynamic_factor_initial_mean; // initial factor for the dynamic factor search (only used when use_dynamic_factor is true)
-  double factor_initial;            // initial factor for the trajectory time allocation
-  double factor_final;              // final factor for the trajectory time allocation
-  double factor_constant_step_size; // step size for the constant factor increase
+  double factor_initial = 1.0;            // initial factor for the trajectory time allocation
+  double factor_final = 5.0;              // final factor for the trajectory time allocation
+  double factor_constant_step_size = 0.1; // step size for the constant factor increase
   double obst_max_vel;        // maximum velocity of dynamic obstacles
   double max_gurobi_comp_time_sec; // maximum Gurobi computation time per replanning
   double jerk_smooth_weight; // weight for the jerk smoothness
@@ -142,17 +143,9 @@ struct parameters
   double goal_pull_time_buffer; // goal_pull_time = goal_pull_time_buffer * previous_replanning_time
   bool using_variable_elimination = true;
 
-  // L-BFGS parameters
-  double f_dec_coeff;     // allow larger Armijo steps
-  double cautious_factor; // always accept BFGS update
-  int past;               // number of past iterations to use
-  int max_linesearch;     // fewer backtracking tries
-  int max_iterations;     // allow more iterations
-  double g_epsilon;       // gradient norm threshold for convergence
-  double delta;           // stop once f-improvement is minimal
-
   // Dynamic obstacles parameters
   double traj_lifetime;
+  double dynamic_obstacle_base_inflation;
 
   // Dynamic k_value parameters
   int num_replanning_before_adapt;

@@ -45,11 +45,11 @@ public:
     void getFreeCells(vec_Vecf<3> &free_cells);
     void getOccupiedCellsForCvxDecomp(vec_Vecf<3> &occupied_cells, const vec_Vecf<3> &path, bool use_for_safe_path);
     void getDynamicOccupiedCellsForVis(vec_Vecf<3> &occupied_cells, vec_Vecf<3> &free_cells, vec_Vecf<3> &unknown_cells, double current_time);
-    void updateMap(double wdx, double wdy, double wdz, const Vec3f &center_map, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr, const vec_Vecf<3> &obst_pos, double traj_max_time);
+    void updateMap(double wdx, double wdy, double wdz, const Vec3f &center_map, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_unk, const vec_Vecf<3> &obst_pos, double traj_max_time);
     void freeStart(Vec3f &start_sent, double factor);
     void freeGoal(Vec3f &goal_sent, double factor);
     bool checkIfPointOccupied(const Vec3f &point);
-    bool solveDGP(const Vec3f &start_sent, const Vec3f &start_vel, const Vec3f &goal_sent, double &final_g, double weight, double current_time, vec_Vecf<3> &path);
+    bool solveDGP(const Vec3f &start_sent, const Vec3f &start_vel, const Vec3f &goal_sent, double &final_g, double weight, double current_time, vec_Vecf<3> &path, vec_Vecf<3> &raw_path);
     bool checkIfPathInFree(const vec_Vecf<3> &path, vec_Vecf<3> &free_path);
     void getComputationTime(double &global_planning_time, double &dgp_static_jps_time, double &dgp_check_path_time, double &dgp_dynamic_astar_time, double &dgp_recover_path_time);
     bool cvxEllipsoidDecomp(
@@ -60,6 +60,16 @@ public:
         const std::vector<double> &seg_end_times,
         std::vector<LinearConstraint3D> &l_constraints,
         vec_E<Polyhedron<3>> &poly_out);
+    bool cvxEllipsoidDecompTimeLayered(
+        EllipsoidDecomp3D &ellip,
+        const vec_Vecf<3> &path,
+        const vec_Vec3f &base_uo,
+        const vec_Vecf<3> &obst_pos,
+        const std::vector<double> &time_end_times,
+        std::vector<std::vector<LinearConstraint3D>> &l_constraints_by_time,
+        std::vector<vec_E<Polyhedron<3>>> &poly_out_by_time);
+    void setDynamicPredictedSamples(const std::vector<vec_Vecf<3>> &pred_samples,
+                                    const std::vector<float> &pred_times);
     void obstacle_to_vec(vec_Vec3f &pts, const vec_Vecf<3> &obst_pos, double traj_max_time);
     bool checkIfPointFree(const Vec3f &point) const;
     void updateReadMapUtil();
@@ -76,6 +86,15 @@ public:
     void getVecUnknownOccupied(vec_Vec3f &vec_uo);
     void updateVecUnknownOccupied(const vec_Vec3f &vec_uo);
     void insertVecOccupiedToVecUnknownOccupied();
+    std::shared_ptr<mighty::VoxelMapUtil> getMapUtilSharedPtr();
+
+    // Helper: construct Veci<3> from 3 ints.
+    static inline Veci<3> idxs_to_veci3(int x, int y, int z)
+    {
+        Veci<3> v;
+        v << x, y, z;
+        return v;
+    }
 
     std::shared_ptr<mighty::VoxelMapUtil> map_util_;
     std::shared_ptr<mighty::VoxelMapUtil> map_util_for_planning_;

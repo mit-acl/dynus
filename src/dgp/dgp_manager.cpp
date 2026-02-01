@@ -34,6 +34,76 @@ void DGPManager::setParameters(const parameters &par)
 
     // shared pointer to the map util for actual planning
     map_util_ = std::make_shared<mighty::VoxelMapUtil>(par.factor_dgp * par.res, par.x_min, par.x_max, par.y_min, par.y_max, par.z_min, par.z_max, par.inflation_dgp, par.obst_max_vel);
+
+    bool dynamic_obstacle_sphere_as_hard = par_.global_planner == "astar_heat" ? false : true;
+    bool dynamic_obstacle_sphere_as_soft = !dynamic_obstacle_sphere_as_hard;
+
+    // ---------------- Global-planner configuration: static hard, dynamic soft ----------------
+    // Do NOT write dynamic obstacles into occupancy as hard occupied spheres.
+    map_util_->setDynamicAsOccupied(dynamic_obstacle_sphere_as_hard);
+
+    // Enable dynamic heat map used by A* (global planner)
+    map_util_->setDynamicHeatEnabled(dynamic_obstacle_sphere_as_soft);
+
+    // Heat parameters (start with sane defaults; tune later from YAML if desired)
+    const float TUBE_GAMMA = (float)par_.obst_max_vel;                   // [m/s], tube radius growth
+    const float BASE_INFL = (float)par_.dynamic_obstacle_base_inflation; // [m] from YAML
+    const float HEAT_WEGIHT = (float)par_.heat_weight;                   // weight for heat in edge cost
+    map_util_->setDynamicHeatParams(
+        /*alpha0*/ 1.0f,
+        /*alpha1*/ 2.0f,
+        /*p*/ 2,
+        /*q*/ 2,
+        /*tau_w_ratio*/ 0.5f,
+        /*gamma*/ TUBE_GAMMA,
+        /*Hmax*/ 50.0f,
+        /*base_inflation_m*/ BASE_INFL);
+
+    // Weight in the planner edge cost: edge += w_heat * heat.
+    // This is in the same units as your A* grid step cost (cells). Tune as needed.
+    map_util_->setHeatWeight(HEAT_WEGIHT);
+
+    // ---------------- Global-planner configuration: static obstacle soft cost ----------------
+    // Enable static obstacle heat (halo) around occupied cells.
+    // NOTE: This uses the same heat_ array and the same heat weight (heat_weight) as dynamic/unknown.
+    map_util_->setStaticHeatEnabled(true);
+
+    // Static heat shape:
+    // - alpha: peak heat at obstacle boundary
+    // - p: falloff power
+    // - Hmax: cap
+    // - rmax_m: maximum radius to consider (also clamps your radius function output)
+    // - boundary_only=true keeps it fast
+    // - apply_on_unknown=false means halo is applied only on FREE space (recommended; unknown handled separately)
+    // - exclude_dynamic=true avoids double-counting the dynamic hard-blocked voxels
+    const float STATIC_RMAX = std::max(0.5f, 3.0f * float(par_.drone_radius)); // tune
+    map_util_->setStaticHeatParams(/*alpha=*/5.0f,
+                                   /*p=*/2,
+                                   /*Hmax=*/50.0f,
+                                   /*rmax_m=*/STATIC_RMAX,
+                                   /*boundary_only=*/true,
+                                   /*apply_on_unknown=*/false,
+                                   /*exclude_dynamic=*/true);
+
+    map_util_->setStaticHeatRadiusFunction(
+        [STATIC_RMAX](const Eigen::Vector3f&) { return STATIC_RMAX; },
+        STATIC_RMAX);
+}
+
+// ----------------------------------------------------------------------------
+
+void DGPManager::setDynamicPredictedSamples(const std::vector<vec_Vecf<3>> &pred_samples,
+                                            const std::vector<float> &pred_times)
+{
+    std::lock_guard<std::mutex> lock(mtx_map_util_);
+    if (map_util_)
+        map_util_->setDynamicPredictedSamples(pred_samples, pred_times);
+}
+
+std::shared_ptr<mighty::VoxelMapUtil> DGPManager::getMapUtilSharedPtr()
+{
+    std::lock_guard<std::mutex> lock(mtx_map_util_);
+    return map_util_;
 }
 
 void DGPManager::cleanUpPath(vec_Vecf<3> &path)
@@ -170,8 +240,14 @@ inline void collapseIntoLongSegments(const mighty::VoxelMapUtil &map,
     path_inout.swap(simplified);
 }
 
-bool DGPManager::solveDGP(const Vec3f &start_sent, const Vec3f &start_vel, const Vec3f &goal_sent, double &final_g, double weight, double current_time, vec_Vecf<3> &path)
+bool DGPManager::solveDGP(const Vec3f &start_sent, const Vec3f &start_vel, const Vec3f &goal_sent, double &final_g, double weight, double current_time, vec_Vecf<3> &path, vec_Vecf<3> &raw_path)
 {
+
+    {
+        std::lock_guard<std::mutex> lock(mtx_map_util_);
+        map_util_for_planning_ = std::make_shared<mighty::VoxelMapUtil>(*map_util_);
+    }
+
     // Set start and goal
     Eigen::Vector3d start(start_sent(0), start_sent(1), start_sent(2));
     Eigen::Vector3d goal(goal_sent(0), goal_sent(1), goal_sent(2));
@@ -193,6 +269,7 @@ bool DGPManager::solveDGP(const Vec3f &start_sent, const Vec3f &start_vel, const
     if (result)
     {
         path = planner_ptr_->getPath();
+        raw_path = planner_ptr_->getRawPath();
     }
     else
     {
@@ -200,9 +277,9 @@ bool DGPManager::solveDGP(const Vec3f &start_sent, const Vec3f &start_vel, const
     }
 
     // Clean up path
-    planner_ptr_->cleanUpPath(path);
+    // planner_ptr_->cleanUpPath(path);
 
-    // // Add more vertices if necessary
+    // Add more vertices if necessary
     mighty_utils::createMoreVertexes(path, max_dist_vertexes_);
 
     return result;
@@ -421,14 +498,262 @@ bool DGPManager::cvxEllipsoidDecomp(
 
 // ----------------------------------------------------------------------------
 
+bool DGPManager::cvxEllipsoidDecompTimeLayered(
+    EllipsoidDecomp3D &ellip,
+    const vec_Vecf<3> &path,                                             // global path (size = P+1)
+    const vec_Vec3f &base_uo,                                            // static+unknown occupied snapshot
+    const vec_Vecf<3> &obst_pos,                                         // dynamic obstacle positions
+    const std::vector<double> &time_end_times,                           // size = N (local segment time layers)
+    std::vector<std::vector<LinearConstraint3D>> &l_constraints_by_time, // [N][P]
+    std::vector<vec_E<Polyhedron<3>>> &poly_out_by_time                  // [N][P]
+)
+{
+    if (path.size() < 2)
+        return false;
+
+    const size_t P = path.size() - 1;       // number of spatial segments
+    const size_t N = time_end_times.size(); // number of time layers
+
+    if (P == 0 || N == 0)
+        return false;
+
+    // Configure ellipsoid-decomp settings on the per-worker instance (same as single-layer)
+    ellip.set_local_bbox(Vec3f(local_box_size_[0], local_box_size_[1], local_box_size_[2]));
+    ellip.set_z_min_and_max(par_.z_min, par_.z_max);
+    ellip.set_inflate_distance(drone_radius_);
+
+    // Allocate outputs
+    l_constraints_by_time.clear();
+    l_constraints_by_time.resize(N);
+    for (size_t n = 0; n < N; ++n)
+        l_constraints_by_time[n].resize(P);
+
+    poly_out_by_time.clear();
+    poly_out_by_time.resize(N);
+    for (size_t n = 0; n < N; ++n)
+        poly_out_by_time[n].resize(P);
+
+    // Precompute per-time-layer obstacle sets (base_uo + inflated dynamic obstacle points)
+    // This avoids calling obstacle_to_vec inside the inner P-loop.
+    std::vector<vec_Vec3f> uo_by_time;
+    uo_by_time.resize(N);
+
+    for (size_t n = 0; n < N; ++n)
+    {
+        const double tmax = time_end_times[n];
+        if (!(tmax > 0.0))
+        {
+            std::cout << "cvxEllipsoidDecompTimeLayered: non-positive time_end_times[" << n
+                      << "]=" << tmax << std::endl;
+            return false;
+        }
+
+        uo_by_time[n] = base_uo; // copy snapshot
+        // MyTimer timer(true);
+        obstacle_to_vec(uo_by_time[n], obst_pos, tmax);
+        // std::cout << "obstacle_to_vec: " << timer.getElapsedMicros() / 1000.0 << " ms" << std::endl;
+    }
+
+    vec_Vecf<3> seg_path;
+    seg_path.reserve(2);
+
+    for (size_t n = 0; n < N; ++n)
+    {
+        // Set per-time-layer obstacle set once
+        ellip.set_obs(uo_by_time[n]);
+
+        for (size_t p = 0; p < P; ++p)
+        {
+            seg_path.clear();
+            seg_path.push_back(path[p]);
+            seg_path.push_back(path[p + 1]);
+
+            bool ok = true;
+            ellip.dilate(seg_path, ok);
+            if (!ok)
+            {
+                std::cout << "cvxEllipsoidDecompTimeLayered: dilate failed at (n=" << n
+                          << ", p=" << p << ")" << std::endl;
+                return false;
+            }
+
+            if (use_shrinked_box_)
+                ellip.shrink_polyhedrons(shrinked_box_size_);
+
+            auto polys = ellip.get_polyhedrons();
+            if (polys.size() != 1)
+            {
+                std::cout << "cvxEllipsoidDecompTimeLayered: expected 1 polyhedron at (n=" << n
+                          << ", p=" << p << "), got " << polys.size() << std::endl;
+                return false;
+            }
+
+            poly_out_by_time[n][p] = polys[0];
+
+            const auto pt_inside = (path[p] + path[p + 1]) / 2.0;
+            LinearConstraint3D cs(pt_inside,
+                                  poly_out_by_time[n][p].hyperplanes(),
+                                  poly_out_by_time[n][p]);
+
+            if (cs.A_.hasNaN() || cs.b_.hasNaN())
+            {
+                std::cout << "cvxEllipsoidDecompTimeLayered: A_ or b_ has NaN at (n=" << n
+                          << ", p=" << p << ")" << std::endl;
+                return false;
+            }
+
+            l_constraints_by_time[n][p] = cs;
+        }
+    }
+
+    return true;
+}
+
+// ----------------------------------------------------------------------------
+
+namespace
+{
+    struct Offset3i
+    {
+        int ix{0}, iy{0}, iz{0};
+        int n2{0}; // ix^2 + iy^2 + iz^2
+    };
+
+    struct VoxelKey
+    {
+        int x{0}, y{0}, z{0};
+        bool operator==(const VoxelKey &o) const noexcept
+        {
+            return x == o.x && y == o.y && z == o.z;
+        }
+    };
+
+    struct VoxelKeyHash
+    {
+        std::size_t operator()(const VoxelKey &k) const noexcept
+        {
+            // 64-bit mix (cheap, decent distribution)
+            std::size_t h = static_cast<std::size_t>(k.x);
+            h = h * 1315423911u + static_cast<std::size_t>(k.y);
+            h = h * 1315423911u + static_cast<std::size_t>(k.z);
+            return h;
+        }
+    };
+
+    inline const std::vector<Offset3i> &sphereOffsetsCached(int m)
+    {
+        static std::mutex mtx;
+        static std::unordered_map<int, std::vector<Offset3i>> cache;
+
+        std::lock_guard<std::mutex> lk(mtx);
+        auto it = cache.find(m);
+        if (it != cache.end())
+            return it->second;
+
+        std::vector<Offset3i> offs;
+        offs.reserve(static_cast<std::size_t>(2 * m + 1) *
+                     static_cast<std::size_t>(2 * m + 1) *
+                     static_cast<std::size_t>(2 * m + 1));
+
+        const int m2 = m * m;
+        for (int ix = -m; ix <= m; ++ix)
+        {
+            for (int iy = -m; iy <= m; ++iy)
+            {
+                for (int iz = -m; iz <= m; ++iz)
+                {
+                    const int n2 = ix * ix + iy * iy + iz * iz;
+                    if (n2 > m2)
+                        continue;
+                    offs.push_back(Offset3i{ix, iy, iz, n2});
+                }
+            }
+        }
+
+        auto [it2, _] = cache.emplace(m, std::move(offs));
+        return it2->second;
+    }
+
+    inline bool isUnknownVoxel(const mighty::VoxelMapUtil &map, const Veci<3> &idx)
+    {
+        // Unknown := neither free nor occupied.
+        return (!map.isFree(idx)) && (!map.isOccupied(idx));
+    }
+
+} // namespace
+
+// ----------------------------------------------------------------------------
+
+// void DGPManager::obstacle_to_vec(
+//     vec_Vec3f &pts,
+//     const vec_Vecf<3> &obst_pos,
+//     double traj_max_time)
+// {
+//     // Safety checks
+//     if (obst_pos.empty())
+//         return;
+
+//     const double res = par_.factor_dgp * par_.res;
+//     const double r = par_.obst_max_vel * traj_max_time; // [m]
+
+//     if (!(r > 0.0) || !(res > 0.0))
+//         return;
+
+//     const double r2 = r * r;
+
+//     // Grid half-width in cells for sampling inside the sphere
+//     const int m = static_cast<int>(std::ceil(r / res));
+
+//     // Reserve to reduce reallocations (rough upper bound per obstacle)
+//     // Note: many points will be rejected by the sphere test, but reserve is still helpful.
+//     const size_t per_obst_upper = static_cast<size_t>(2 * m + 1) *
+//                                   static_cast<size_t>(2 * m + 1) *
+//                                   static_cast<size_t>(2 * m + 1);
+//     pts.reserve(pts.size() + per_obst_upper * obst_pos.size());
+
+//     for (const auto &O : obst_pos)
+//     {
+//         const double ox = O.x();
+//         const double oy = O.y();
+//         const double oz = O.z();
+
+//         for (int ix = -m; ix <= m; ++ix)
+//         {
+//             const double dx = ix * res;
+//             const double x = ox + dx;
+
+//             for (int iy = -m; iy <= m; ++iy)
+//             {
+//                 const double dy = iy * res;
+//                 const double y = oy + dy;
+
+//                 for (int iz = -m; iz <= m; ++iz)
+//                 {
+//                     const double dz = iz * res;
+//                     if (dx * dx + dy * dy + dz * dz > r2)
+//                         continue;
+
+//                     const double z = oz + dz;
+
+//                     Vec3f p;
+//                     p << static_cast<float>(x),
+//                         static_cast<float>(y),
+//                         static_cast<float>(z);
+//                     pts.emplace_back(p);
+//                 }
+//             }
+//         }
+//     }
+// }
+
 void DGPManager::obstacle_to_vec(
     vec_Vec3f &pts,
     const vec_Vecf<3> &obst_pos,
     double traj_max_time)
 {
-    // Safety checks
-    if (obst_pos.empty())
-        return;
+    // Inflate radius around unknown boundary and dynamic obstacles.
+    // Unknown boundary is extracted from the *current contents* of pts (assumed to include unknown voxels).
+    // Dynamic obstacles are provided separately in obst_pos.
 
     const double res = par_.factor_dgp * par_.res;
     const double r = par_.obst_max_vel * traj_max_time; // [m]
@@ -436,17 +761,386 @@ void DGPManager::obstacle_to_vec(
     if (!(r > 0.0) || !(res > 0.0))
         return;
 
-    const double r2 = r * r;
-
-    // Grid half-width in cells for sampling inside the sphere
+    // Grid half-width in cells
     const int m = static_cast<int>(std::ceil(r / res));
+    if (m <= 0)
+        return;
 
-    // Reserve to reduce reallocations (rough upper bound per obstacle)
-    // Note: many points will be rejected by the sphere test, but reserve is still helpful.
-    const size_t per_obst_upper = static_cast<size_t>(2 * m + 1) *
-                                  static_cast<size_t>(2 * m + 1) *
-                                  static_cast<size_t>(2 * m + 1);
-    pts.reserve(pts.size() + per_obst_upper * obst_pos.size());
+    // ------------------------------------------------------------------------
+    // Offsets: pre-filter to the true radius to remove the hot-loop branch.
+    // sphereOffsetsCached(m) already gives offsets within m cells, but r can be slightly smaller.
+    // ------------------------------------------------------------------------
+    const auto &offs_all = sphereOffsetsCached(m);
+
+    const double r2_over_res2_d = (r * r) / (res * res);
+    int max_n2 = static_cast<int>(std::floor(r2_over_res2_d + 1e-9));
+    const int m2 = m * m;
+    if (max_n2 > m2)
+        max_n2 = m2;
+    if (max_n2 < 0)
+        return;
+
+    std::vector<Offset3i> offs_r;
+    offs_r.reserve(offs_all.size());
+    for (const auto &o : offs_all)
+    {
+        if (o.n2 <= max_n2)
+            offs_r.push_back(o);
+    }
+    if (offs_r.empty())
+        return;
+
+    // ------------------------------------------------------------------------
+    // (A) Inflate unknown space efficiently:
+    //     - classify unknown voxels among pts[0:base_sz) using map_util_for_planning_
+    //     - extract unknown boundary voxels (6-neighborhood)
+    //     - inflate only the boundary voxels
+    //
+    // Fast path: dense local voxel window (no hashing) if the unknown AABB is reasonable.
+    // Fallback: single unordered_map (still faster than set+map+set).
+    // ------------------------------------------------------------------------
+    const std::size_t base_sz = pts.size();
+    if (base_sz > 0)
+    {
+        // Collect unknown voxel indices (+ representative point) in one pass.
+        // We need reps to preserve the same world-frame anchoring as your original (c + offset*res).
+        std::vector<Veci<3>> unk_idxs;
+        std::vector<Vec3f> unk_reps;
+        unk_idxs.reserve(base_sz / 2);
+        unk_reps.reserve(base_sz / 2);
+
+        bool have_map = static_cast<bool>(map_util_for_planning_);
+
+        // Track AABB in voxel index space for dense-window decision
+        bool aabb_init = false;
+        int min_x = 0, min_y = 0, min_z = 0, max_x = 0, max_y = 0, max_z = 0;
+
+        if (have_map)
+        {
+            for (std::size_t i = 0; i < base_sz; ++i)
+            {
+                const Vec3f &p = pts[i];
+                const Veci<3> idx = map_util_for_planning_->floatToInt(p);
+                if (!isUnknownVoxel(*map_util_for_planning_, idx))
+                    continue;
+
+                unk_idxs.push_back(idx);
+                unk_reps.push_back(p);
+
+                if (!aabb_init)
+                {
+                    aabb_init = true;
+                    min_x = max_x = idx(0);
+                    min_y = max_y = idx(1);
+                    min_z = max_z = idx(2);
+                }
+                else
+                {
+                    min_x = std::min(min_x, idx(0));
+                    max_x = std::max(max_x, idx(0));
+                    min_y = std::min(min_y, idx(1));
+                    max_y = std::max(max_y, idx(1));
+                    min_z = std::min(min_z, idx(2));
+                    max_z = std::max(max_z, idx(2));
+                }
+            }
+        }
+        else
+        {
+            // Fallback: treat everything in pts as "unknown" and voxelize by rounding in res-sized grid.
+            // This is best-effort; prefer map_util_for_planning_ if available.
+            for (std::size_t i = 0; i < base_sz; ++i)
+            {
+                const Vec3f &p = pts[i];
+                Veci<3> idx;
+                idx << static_cast<int>(std::llround(p.x() / res)),
+                    static_cast<int>(std::llround(p.y() / res)),
+                    static_cast<int>(std::llround(p.z() / res));
+
+                unk_idxs.push_back(idx);
+                unk_reps.push_back(p);
+
+                if (!aabb_init)
+                {
+                    aabb_init = true;
+                    min_x = max_x = idx(0);
+                    min_y = max_y = idx(1);
+                    min_z = max_z = idx(2);
+                }
+                else
+                {
+                    min_x = std::min(min_x, idx(0));
+                    max_x = std::max(max_x, idx(0));
+                    min_y = std::min(min_y, idx(1));
+                    max_y = std::max(max_y, idx(1));
+                    min_z = std::min(min_z, idx(2));
+                    max_z = std::max(max_z, idx(2));
+                }
+            }
+        }
+
+        if (!unk_idxs.empty())
+        {
+            // Dense-window thresholds (tune as needed).
+            // These are chosen to avoid pathological allocations while covering typical local-window maps.
+            constexpr std::size_t kMaxDenseCells = 2'000'000;     // ~2 MB for 1-byte mask
+            constexpr std::size_t kMaxDenseInflCells = 8'000'000; // inflated window mask
+
+            const int dx = (max_x - min_x + 1);
+            const int dy = (max_y - min_y + 1);
+            const int dz = (max_z - min_z + 1);
+
+            auto safeMul3 = [](std::size_t a, std::size_t b, std::size_t c) -> std::size_t
+            {
+                // conservative overflow guard
+                if (a == 0 || b == 0 || c == 0)
+                    return 0;
+                if (a > (std::numeric_limits<std::size_t>::max() / b))
+                    return std::numeric_limits<std::size_t>::max();
+                std::size_t ab = a * b;
+                if (ab > (std::numeric_limits<std::size_t>::max() / c))
+                    return std::numeric_limits<std::size_t>::max();
+                return ab * c;
+            };
+
+            const std::size_t vol = safeMul3(static_cast<std::size_t>(dx),
+                                             static_cast<std::size_t>(dy),
+                                             static_cast<std::size_t>(dz));
+
+            const int dx2 = dx + 2 * m;
+            const int dy2 = dy + 2 * m;
+            const int dz2 = dz + 2 * m;
+            const std::size_t vol2 = safeMul3(static_cast<std::size_t>(dx2),
+                                              static_cast<std::size_t>(dy2),
+                                              static_cast<std::size_t>(dz2));
+
+            const bool use_dense = (vol > 0 && vol <= kMaxDenseCells) &&
+                                   (vol2 > 0 && vol2 <= kMaxDenseInflCells) &&
+                                   (dx > 0 && dy > 0 && dz > 0) &&
+                                   (dx2 > 0 && dy2 > 0 && dz2 > 0);
+
+            if (use_dense)
+            {
+                // Dense masks
+                std::vector<unsigned char> unk_mask(vol, 0);
+                std::vector<unsigned char> infl_mask(vol2, 0);
+
+                // Representative point per unique unknown voxel (stored as SoA for speed / alignment safety)
+                std::vector<float> repx(vol, 0.0f), repy(vol, 0.0f), repz(vol, 0.0f);
+
+                auto lin = [dx, dy](int x, int y, int z) -> std::size_t
+                {
+                    return static_cast<std::size_t>(x) +
+                           static_cast<std::size_t>(dx) * (static_cast<std::size_t>(y) +
+                                                           static_cast<std::size_t>(dy) * static_cast<std::size_t>(z));
+                };
+
+                auto lin2 = [dx2, dy2](int x, int y, int z) -> std::size_t
+                {
+                    return static_cast<std::size_t>(x) +
+                           static_cast<std::size_t>(dx2) * (static_cast<std::size_t>(y) +
+                                                            static_cast<std::size_t>(dy2) * static_cast<std::size_t>(z));
+                };
+
+                // Unique unknown voxels list in window coordinates [0..dx-1], etc.
+                std::vector<Veci<3>> uniq;
+                uniq.reserve(std::min<std::size_t>(unk_idxs.size(), vol));
+
+                for (std::size_t i = 0; i < unk_idxs.size(); ++i)
+                {
+                    const auto &idx = unk_idxs[i];
+                    const int x = idx(0) - min_x;
+                    const int y = idx(1) - min_y;
+                    const int z = idx(2) - min_z;
+
+                    if (x < 0 || x >= dx || y < 0 || y >= dy || z < 0 || z >= dz)
+                        continue;
+
+                    const std::size_t L = lin(x, y, z);
+                    if (!unk_mask[L])
+                    {
+                        unk_mask[L] = 1;
+                        uniq.push_back(idxs_to_veci3(x, y, z)); // if you don't have this helper, see note below
+
+                        // store representative world-frame point for this voxel
+                        repx[L] = unk_reps[i].x();
+                        repy[L] = unk_reps[i].y();
+                        repz[L] = unk_reps[i].z();
+                    }
+                }
+
+                if (!uniq.empty())
+                {
+                    // Boundary voxels
+                    std::vector<Veci<3>> boundary;
+                    boundary.reserve(uniq.size() / 2);
+
+                    for (const auto &uvw : uniq)
+                    {
+                        const int x = uvw(0), y = uvw(1), z = uvw(2);
+
+                        // If any 6-neighbor is missing, it's boundary.
+                        bool is_b = false;
+
+                        // neighbor checks with bounds
+                        if (x + 1 >= dx || !unk_mask[lin(x + 1, y, z)])
+                            is_b = true;
+                        else if (x - 1 < 0 || !unk_mask[lin(x - 1, y, z)])
+                            is_b = true;
+                        else if (y + 1 >= dy || !unk_mask[lin(x, y + 1, z)])
+                            is_b = true;
+                        else if (y - 1 < 0 || !unk_mask[lin(x, y - 1, z)])
+                            is_b = true;
+                        else if (z + 1 >= dz || !unk_mask[lin(x, y, z + 1)])
+                            is_b = true;
+                        else if (z - 1 < 0 || !unk_mask[lin(x, y, z - 1)])
+                            is_b = true;
+
+                        if (is_b)
+                            boundary.push_back(uvw);
+                    }
+
+                    if (!boundary.empty())
+                    {
+                        // Reserve a reasonable amount to reduce reallocations.
+                        // Dedup happens via infl_mask, so output size is bounded by vol2.
+                        pts.reserve(pts.size() + std::min<std::size_t>(boundary.size() * offs_r.size(), vol2));
+
+                        for (const auto &uvw : boundary)
+                        {
+                            const int bx = uvw(0);
+                            const int by = uvw(1);
+                            const int bz = uvw(2);
+
+                            const std::size_t Lb = lin(bx, by, bz);
+                            const float cx = repx[Lb];
+                            const float cy = repy[Lb];
+                            const float cz = repz[Lb];
+
+                            // Inflate in the expanded window with margin m
+                            const int base_x2 = bx + m;
+                            const int base_y2 = by + m;
+                            const int base_z2 = bz + m;
+
+                            for (const auto &o : offs_r)
+                            {
+                                const int nx2 = base_x2 + o.ix;
+                                const int ny2 = base_y2 + o.iy;
+                                const int nz2 = base_z2 + o.iz;
+
+                                // bounds in inflated window (should hold, but keep safe)
+                                if (nx2 < 0 || nx2 >= dx2 || ny2 < 0 || ny2 >= dy2 || nz2 < 0 || nz2 >= dz2)
+                                    continue;
+
+                                const std::size_t Li = lin2(nx2, ny2, nz2);
+                                if (infl_mask[Li])
+                                    continue;
+                                infl_mask[Li] = 1;
+
+                                Vec3f q;
+                                q << (cx + static_cast<float>(o.ix * res)),
+                                    (cy + static_cast<float>(o.iy * res)),
+                                    (cz + static_cast<float>(o.iz * res));
+                                pts.emplace_back(q);
+                            }
+                        }
+                    }
+                }
+            }
+            else
+            {
+                // -----------------------
+                // Fallback: hashing path
+                // -----------------------
+                std::unordered_map<VoxelKey, Vec3f, VoxelKeyHash> unk_rep;
+                unk_rep.reserve(unk_idxs.size());
+                unk_rep.max_load_factor(0.7f);
+
+                for (std::size_t i = 0; i < unk_idxs.size(); ++i)
+                {
+                    const auto &idx = unk_idxs[i];
+                    VoxelKey k{idx(0), idx(1), idx(2)};
+                    // keep first representative
+                    if (unk_rep.find(k) == unk_rep.end())
+                        unk_rep.emplace(k, unk_reps[i]);
+                }
+
+                if (!unk_rep.empty())
+                {
+                    std::vector<VoxelKey> boundary;
+                    boundary.reserve(unk_rep.size() / 2);
+
+                    for (const auto &kv : unk_rep)
+                    {
+                        const VoxelKey &k = kv.first;
+
+                        const VoxelKey nbrs[6] = {
+                            VoxelKey{k.x + 1, k.y, k.z},
+                            VoxelKey{k.x - 1, k.y, k.z},
+                            VoxelKey{k.x, k.y + 1, k.z},
+                            VoxelKey{k.x, k.y - 1, k.z},
+                            VoxelKey{k.x, k.y, k.z + 1},
+                            VoxelKey{k.x, k.y, k.z - 1},
+                        };
+
+                        bool is_b = false;
+                        for (const auto &nb : nbrs)
+                        {
+                            if (unk_rep.find(nb) == unk_rep.end())
+                            {
+                                is_b = true;
+                                break;
+                            }
+                        }
+                        if (is_b)
+                            boundary.push_back(k);
+                    }
+
+                    if (!boundary.empty())
+                    {
+                        // Dedup inflated voxels (still hashing here)
+                        std::unordered_set<VoxelKey, VoxelKeyHash> added;
+                        added.max_load_factor(0.7f);
+                        // Reserve conservatively; avoid huge allocations
+                        added.reserve(std::min<std::size_t>(boundary.size() * 32, 2'000'000ULL));
+
+                        pts.reserve(pts.size() + boundary.size() * std::min<std::size_t>(offs_r.size(), 128));
+
+                        for (const auto &bk : boundary)
+                        {
+                            auto itp = unk_rep.find(bk);
+                            if (itp == unk_rep.end())
+                                continue;
+
+                            const Vec3f &c = itp->second;
+
+                            for (const auto &o : offs_r)
+                            {
+                                const VoxelKey nk{bk.x + o.ix, bk.y + o.iy, bk.z + o.iz};
+                                if (!added.insert(nk).second)
+                                    continue;
+
+                                Vec3f q;
+                                q << (c.x() + static_cast<float>(o.ix * res)),
+                                    (c.y() + static_cast<float>(o.iy * res)),
+                                    (c.z() + static_cast<float>(o.iz * res));
+                                pts.emplace_back(q);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // (B) Inflate dynamic obstacles (branch-free, using offs_r)
+    // ------------------------------------------------------------------------
+    if (obst_pos.empty())
+        return;
+
+    // Reserve to reduce reallocations
+    pts.reserve(pts.size() + offs_r.size() * obst_pos.size());
 
     for (const auto &O : obst_pos)
     {
@@ -454,49 +1148,30 @@ void DGPManager::obstacle_to_vec(
         const double oy = O.y();
         const double oz = O.z();
 
-        for (int ix = -m; ix <= m; ++ix)
+        for (const auto &o : offs_r)
         {
-            const double dx = ix * res;
-            const double x = ox + dx;
-
-            for (int iy = -m; iy <= m; ++iy)
-            {
-                const double dy = iy * res;
-                const double y = oy + dy;
-
-                for (int iz = -m; iz <= m; ++iz)
-                {
-                    const double dz = iz * res;
-                    if (dx * dx + dy * dy + dz * dz > r2)
-                        continue;
-
-                    const double z = oz + dz;
-
-                    Vec3f p;
-                    p << static_cast<float>(x),
-                        static_cast<float>(y),
-                        static_cast<float>(z);
-                    pts.emplace_back(p);
-                }
-            }
+            Vec3f p;
+            p << static_cast<float>(ox + o.ix * res),
+                static_cast<float>(oy + o.iy * res),
+                static_cast<float>(oz + o.iz * res);
+            pts.emplace_back(p);
         }
     }
 }
 
-void DGPManager::updateMap(double wdx, double wdy, double wdz, const Vec3f &center_map, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr, const vec_Vecf<3> &obst_pos, double traj_max_time)
+void DGPManager::updateMap(double wdx, double wdy, double wdz, const Vec3f &center_map, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_unk, const vec_Vecf<3> &obst_pos, double traj_max_time)
 {
 
     // Get the current time to see the computation time for readmap
     auto start_time = std::chrono::high_resolution_clock::now();
 
     mtx_map_util_.lock();
-    map_util_->readMap(pclptr, (int)wdx / res_, (int)wdy / res_, (int)wdz / res_, center_map, par_.z_min, par_.z_max, par_.inflation_dgp, obst_pos, traj_max_time);
+    map_util_->readMap(pclptr, pclptr_unk, (int)wdx / res_, (int)wdy / res_, (int)wdz / res_, center_map, par_.z_min, par_.z_max, par_.inflation_dgp, obst_pos, traj_max_time);
     mtx_map_util_.unlock();
 
     // Get the elapsed time for reading the map
     auto end_time = std::chrono::high_resolution_clock::now();
     auto elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
-    // std::cout << "Map read time: " << elapsed_time << " ms" << std::endl;
 
     if (!map_initialized_)
     {

@@ -60,15 +60,15 @@ def generate_launch_description():
         odometry_topic = LaunchConfiguration('odometry_topic').perform(context)
 
         # The path to the urdf file
-        urdf_path=PathJoinSubstitution([FindPackageShare('mighty'), 'urdf', 'quadrotor.urdf.xacro'])
-        parameters_path=os.path.join(get_package_share_directory('mighty'), 'config', 'mighty.yaml')
+        urdf_path=PathJoinSubstitution([FindPackageShare('dynus'), 'urdf', 'quadrotor.urdf.xacro'])
+        parameters_path=os.path.join(get_package_share_directory('dynus'), 'config', 'dynus.yaml')
 
         # Get the dict of parameters from the yaml file
         with open(parameters_path, 'r') as file:
             parameters = yaml.safe_load(file)
 
         # Extract specific node parameters
-        parameters = parameters['mighty_node']['ros__parameters']
+        parameters = parameters['dynus_node']['ros__parameters']
     
         # Update parameters for benchmarking
         parameters['file_path'] = data_file
@@ -77,10 +77,10 @@ def generate_launch_description():
             parameters['global_planner'] = global_planner
    
         # Create a Dynus node
-        mighty_node = Node(
-                    package='mighty',
-                    executable='mighty',
-                    name='mighty_node',
+        dynus_node = Node(
+                    package='dynus',
+                    executable='dynus',
+                    name='dynus_node',
                     namespace=namespace,
                     output='screen',
                     emulate_tty=True,
@@ -120,7 +120,7 @@ def generate_launch_description():
         
         # Create an obstacle tracker node
         obstacle_tracker_node = Node(
-            package='mighty',
+            package='dynus',
             executable='obstacle_tracker_node',
             namespace=namespace,
             name='obstacle_tracker_node',
@@ -133,7 +133,7 @@ def generate_launch_description():
 
         # Convert pose and twist (from Vicon) to state
         pose_twist_to_state_node = Node(
-            package='mighty',
+            package='dynus',
             executable='convert_vicon_to_state',
             name='convert_vicon_to_state',
             namespace=namespace,
@@ -152,7 +152,7 @@ def generate_launch_description():
         # send_state_to_gazebo = False if use_ground_robot else True
         # Create a fake sim node
         fake_sim_node = Node(
-                    package='mighty',
+                    package='dynus',
                     executable='fake_sim',
                     name='fake_sim',
                     namespace=namespace,
@@ -199,11 +199,11 @@ def generate_launch_description():
         )
 
         # Return launch description
-        nodes_to_start = [mighty_node]
+        nodes_to_start = [dynus_node]
         nodes_to_start.append(pose_twist_to_state_node) if use_hardware else None
         nodes_to_start.append(fake_sim_node) if not use_hardware else None
-        nodes_to_start.append(robot_state_publisher_node) if parameters['sim_env'] == 'gazebo' else None
-        nodes_to_start.append(spawn_entity_node) if parameters['sim_env'] == 'gazebo' else None
+        nodes_to_start.append(robot_state_publisher_node) # if parameters['sim_env'] == 'gazebo' else None
+        nodes_to_start.append(spawn_entity_node) # if parameters['sim_env'] == 'gazebo' else None
         nodes_to_start.append(pcl_render_node) if parameters['sim_env'] == 'fake_sim' else None
         nodes_to_start.append(obstacle_tracker_node) if use_obstacle_tracker else None
 

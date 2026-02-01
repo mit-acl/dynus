@@ -6,8 +6,8 @@
 # See LICENSE file for the license information
 # --------------------------------------------------------------------------
 
-# This is the configuration file for the mighty package
-mighty_node:
+# This is the configuration file for the dynus package
+dynus_node:
 
     ros__parameters:
 
@@ -65,9 +65,9 @@ mighty_node:
         # Optimization parameters
         horizon: 15.0                               # [m] Horizon
         dc: 0.01                                    # [s] Duration for the interpolation=Value of the timer pubGoal
-        v_max: 1.0                                  # [m/s]  max velocity
-        a_max: 2.0                                 # [m/s2] max acceleration
-        j_max: 3.0                                 # [m/s3] max jerk
+        v_max: 5.0                                  # [m/s]  max velocity
+        a_max: 10.0                                 # [m/s2] max acceleration
+        j_max: 50.0                                 # [m/s3] max jerk
         drone_bbox: [0.2, 0.2, 0.2]                 # [m] Size of the bounding box for the obstacles
         goal_radius: 0.5                           # [m] Radius of the goal
         goal_seen_radius: 2.0                       # [m] Radius of the goal that the drone can see and stop replanning. Note that if this number is too small, the trajectory planning becomes extremely difficult.
@@ -109,7 +109,7 @@ mighty_node:
         
         # Debug flags
         global_planner_verbose: false           # debug output
-        debug_verbose: false                    # [-] Verbose the debug information
+        debug_verbose: true                    # [-] Verbose the debug information
         verbose_computation_time: false         # [-] Verbose the computation time
 
         # Map parameters

@@ -69,7 +69,7 @@ def generate_launch_description():
 
         # Choose the world file based on the provided environment.
         world_file = world_mapping.get(env_value, 'easy_forest.world')
-        world_path = PathJoinSubstitution([FindPackageShare('mighty'), 'worlds', world_file])
+        world_path = PathJoinSubstitution([FindPackageShare('dynus'), 'worlds', world_file])
 
         use_rviz = convert_str_to_bool(LaunchConfiguration('use_rviz').perform(context))
         use_dyn_obs = convert_str_to_bool(LaunchConfiguration('use_dyn_obs').perform(context))
@@ -77,9 +77,9 @@ def generate_launch_description():
 
         # Create a rviz node
         rviz_config_file = os.path.join(
-            get_package_share_directory('mighty'),
+            get_package_share_directory('dynus'),
             'rviz',
-            'mighty.rviz'
+            'dynus.rviz'
         )
 
         rviz_node = Node(
@@ -102,12 +102,12 @@ def generate_launch_description():
 
         # Number of dynamic obstacles
         # num_dyn_obstacles = 100 if env_value in ["empty_wo_ground"] else 50
-        num_dyn_obstacles = 10
+        num_dyn_obstacles = 40
 
         # Dynamic obstacles
         dynamic_obstacles_launch = IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
-                PathJoinSubstitution([FindPackageShare('mighty'), 'launch', 'dyn_obstacles.launch.py'])
+                PathJoinSubstitution([FindPackageShare('dynus'), 'launch', 'dyn_obstacles.launch.py'])
             ),
             launch_arguments={"num_obstacles": f"{num_dyn_obstacles}",
                                 "publish_rate_hz": "50.0",

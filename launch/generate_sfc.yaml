@@ -9,9 +9,9 @@ windows:
       # base station
       # - shell_command:
       - shell_command:
-        - ros2 launch mighty simulator.launch.py
+        - ros2 launch dynus simulator.launch.py
 
       # run SFC generator
       - shell_command:
         - sleep 5
-        - ros2 run mighty corridor_generator_node --ros-args -p max_dist_vertexes:=6.0
+        - ros2 run dynus corridor_generator_node --ros-args -p max_dist_vertexes:=6.0

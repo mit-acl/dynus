@@ -12,7 +12,7 @@ def generate_launch_description():
     gdb_prefix = 'xterm -e gdb -q -ex run --args'
 
     node = Node(
-        package='mighty',
+        package='dynus',
         executable='local_traj_benchmark_node',
         name='local_traj_benchmark_node',
         output='screen',

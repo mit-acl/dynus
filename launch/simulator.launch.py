@@ -44,7 +44,7 @@ def generate_launch_description():
     use_mockamap_arg = DeclareLaunchArgument('use_mockamap', default_value=use_mockamap, description='Choose map type, map_generator or mockamap')
     use_dynamic = LaunchConfiguration('use_dynamic', default=True)  
     use_dynamic_arg = DeclareLaunchArgument('use_dynamic', default_value=use_dynamic, description='Use Drone Simulation Considering Dynamics or Not')
-    rviz_config_path = os.path.join(get_package_share_directory('mighty'), 'rviz', 'mighty.rviz')
+    rviz_config_path = os.path.join(get_package_share_directory('dynus'), 'rviz', 'mighty.rviz')
 
     # Node Definitions
     random_forest_node = Node(
