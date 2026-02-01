@@ -79,12 +79,12 @@ namespace dynus
     using PCLPoint = pcl::PointXYZ;
     using PCLPointCloud = pcl::PointCloud<pcl::PointXYZ>;
 
-    class MIGHTY_NODE : public rclcpp::Node
+    class DYNUS_NODE : public rclcpp::Node
     {
 
     public:
-        MIGHTY_NODE();
-        ~MIGHTY_NODE();
+        DYNUS_NODE();
+        ~DYNUS_NODE();
 
     private:
         // Callbacks

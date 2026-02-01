@@ -6,8 +6,8 @@
  * See LICENSE file for the license information
  * -------------------------------------------------------------------------- */
 
-#ifndef MIGHTY_UTILS_HPP
-#define MIGHTY_UTILS_HPP
+#ifndef DYNUS_UTILS_HPP
+#define DYNUS_UTILS_HPP
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/color_rgba.hpp"

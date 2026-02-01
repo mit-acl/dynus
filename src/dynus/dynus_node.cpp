@@ -13,7 +13,7 @@
 /**
  * @brief Constructor
  */
-MIGHTY_NODE::MIGHTY_NODE() : Node("dynus_node")
+DYNUS_NODE::DYNUS_NODE() : Node("dynus_node")
 {
 
   // Get id from ns
@@ -102,19 +102,19 @@ MIGHTY_NODE::MIGHTY_NODE() : Node("dynus_node")
   pub_goal_reached_ = this->create_publisher<std_msgs::msg::Empty>("goal_reached", critical_qos);
 
   // Subscribers
-  sub_traj_ = this->create_subscription<dynus_interfaces::msg::DynTraj>("/trajs", critical_qos, std::bind(&MIGHTY_NODE::trajCallback, this, std::placeholders::_1), options_re_1);
-  sub_predicted_traj_ = this->create_subscription<dynus_interfaces::msg::DynTraj>("predicted_trajs", critical_qos, std::bind(&MIGHTY_NODE::trajCallback, this, std::placeholders::_1), options_re_1);
-  sub_state_ = this->create_subscription<dynus_interfaces::msg::State>("state", critical_qos, std::bind(&MIGHTY_NODE::stateCallback, this, std::placeholders::_1), options_re_1);
-  sub_terminal_goal_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("term_goal", critical_qos, std::bind(&MIGHTY_NODE::terminalGoalCallback, this, std::placeholders::_1));
+  sub_traj_ = this->create_subscription<dynus_interfaces::msg::DynTraj>("/trajs", critical_qos, std::bind(&DYNUS_NODE::trajCallback, this, std::placeholders::_1), options_re_1);
+  sub_predicted_traj_ = this->create_subscription<dynus_interfaces::msg::DynTraj>("predicted_trajs", critical_qos, std::bind(&DYNUS_NODE::trajCallback, this, std::placeholders::_1), options_re_1);
+  sub_state_ = this->create_subscription<dynus_interfaces::msg::State>("state", critical_qos, std::bind(&DYNUS_NODE::stateCallback, this, std::placeholders::_1), options_re_1);
+  sub_terminal_goal_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("term_goal", critical_qos, std::bind(&DYNUS_NODE::terminalGoalCallback, this, std::placeholders::_1));
 
   // Timer for callback
-  timer_replanning_ = this->create_wall_timer(10ms, std::bind(&MIGHTY_NODE::replanCallback, this), this->cb_group_replan_);
-  timer_goal_ = this->create_wall_timer(std::chrono::duration<double>(par_.dc), std::bind(&MIGHTY_NODE::publishGoal, this), this->cb_group_goal_);
+  timer_replanning_ = this->create_wall_timer(10ms, std::bind(&DYNUS_NODE::replanCallback, this), this->cb_group_replan_);
+  timer_goal_ = this->create_wall_timer(std::chrono::duration<double>(par_.dc), std::bind(&DYNUS_NODE::publishGoal, this), this->cb_group_goal_);
   if (use_benchmark_)
-    timer_goal_reached_check_ = this->create_wall_timer(100ms, std::bind(&MIGHTY_NODE::goalReachedCheckCallback, this), this->cb_group_re_3_);
-  timer_cleanup_old_trajs_ = this->create_wall_timer(500ms, std::bind(&MIGHTY_NODE::cleanUpOldTrajsCallback, this), this->cb_group_mu_5_);
+    timer_goal_reached_check_ = this->create_wall_timer(100ms, std::bind(&DYNUS_NODE::goalReachedCheckCallback, this), this->cb_group_re_3_);
+  timer_cleanup_old_trajs_ = this->create_wall_timer(500ms, std::bind(&DYNUS_NODE::cleanUpOldTrajsCallback, this), this->cb_group_mu_5_);
   if (par_.use_hardware)
-    timer_initial_pose_ = this->create_wall_timer(100ms, std::bind(&MIGHTY_NODE::getInitialPoseHwCallback, this), this->cb_group_mu_9_);
+    timer_initial_pose_ = this->create_wall_timer(100ms, std::bind(&DYNUS_NODE::getInitialPoseHwCallback, this), this->cb_group_mu_9_);
 
   // Stop the timer for callback
   if (timer_replanning_)
@@ -152,7 +152,7 @@ MIGHTY_NODE::MIGHTY_NODE() : Node("dynus_node")
 
     sub_fake_sim_occupancy_map_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(topic_name,
                                                                                            rclcpp::QoS(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_sensor_data)),
-                                                                                           std::bind(&MIGHTY_NODE::occupancyMapCallback, this, std::placeholders::_1),
+                                                                                           std::bind(&DYNUS_NODE::occupancyMapCallback, this, std::placeholders::_1),
                                                                                            options_map);
   }
   else
@@ -161,7 +161,7 @@ MIGHTY_NODE::MIGHTY_NODE() : Node("dynus_node")
     occup_grid_sub_.subscribe(this, "occupancy_grid", rmw_qos_profile_sensor_data, options_map);
     unknown_grid_sub_.subscribe(this, "unknown_grid", rmw_qos_profile_sensor_data, options_map);
     sync_.reset(new Sync(MySyncPolicy(10), occup_grid_sub_, unknown_grid_sub_));
-    sync_->registerCallback(std::bind(&MIGHTY_NODE::mapCallback, this, std::placeholders::_1, std::placeholders::_2));
+    sync_->registerCallback(std::bind(&DYNUS_NODE::mapCallback, this, std::placeholders::_1, std::placeholders::_2));
   }
 }
 
@@ -170,7 +170,7 @@ MIGHTY_NODE::MIGHTY_NODE() : Node("dynus_node")
 /**
  * @brief Destructor
  */
-MIGHTY_NODE::~MIGHTY_NODE()
+DYNUS_NODE::~DYNUS_NODE()
 {
   // release the memory
   dynus_ptr_.reset();
@@ -181,7 +181,7 @@ MIGHTY_NODE::~MIGHTY_NODE()
 /**
  * @brief Declare the parameters
  */
-void MIGHTY_NODE::declareParameters()
+void DYNUS_NODE::declareParameters()
 {
 
   // Sim enviroment
@@ -334,7 +334,7 @@ void MIGHTY_NODE::declareParameters()
 /**
  * @brief Set the parameters
  */
-void MIGHTY_NODE::setParameters()
+void DYNUS_NODE::setParameters()
 {
   // Set the parameters
 
@@ -486,7 +486,7 @@ void MIGHTY_NODE::setParameters()
 /**
  * @brief Print the parameters
  */
-void MIGHTY_NODE::printParameters()
+void DYNUS_NODE::printParameters()
 {
   // Print the parameters
 
@@ -626,7 +626,7 @@ void MIGHTY_NODE::printParameters()
 /**
  * @brief Callback function to clean up old trajs in DYNUS
  */
-void MIGHTY_NODE::cleanUpOldTrajsCallback()
+void DYNUS_NODE::cleanUpOldTrajsCallback()
 {
   // Get current time
   double current_time = this->now().seconds();
@@ -641,7 +641,7 @@ void MIGHTY_NODE::cleanUpOldTrajsCallback()
  * @brief Callback function to update the traj
  * @param msg Trajectory message
  */
-void MIGHTY_NODE::trajCallback(const dynus_interfaces::msg::DynTraj::SharedPtr msg)
+void DYNUS_NODE::trajCallback(const dynus_interfaces::msg::DynTraj::SharedPtr msg)
 {
 
   // Filter out its own traj
@@ -665,7 +665,7 @@ void MIGHTY_NODE::trajCallback(const dynus_interfaces::msg::DynTraj::SharedPtr m
  * @brief Callback function for the state of the agent
  * @param msg State message
  */
-void MIGHTY_NODE::stateCallback(const dynus_interfaces::msg::State::SharedPtr msg)
+void DYNUS_NODE::stateCallback(const dynus_interfaces::msg::State::SharedPtr msg)
 {
 
   if (par_.use_state_update)
@@ -717,7 +717,7 @@ void MIGHTY_NODE::stateCallback(const dynus_interfaces::msg::State::SharedPtr ms
 /**
  * @brief Callback function for replanning
  */
-void MIGHTY_NODE::replanCallback()
+void DYNUS_NODE::replanCallback()
 {
 
   // Get the current time as double
@@ -808,7 +808,7 @@ void MIGHTY_NODE::replanCallback()
  * @brief Callback function for the terminal goal
  * @param msg Terminal goal message
  */
-void MIGHTY_NODE::terminalGoalCallback(const geometry_msgs::msg::PoseStamped &msg)
+void DYNUS_NODE::terminalGoalCallback(const geometry_msgs::msg::PoseStamped &msg)
 {
 
   // Set the terminal goal
@@ -849,7 +849,7 @@ void MIGHTY_NODE::terminalGoalCallback(const geometry_msgs::msg::PoseStamped &ms
  * @param position Position to publish the text
  * @param velocity Velocity to publish
  */
-void MIGHTY_NODE::publishVelocityInText(const Eigen::Vector3d &position, double velocity)
+void DYNUS_NODE::publishVelocityInText(const Eigen::Vector3d &position, double velocity)
 {
 
   // Set velocity's precision to 2 decimal points
@@ -885,7 +885,7 @@ void MIGHTY_NODE::publishVelocityInText(const Eigen::Vector3d &position, double 
 /**
  * @brief Callback function to check if the goal is reached
  */
-void MIGHTY_NODE::goalReachedCheckCallback()
+void DYNUS_NODE::goalReachedCheckCallback()
 {
   if (dynus_ptr_->goalReachedCheck())
   {
@@ -899,7 +899,7 @@ void MIGHTY_NODE::goalReachedCheckCallback()
 /**
  * @brief Callback function to get the initial pose from tf (for hardware use case)
  */
-void MIGHTY_NODE::getInitialPoseHwCallback()
+void DYNUS_NODE::getInitialPoseHwCallback()
 {
   // First find the transformation matrix from map to camera
   try
@@ -935,7 +935,7 @@ void MIGHTY_NODE::getInitialPoseHwCallback()
  * @param traj dynTraj
  * @param current_time current time
  */
-void MIGHTY_NODE::convertDynTrajMsg2DynTraj(const dynus_interfaces::msg::DynTraj &msg, std::shared_ptr<dynTraj> &traj, double current_time)
+void DYNUS_NODE::convertDynTrajMsg2DynTraj(const dynus_interfaces::msg::DynTraj &msg, std::shared_ptr<dynTraj> &traj, double current_time)
 {
 
   // Inflate bbox using drone_bbox
@@ -1022,7 +1022,7 @@ void MIGHTY_NODE::convertDynTrajMsg2DynTraj(const dynus_interfaces::msg::DynTraj
  * @brief Publish control points
  */
 
-void MIGHTY_NODE::publisCps()
+void DYNUS_NODE::publisCps()
 {
 
   // Retrieve control points
@@ -1096,7 +1096,7 @@ void MIGHTY_NODE::publisCps()
 /**
  * @brief Publish static push points
  */
-void MIGHTY_NODE::publishStaticPushPoints()
+void DYNUS_NODE::publishStaticPushPoints()
 {
 
   // Create a marker array
@@ -1139,7 +1139,7 @@ void MIGHTY_NODE::publishStaticPushPoints()
 /**
  * @brief Set computation times to zero
  */
-void MIGHTY_NODE::setComputationTimesToZero()
+void DYNUS_NODE::setComputationTimesToZero()
 {
   final_g_ = 0.0;
   global_planning_time_ = 0.0;
@@ -1160,7 +1160,7 @@ void MIGHTY_NODE::setComputationTimesToZero()
 /**
  * @brief Retrive computation times from dynus_ptr_
  */
-void MIGHTY_NODE::retrieveData()
+void DYNUS_NODE::retrieveData()
 {
   dynus_ptr_->retrieveData(final_g_,
                             global_planning_time_,
@@ -1181,7 +1181,7 @@ void MIGHTY_NODE::retrieveData()
 /**
  * @brief Print the computation times
  */
-void MIGHTY_NODE::printComputationTime(bool result)
+void DYNUS_NODE::printComputationTime(bool result)
 {
   // Print the computation times
   RCLCPP_INFO(this->get_logger(), "Planner: %s", par_.global_planner.c_str());
@@ -1204,7 +1204,7 @@ void MIGHTY_NODE::printComputationTime(bool result)
  * @brief Record the data
  * @param result result of the replanning
  */
-void MIGHTY_NODE::recordData(bool result)
+void DYNUS_NODE::recordData(bool result)
 {
 
   // Record all the data into global_path_benchmark_
@@ -1220,7 +1220,7 @@ void MIGHTY_NODE::recordData(bool result)
 /**
  * @brief Log the data to a csv file
  */
-void MIGHTY_NODE::logData()
+void DYNUS_NODE::logData()
 {
 
   // Loc the computation times to csv file
@@ -1248,7 +1248,7 @@ void MIGHTY_NODE::logData()
 /**
  * @brief Publish the Point G (sub goal)
  */
-void MIGHTY_NODE::publishPointG() const
+void DYNUS_NODE::publishPointG() const
 {
 
   // get projected goal (G)
@@ -1264,7 +1264,7 @@ void MIGHTY_NODE::publishPointG() const
 /**
  * @brief Publish the Point E (sub goal)
  */
-void MIGHTY_NODE::publishPointE() const
+void DYNUS_NODE::publishPointE() const
 {
 
   // get projected goal (E)
@@ -1280,7 +1280,7 @@ void MIGHTY_NODE::publishPointE() const
 /**
  * @brief Publish the Point A (trajectory start point)
  */
-void MIGHTY_NODE::publishPointA() const
+void DYNUS_NODE::publishPointA() const
 {
 
   // get projected goal (A)
@@ -1296,7 +1296,7 @@ void MIGHTY_NODE::publishPointA() const
 /**
  * @brief Publish the current state
  */
-void MIGHTY_NODE::publishCurrentState(const state &state) const
+void DYNUS_NODE::publishCurrentState(const state &state) const
 {
   // Publish the goal for visualization
   publishState(state, pub_current_state_);
@@ -1307,7 +1307,7 @@ void MIGHTY_NODE::publishCurrentState(const state &state) const
 /**
  * @brief Publish state
  */
-void MIGHTY_NODE::publishState(const state &data, const rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr &publisher) const
+void DYNUS_NODE::publishState(const state &data, const rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr &publisher) const
 {
   geometry_msgs::msg::PointStamped p;
   p.header.frame_id = "map";
@@ -1321,7 +1321,7 @@ void MIGHTY_NODE::publishState(const state &data, const rclcpp::Publisher<geomet
 /**
  * @brief Publish its own trajectory for deconfliction
  */
-void MIGHTY_NODE::publishOwnTraj()
+void DYNUS_NODE::publishOwnTraj()
 {
 
   // Get the piecewise polynomial trajectory to share
@@ -1359,7 +1359,7 @@ void MIGHTY_NODE::publishOwnTraj()
  * @brief Publish the trajectory the agent actually followed for visualization
  *        (smooth LINE_STRIP with velocity-based color, bounded history, persistent marker id)
  */
-void MIGHTY_NODE::publishActualTraj()
+void DYNUS_NODE::publishActualTraj()
 {
   if (!pub_actual_traj_)
     return;
@@ -1470,7 +1470,7 @@ void MIGHTY_NODE::publishActualTraj()
 /**
  * @brief Publish goal (setpoint)
  */
-void MIGHTY_NODE::publishGoal()
+void DYNUS_NODE::publishGoal()
 {
 
   // Initialize the goal
@@ -1507,7 +1507,7 @@ void MIGHTY_NODE::publishGoal()
 /**
  * @brief Publish Sefe Corridor Polyhedra
  */
-void MIGHTY_NODE::publishPoly()
+void DYNUS_NODE::publishPoly()
 {
 
   // retrieve the polyhedra
@@ -1539,7 +1539,7 @@ void MIGHTY_NODE::publishPoly()
 /**
  * @brief Publish the trajectory
  */
-void MIGHTY_NODE::publishTraj()
+void DYNUS_NODE::publishTraj()
 {
   auto now = this->now();
 
@@ -1591,7 +1591,7 @@ void MIGHTY_NODE::publishTraj()
 /**
  * @brief Publish the global path (that can go through unknown space)
  */
-void MIGHTY_NODE::publishGlobalPath()
+void DYNUS_NODE::publishGlobalPath()
 {
 
   int global_path_color = RED;
@@ -1651,7 +1651,7 @@ void MIGHTY_NODE::publishGlobalPath()
 /**
  * @brief Publish the free global path (that only goes through free space)
  */
-void MIGHTY_NODE::publishFreeGlobalPath()
+void DYNUS_NODE::publishFreeGlobalPath()
 {
 
   // Get free_global_path
@@ -1672,7 +1672,7 @@ void MIGHTY_NODE::publishFreeGlobalPath()
 /**
  * @brief Publish the local_global_path and local_global_path_after_push_
  */
-void MIGHTY_NODE::publishLocalGlobalPath()
+void DYNUS_NODE::publishLocalGlobalPath()
 {
 
   // Get the local global path and local global path after push
@@ -1699,7 +1699,7 @@ void MIGHTY_NODE::publishLocalGlobalPath()
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY_NODE::publishDynamicHeatCloud()
+void DYNUS_NODE::publishDynamicHeatCloud()
 {
   if (!pub_dynamic_heat_cloud_)
     return;
@@ -1787,7 +1787,7 @@ BUILD_MSG:
 /**
  * @brief Create MarkerArray from vec_Vec3f
  */
-void MIGHTY_NODE::createMarkerArrayFromVec_Vec3f(
+void DYNUS_NODE::createMarkerArrayFromVec_Vec3f(
     const vec_Vec3f &occupied_cells, const std_msgs::msg::ColorRGBA &color, int namespace_id, double scale, visualization_msgs::msg::MarkerArray *marker_array)
 {
 
@@ -1820,7 +1820,7 @@ void MIGHTY_NODE::createMarkerArrayFromVec_Vec3f(
 /**
  * @brief Clear any marker array
  */
-void MIGHTY_NODE::clearMarkerArray(visualization_msgs::msg::MarkerArray &path_marker, rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr publisher)
+void DYNUS_NODE::clearMarkerArray(visualization_msgs::msg::MarkerArray &path_marker, rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr publisher)
 {
 
   // If the marker array is empty, return
@@ -1848,7 +1848,7 @@ void MIGHTY_NODE::clearMarkerArray(visualization_msgs::msg::MarkerArray &path_ma
 /**
  * @brief Construct the FOV marker for visualization
  */
-void MIGHTY_NODE::constructFOVMarker()
+void DYNUS_NODE::constructFOVMarker()
 {
 
   marker_fov_.header.stamp = this->now();
@@ -1917,7 +1917,7 @@ void MIGHTY_NODE::constructFOVMarker()
 /**
  * @brief Publish the FOV marker for visualization
  */
-void MIGHTY_NODE::publishFOV()
+void DYNUS_NODE::publishFOV()
 {
   marker_fov_.header.stamp = this->now();
   pub_fov_->publish(marker_fov_);
@@ -1926,7 +1926,7 @@ void MIGHTY_NODE::publishFOV()
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY_NODE::mapCallback(
+void DYNUS_NODE::mapCallback(
     const sensor_msgs::msg::PointCloud2::ConstPtr &map_msg,
     const sensor_msgs::msg::PointCloud2::ConstPtr &unk_msg)
 {
@@ -1942,7 +1942,7 @@ void MIGHTY_NODE::mapCallback(
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY_NODE::occupancyMapCallback(
+void DYNUS_NODE::occupancyMapCallback(
     const sensor_msgs::msg::PointCloud2::ConstPtr &map_msg)
 {
   // use PCL’s own Ptr (boost::shared_ptr)
@@ -1970,7 +1970,7 @@ int main(int argc, char **argv)
   rclcpp::executors::MultiThreadedExecutor executor;
 
   // add node to executor
-  auto node = std::make_shared<dynus::MIGHTY_NODE>();
+  auto node = std::make_shared<dynus::DYNUS_NODE>();
   executor.add_node(node);
 
   // spin
