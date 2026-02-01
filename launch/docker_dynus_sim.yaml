@@ -3,14 +3,14 @@ windows:
   - window_name: main
     layout: tiled
     shell_command_before:
-    - source /home/kkondo/code/mighty_ws/install/setup.bash
+    - source /home/kkondo/code/dynus_ws/install/setup.bash
     - source /home/kkondo/code/decomp_ws/install/setup.bash
     - export ROS_DOMAIN_ID=7
     panes:
       # base station
       - shell_command:
         - source /usr/share/gazebo/setup.bash
-        - ros2 launch dynus base_mighty.launch.py use_dyn_obs:=false use_gazebo_gui:=false use_rviz:=true env:=hard_forest
+        - ros2 launch dynus base_dynus.launch.py use_dyn_obs:=false use_gazebo_gui:=false use_rviz:=true env:=hard_forest
 
       # ACL mapper
       - shell_command:
@@ -20,7 +20,7 @@ windows:
       # onboard agent NX01
       - shell_command:
         - sleep 10
-        - ros2 launch dynus onboard_mighty.launch.py x:=0 y:=0 z:=3.0 yaw:=1.57
+        - ros2 launch dynus onboard_dynus.launch.py x:=0 y:=0 z:=3.0 yaw:=1.57
       
       # goal sender
       - shell_command:

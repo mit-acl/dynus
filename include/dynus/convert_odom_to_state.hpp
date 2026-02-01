@@ -4,7 +4,7 @@
 #include "std_msgs/msg/header.hpp"
 #include "geometry_msgs/msg/vector3.hpp"
 #include "geometry_msgs/msg/quaternion.hpp"
-#include "mighty/mighty.hpp"
+#include "dynus/dynus.hpp"
 #include <dynus_interfaces/msg/state.hpp>
 
 #ifndef ODOMETRY_TO_STATE_NODE_HPP

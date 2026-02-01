@@ -1,4 +1,4 @@
-#include <mighty/convert_goal_to_cmd_vel.hpp>
+#include <dynus/convert_goal_to_cmd_vel.hpp>
 
 GoalToCmdVel::GoalToCmdVel() : Node("goal_to_cmd_vel"),
                                current_yaw_(0.0),

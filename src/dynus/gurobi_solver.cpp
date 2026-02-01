@@ -7,8 +7,8 @@
  * See LICENSE file for the license information
  * -------------------------------------------------------------------------- */
 
-#include <mighty/gurobi_solver.hpp>
-#include <mighty/gurobi_solver_utils.hpp>
+#include <dynus/gurobi_solver.hpp>
+#include <dynus/gurobi_solver_utils.hpp>
 #include <chrono>
 #include <unistd.h>
 

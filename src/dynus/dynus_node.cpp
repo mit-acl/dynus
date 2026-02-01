@@ -6,14 +6,14 @@
  * See LICENSE file for the license information
  * -------------------------------------------------------------------------- */
 
-#include <mighty/mighty_node.hpp>
+#include <dynus/dynus_node.hpp>
 
 // ----------------------------------------------------------------------------
 
 /**
  * @brief Constructor
  */
-MIGHTY_NODE::MIGHTY_NODE() : Node("mighty_node")
+MIGHTY_NODE::MIGHTY_NODE() : Node("dynus_node")
 {
 
   // Get id from ns
@@ -125,7 +125,7 @@ MIGHTY_NODE::MIGHTY_NODE() : Node("mighty_node")
     timer_goal_reached_check_->cancel();
 
   // Initialize the DYNUS object
-  mighty_ptr_ = std::make_shared<MIGHTY>(par_);
+  dynus_ptr_ = std::make_shared<DYNUS>(par_);
 
   // Initialize the tf2 buffer and listener
   tf2_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
@@ -173,7 +173,7 @@ MIGHTY_NODE::MIGHTY_NODE() : Node("mighty_node")
 MIGHTY_NODE::~MIGHTY_NODE()
 {
   // release the memory
-  mighty_ptr_.reset();
+  dynus_ptr_.reset();
 }
 
 // ----------------------------------------------------------------------------
@@ -251,7 +251,7 @@ void MIGHTY_NODE::declareParameters()
   this->declare_parameter("min_wdx", 10.0);
   this->declare_parameter("min_wdy", 10.0);
   this->declare_parameter("min_wdz", 2.0);
-  this->declare_parameter("mighty_map_res", 0.1);
+  this->declare_parameter("dynus_map_res", 0.1);
 
   // Communication delay parameters
   this->declare_parameter("use_comm_delay_inflation", true);
@@ -406,7 +406,7 @@ void MIGHTY_NODE::setParameters()
   par_.min_wdx = this->get_parameter("min_wdx").as_double();
   par_.min_wdy = this->get_parameter("min_wdy").as_double();
   par_.min_wdz = this->get_parameter("min_wdz").as_double();
-  par_.res = this->get_parameter("mighty_map_res").as_double();
+  par_.res = this->get_parameter("dynus_map_res").as_double();
 
   // Communication delay parameters
   par_.use_comm_delay_inflation = this->get_parameter("use_comm_delay_inflation").as_bool();
@@ -632,7 +632,7 @@ void MIGHTY_NODE::cleanUpOldTrajsCallback()
   double current_time = this->now().seconds();
 
   // Clean up old trajs
-  mighty_ptr_->cleanUpOldTrajs(current_time);
+  dynus_ptr_->cleanUpOldTrajs(current_time);
 }
 
 // ----------------------------------------------------------------------------
@@ -655,8 +655,8 @@ void MIGHTY_NODE::trajCallback(const dynus_interfaces::msg::DynTraj::SharedPtr m
   auto traj = std::make_shared<dynTraj>();
   convertDynTrajMsg2DynTraj(*msg, traj, current_time);
 
-  // Pass the dynTraj to mighty.cpp
-  mighty_ptr_->addTraj(traj, current_time);
+  // Pass the dynTraj to dynus.cpp
+  dynus_ptr_->addTraj(traj, current_time);
 }
 
 // ----------------------------------------------------------------------------
@@ -677,7 +677,7 @@ void MIGHTY_NODE::stateCallback(const dynus_interfaces::msg::State::SharedPtr ms
     double roll, pitch, yaw;
     quaternion2Euler(msg->quat, roll, pitch, yaw);
     current_state.setYaw(yaw);
-    mighty_ptr_->updateState(current_state);
+    dynus_ptr_->updateState(current_state);
 
     // publish the state
     publishCurrentState(current_state);
@@ -701,7 +701,7 @@ void MIGHTY_NODE::stateCallback(const dynus_interfaces::msg::State::SharedPtr ms
       quaternion2Euler(msg->quat, roll, pitch, yaw);
       current_state.setYaw(yaw);
       current_state.t = this->now().seconds();
-      mighty_ptr_->updateState(current_state);
+      dynus_ptr_->updateState(current_state);
     }
     RCLCPP_INFO(this->get_logger(), "State initialized");
     state_initialized_ = true;
@@ -727,7 +727,7 @@ void MIGHTY_NODE::replanCallback()
   setComputationTimesToZero();
 
   // Replan
-  auto [replanning_result, dgp_result] = mighty_ptr_->replan(replanning_computation_time_, current_time);
+  auto [replanning_result, dgp_result] = dynus_ptr_->replan(replanning_computation_time_, current_time);
 
   // Get computation time (used to find point A) - note this value is not updated in the replan function
   if (replanning_result)
@@ -780,11 +780,11 @@ void MIGHTY_NODE::replanCallback()
   // For visualization of static push points and P points
   if (replanning_result && par_.visual_level >= 1)
   {
-    mighty_ptr_->getStaticPushPoints(static_push_points_);
+    dynus_ptr_->getStaticPushPoints(static_push_points_);
     publishStaticPushPoints();
   }
 
-  // If verbose_computation_time_ or use_benchmark_ is true, we need to retrieve data from mighty_ptr_
+  // If verbose_computation_time_ or use_benchmark_ is true, we need to retrieve data from dynus_ptr_
   if (verbose_computation_time_ || use_benchmark_)
     retrieveData();
 
@@ -832,7 +832,7 @@ void MIGHTY_NODE::terminalGoalCallback(const geometry_msgs::msg::PoseStamped &ms
   G_term.setPos(msg.pose.position.x, msg.pose.position.y, goal_z);
 
   // Update the terminal goal
-  mighty_ptr_->setTerminalGoal(G_term);
+  dynus_ptr_->setTerminalGoal(G_term);
 
   // Publish the term goal for visualization
   publishState(G_term, pub_point_G_term_);
@@ -887,7 +887,7 @@ void MIGHTY_NODE::publishVelocityInText(const Eigen::Vector3d &position, double 
  */
 void MIGHTY_NODE::goalReachedCheckCallback()
 {
-  if (mighty_ptr_->goalReachedCheck())
+  if (dynus_ptr_->goalReachedCheck())
   {
     logData();
     pub_goal_reached_->publish(std_msgs::msg::Empty());
@@ -911,7 +911,7 @@ void MIGHTY_NODE::getInitialPoseHwCallback()
                 init_pose_transform_stamped_.transform.translation.y, init_pose_transform_stamped_.transform.translation.z);
 
     // Push the initial pose to dynus
-    mighty_ptr_->setInitialPose(init_pose_transform_stamped_);
+    dynus_ptr_->setInitialPose(init_pose_transform_stamped_);
   }
   catch (tf2::TransformException &ex)
   {
@@ -946,14 +946,14 @@ void MIGHTY_NODE::convertDynTrajMsg2DynTraj(const dynus_interfaces::msg::DynTraj
   traj->id = msg.id;
 
   // Get pwp
-  traj->pwp = mighty_utils::convertPwpMsg2Pwp(msg.pwp);
+  traj->pwp = dynus_utils::convertPwpMsg2Pwp(msg.pwp);
 
   // Get covariances
   if (!msg.is_agent)
   {
-    traj->ekf_cov_p = mighty_utils::convertCovMsg2Cov(msg.ekf_cov_p); // ekf cov
-    traj->ekf_cov_q = mighty_utils::convertCovMsg2Cov(msg.ekf_cov_q); // ekf cov
-    traj->poly_cov = mighty_utils::convertCovMsg2Cov(msg.poly_cov);   // future traj cov
+    traj->ekf_cov_p = dynus_utils::convertCovMsg2Cov(msg.ekf_cov_p); // ekf cov
+    traj->ekf_cov_q = dynus_utils::convertCovMsg2Cov(msg.ekf_cov_q); // ekf cov
+    traj->poly_cov = dynus_utils::convertCovMsg2Cov(msg.poly_cov);   // future traj cov
   }
 
   // Get analytical functions
@@ -1026,7 +1026,7 @@ void MIGHTY_NODE::publisCps()
 {
 
   // Retrieve control points
-  mighty_ptr_->retrieveCPs(cps_);
+  dynus_ptr_->retrieveCPs(cps_);
 
   // Create a marker array
   visualization_msgs::msg::MarkerArray marker_array;
@@ -1158,11 +1158,11 @@ void MIGHTY_NODE::setComputationTimesToZero()
 // ----------------------------------------------------------------------------
 
 /**
- * @brief Retrive computation times from mighty_ptr_
+ * @brief Retrive computation times from dynus_ptr_
  */
 void MIGHTY_NODE::retrieveData()
 {
-  mighty_ptr_->retrieveData(final_g_,
+  dynus_ptr_->retrieveData(final_g_,
                             global_planning_time_,
                             dgp_static_jps_time_,
                             dgp_check_path_time_,
@@ -1253,7 +1253,7 @@ void MIGHTY_NODE::publishPointG() const
 
   // get projected goal (G)
   state G;
-  mighty_ptr_->getG(G);
+  dynus_ptr_->getG(G);
 
   // Publish the goal for visualization
   publishState(G, pub_point_G_);
@@ -1269,7 +1269,7 @@ void MIGHTY_NODE::publishPointE() const
 
   // get projected goal (E)
   state E;
-  mighty_ptr_->getE(E);
+  dynus_ptr_->getE(E);
 
   // Publish the goal for visualization
   publishState(E, pub_point_E_);
@@ -1285,7 +1285,7 @@ void MIGHTY_NODE::publishPointA() const
 
   // get projected goal (A)
   state A;
-  mighty_ptr_->getA(A);
+  dynus_ptr_->getA(A);
 
   // Publish the goal for visualization
   publishState(A, pub_point_A_);
@@ -1325,7 +1325,7 @@ void MIGHTY_NODE::publishOwnTraj()
 {
 
   // Get the piecewise polynomial trajectory to share
-  mighty_ptr_->getPieceWisePol(pwp_to_share_);
+  dynus_ptr_->getPieceWisePol(pwp_to_share_);
 
   // Create the message
   dynus_interfaces::msg::DynTraj msg;
@@ -1336,12 +1336,12 @@ void MIGHTY_NODE::publishOwnTraj()
   msg.bbox.push_back(par_.drone_bbox[2]);
   msg.id = id_;
   msg.mode = "pwp";
-  msg.pwp = mighty_utils::convertPwp2PwpMsg(pwp_to_share_);
+  msg.pwp = dynus_utils::convertPwp2PwpMsg(pwp_to_share_);
   msg.is_agent = true;
 
   // Get the terminal goal
   state G;
-  mighty_ptr_->getG(G);
+  dynus_ptr_->getG(G);
   msg.goal.push_back(G.pos(0));
   msg.goal.push_back(G.pos(1));
   msg.goal.push_back(G.pos(2));
@@ -1366,7 +1366,7 @@ void MIGHTY_NODE::publishActualTraj()
 
   // Get current state
   state current_state;
-  mighty_ptr_->getState(current_state);
+  dynus_ptr_->getState(current_state);
   const Eigen::Vector3d current_pos = current_state.pos;
 
   // If state not initialized yet
@@ -1477,7 +1477,7 @@ void MIGHTY_NODE::publishGoal()
   state next_goal;
 
   // Get the next goal
-  if (mighty_ptr_->getNextGoal(next_goal) && par_.use_state_update)
+  if (dynus_ptr_->getNextGoal(next_goal) && par_.use_state_update)
   {
 
     // Publish the goal (actual setpoint)
@@ -1511,7 +1511,7 @@ void MIGHTY_NODE::publishPoly()
 {
 
   // retrieve the polyhedra
-  mighty_ptr_->retrievePolytopes(poly_whole_, poly_safe_);
+  dynus_ptr_->retrievePolytopes(poly_whole_, poly_safe_);
 
   // For whole trajectory
   if (!poly_whole_.empty())
@@ -1557,7 +1557,7 @@ void MIGHTY_NODE::publishTraj()
   }
 
   // 2) Publish the committed (best) trajectory
-  mighty_ptr_->retrieveGoalSetpoints(goal_setpoints_);
+  dynus_ptr_->retrieveGoalSetpoints(goal_setpoints_);
   {
     auto committed_ma = stateVector2ColoredMarkerArray(
         goal_setpoints_,
@@ -1568,7 +1568,7 @@ void MIGHTY_NODE::publishTraj()
   }
 
   // 3) Publish all sub-optimal trajectories
-  mighty_ptr_->retrieveListSubOptGoalSetpoints(list_subopt_goal_setpoints_);
+  dynus_ptr_->retrieveListSubOptGoalSetpoints(list_subopt_goal_setpoints_);
   visualization_msgs::msg::MarkerArray subopt_ma;
   for (int i = 0; i < (int)list_subopt_goal_setpoints_.size(); ++i)
   {
@@ -1603,7 +1603,7 @@ void MIGHTY_NODE::publishGlobalPath()
 
   // Get global_path
   vec_Vecf<3> global_path;
-  mighty_ptr_->getGlobalPath(global_path);
+  dynus_ptr_->getGlobalPath(global_path);
 
   if (!global_path.empty())
   {
@@ -1625,7 +1625,7 @@ void MIGHTY_NODE::publishGlobalPath()
 
   // Get the original global path
   vec_Vecf<3> original_global_path;
-  mighty_ptr_->getOriginalGlobalPath(original_global_path);
+  dynus_ptr_->getOriginalGlobalPath(original_global_path);
 
   if (!original_global_path.empty())
   {
@@ -1656,7 +1656,7 @@ void MIGHTY_NODE::publishFreeGlobalPath()
 
   // Get free_global_path
   vec_Vecf<3> free_global_path;
-  mighty_ptr_->getFreeGlobalPath(free_global_path);
+  dynus_ptr_->getFreeGlobalPath(free_global_path);
 
   if (free_global_path.empty())
     return;
@@ -1678,7 +1678,7 @@ void MIGHTY_NODE::publishLocalGlobalPath()
   // Get the local global path and local global path after push
   vec_Vecf<3> local_global_path;
   vec_Vecf<3> local_global_path_after_push;
-  mighty_ptr_->getLocalGlobalPath(local_global_path, local_global_path_after_push);
+  dynus_ptr_->getLocalGlobalPath(local_global_path, local_global_path_after_push);
 
   if (!local_global_path.empty())
   {
@@ -1704,7 +1704,7 @@ void MIGHTY_NODE::publishDynamicHeatCloud()
   if (!pub_dynamic_heat_cloud_)
     return;
 
-  auto map_util = mighty_ptr_->getMapUtilSharedPtr();
+  auto map_util = dynus_ptr_->getMapUtilSharedPtr();
   if (!map_util)
     return;
 
@@ -1858,7 +1858,7 @@ void MIGHTY_NODE::constructFOVMarker()
   marker_fov_.frame_locked = true;
   marker_fov_.type = marker_fov_.LINE_LIST;
   marker_fov_.action = marker_fov_.ADD;
-  marker_fov_.pose = mighty_utils::identityGeometryMsgsPose();
+  marker_fov_.pose = dynus_utils::identityGeometryMsgsPose();
 
   double delta_y = par_.fov_visual_depth * fabs(tan((par_.fov_visual_x_deg * M_PI / 180) / 2.0));
   double delta_z = par_.fov_visual_depth * fabs(tan((par_.fov_visual_y_deg * M_PI / 180) / 2.0));
@@ -1937,7 +1937,7 @@ void MIGHTY_NODE::mapCallback(
   pcl::PointCloud<pcl::PointXYZ>::Ptr unk_pc(new pcl::PointCloud<pcl::PointXYZ>());
   pcl::fromROSMsg(*unk_msg, *unk_pc);
 
-  mighty_ptr_->updateMapPtr(map_pc, unk_pc);
+  dynus_ptr_->updateMapPtr(map_pc, unk_pc);
 }
 
 // ----------------------------------------------------------------------------
@@ -1949,7 +1949,7 @@ void MIGHTY_NODE::occupancyMapCallback(
   pcl::PointCloud<pcl::PointXYZ>::Ptr map_pc(new pcl::PointCloud<pcl::PointXYZ>());
   pcl::fromROSMsg(*map_msg, *map_pc);
 
-  mighty_ptr_->updateOccupancyMapPtr(map_pc);
+  dynus_ptr_->updateOccupancyMapPtr(map_pc);
 
   // If we use global point cloud, we don't need to update the map ever
   if (par_.use_global_pc)
@@ -1970,7 +1970,7 @@ int main(int argc, char **argv)
   rclcpp::executors::MultiThreadedExecutor executor;
 
   // add node to executor
-  auto node = std::make_shared<mighty::MIGHTY_NODE>();
+  auto node = std::make_shared<dynus::MIGHTY_NODE>();
   executor.add_node(node);
 
   // spin

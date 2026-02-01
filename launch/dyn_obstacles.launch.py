@@ -244,7 +244,7 @@ def _maybe_launch_forest_node(context):
     }
 
     forest_node = Node(
-        package='mighty',
+        package='dynus',
         executable='dynamic_forest_node',
         name='dynamic_forest_trajs',
         output='screen',

@@ -18,10 +18,10 @@
 // Your project headers (adjust include paths to match your repo)
 #include "timer.hpp"
 #include "dgp/termcolor.hpp"
-#include "mighty/mighty_type.hpp"
-#include <mighty/utils.hpp>
+#include "dynus/dynus_type.hpp"
+#include <dynus/utils.hpp>
 #include "dgp/dgp_manager.hpp"
-#include <mighty/gurobi_solver.hpp>
+#include <dynus/gurobi_solver.hpp>
 #include <decomp_rviz_plugins/data_ros_utils.hpp>
 #include <decomp_util/ellipsoid_decomp.h>
 #include <decomp_util/seed_decomp.h>
@@ -31,7 +31,7 @@
 
 namespace fs = std::filesystem;
 using namespace std::chrono_literals;
-using namespace mighty;
+using namespace dynus;
 
 // Type‐aliases
 using Vec3 = Eigen::Vector3d;
@@ -238,7 +238,7 @@ public:
         declare_parameter<std::string>("poly_topic", "/NX01/poly_safe");
         declare_parameter<std::string>("path_topic", "/NX01/dgp_path_marker");
         declare_parameter<bool>("publish_ellipsoids", false);
-        declare_parameter<std::string>("ellip_topic", "/mighty/sfc_ellip");
+        declare_parameter<std::string>("ellip_topic", "/dynus/sfc_ellip");
         declare_parameter<bool>("keep_alive", true);            // keep node running for RViz
         declare_parameter<double>("republish_period_sec", 1.0); // 0 disables periodic republish
 
@@ -585,8 +585,8 @@ private:
 
     // RViz publishing
     std::string frame_id_{"world"};
-    std::string poly_topic_{"/mighty/sfc_poly"};
-    std::string path_topic_{"/mighty/sfc_path"};
+    std::string poly_topic_{"/dynus/sfc_poly"};
+    std::string path_topic_{"/dynus/sfc_path"};
     bool keep_alive_{true};
     double republish_period_sec_{1.0};
 

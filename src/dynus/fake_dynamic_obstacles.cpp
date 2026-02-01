@@ -45,7 +45,7 @@ public:
         wave_in_z(x_string, y_string, z_string, x, y, z, scale, offset, slower);
 
         // Get mesh path
-        std::string mesh_path = "package://mighty/share/dynus/meshes/obstacles/model2.dae";
+        std::string mesh_path = "package://dynus/share/dynus/meshes/obstacles/model2.dae";
 
         // Get bounding box
         std::vector<double> bbox = {0.4, 0.4, 4.0};

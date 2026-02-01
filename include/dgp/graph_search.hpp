@@ -12,17 +12,17 @@
 #include <vector>                    // std::vector
 #include <unordered_map>             // std::unordered_map
 #include <mutex>                     // std::mutex
-#include <dgp/map_util.hpp>          // mighty::MapUtil
+#include <dgp/map_util.hpp>          // dynus::MapUtil
 #include <dgp/data_type.hpp>
 #include <timer.hpp>
 #include <dgp/data_type.hpp>
-#include <mighty/utils.hpp>
-#include <mighty/mighty_type.hpp>
+#include <dynus/utils.hpp>
+#include <dynus/dynus_type.hpp>
 
 // TODO: ROS dependency (not ideal)
 #include <rclcpp/rclcpp.hpp>
 
-namespace mighty
+namespace dynus
 {
   /// Heap element comparison
   template <class T>
@@ -179,7 +179,7 @@ namespace mighty
      * @param global_planner initial guess planner, optional, default as ""
      * @param res map resolution, optional, default as 0.5
      */
-    GraphSearch(const int *cMap, const std::shared_ptr<mighty::VoxelMapUtil> &map_util, int xDim, int yDim, int zDim, double eps, bool verbose, std::string global_planner, double w_unknown, double w_align = 60.0, double decay_len_cells = 20.0, double w_side = 0.2);
+    GraphSearch(const int *cMap, const std::shared_ptr<dynus::VoxelMapUtil> &map_util, int xDim, int yDim, int zDim, double eps, bool verbose, std::string global_planner, double w_unknown, double w_align = 60.0, double decay_len_cells = 20.0, double w_side = 0.2);
 
     /**
      * @brief start 3D planning thread
@@ -303,7 +303,7 @@ namespace mighty
     std::string global_planner_;
 
     // Map util
-    std::shared_ptr<mighty::VoxelMapUtil> map_util_;
+    std::shared_ptr<dynus::VoxelMapUtil> map_util_;
 
     // Set start and goal
     Vecf<3> start_;

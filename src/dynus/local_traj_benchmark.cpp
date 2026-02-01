@@ -19,10 +19,10 @@
 
 #include "timer.hpp"
 #include "dgp/termcolor.hpp"
-#include "mighty/mighty_type.hpp"
-#include <mighty/utils.hpp>
+#include "dynus/dynus_type.hpp"
+#include <dynus/utils.hpp>
 #include "dgp/dgp_manager.hpp"
-#include <mighty/gurobi_solver.hpp>
+#include <dynus/gurobi_solver.hpp>
 #include <decomp_rviz_plugins/data_ros_utils.hpp>
 #include <decomp_util/ellipsoid_decomp.h>
 #include <decomp_util/seed_decomp.h>
@@ -36,7 +36,7 @@
 namespace fs = std::filesystem;
 using namespace std::chrono;
 
-using namespace mighty;
+using namespace dynus;
 
 using Vec3d = Eigen::Vector3d;
 using Vec3f = Eigen::Matrix<double, 3, 1>;
@@ -644,7 +644,7 @@ static void dumpTrajectoryCsvV1(
     if (!ofs)
         throw std::runtime_error("Failed to open traj csv for write: " + out_csv.string());
 
-    ofs << "# traj_format: mighty_local_traj_csv_v1\n";
+    ofs << "# traj_format: dynus_local_traj_csv_v1\n";
     ofs << "# planner_name: " << planner_name << "\n";
     ofs << "# case_file: " << case_file_basename << "\n";
     ofs << "# frame_id: " << frame_id << "\n";
@@ -712,7 +712,7 @@ public:
         // Solver control
         declare_parameter<double>("assumed_last_replan_time_sec", 0.05);
 
-        // Minimal subset of mighty.yaml that SolverGurobi needs
+        // Minimal subset of dynus.yaml that SolverGurobi needs
         declare_parameter<int>("num_N", 6);
         declare_parameter<double>("dc", 0.01);
 

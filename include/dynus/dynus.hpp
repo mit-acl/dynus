@@ -19,10 +19,10 @@
 
 #include "timer.hpp"
 #include "dgp/termcolor.hpp"
-#include "mighty/mighty_type.hpp"
-#include <mighty/utils.hpp>
+#include "dynus/dynus_type.hpp"
+#include <dynus/utils.hpp>
 #include "dgp/dgp_manager.hpp"
-#include <mighty/gurobi_solver.hpp>
+#include <dynus/gurobi_solver.hpp>
 #include <decomp_rviz_plugins/data_ros_utils.hpp>
 #include <decomp_util/ellipsoid_decomp.h>
 #include <decomp_util/seed_decomp.h>
@@ -38,7 +38,7 @@ enum
   RETURN_INTERSECTION = 1
 };
 
-using namespace mighty;
+using namespace dynus;
 using namespace termcolor;
 
 // Type‐aliases
@@ -74,12 +74,12 @@ enum DroneStatus
   GOAL_REACHED = 3
 };
 
-class MIGHTY
+class DYNUS
 {
 
 public:
   // Methods
-  MIGHTY(parameters par);
+  DYNUS(parameters par);
   bool needReplan(const state &local_state, const state &local_G_term, const state &last_plan_state);
   bool findAandAtime(state &A, double &A_time, double current_time, double last_replaning_computation_time);
   bool checkIfPointOccupied(const Vec3f &point);
@@ -153,7 +153,7 @@ public:
                                                   std::vector<float> &pred_times,         // [M], relative times from now
                                                   double current_time);
   void getPieceWisePol(PieceWisePol &pwp);
-  std::shared_ptr<mighty::VoxelMapUtil> getMapUtilSharedPtr();
+  std::shared_ptr<dynus::VoxelMapUtil> getMapUtilSharedPtr();
 
 private:
   // Parameters

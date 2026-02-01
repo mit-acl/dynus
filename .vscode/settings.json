@@ -1,7 +1,7 @@
 {
     "python.autoComplete.extraPaths": [
         "/home/kkondo/code/dynus_ws/install/multi_map_server/local/lib/python3.10/dist-packages",
-        "/home/kkondo/code/dynus_ws/install/mighty/local/lib/python3.10/dist-packages",
+        "/home/kkondo/code/dynus_ws/install/dynus/local/lib/python3.10/dist-packages",
         "/home/kkondo/code/dynus_ws/install/champ_bringup/local/lib/python3.10/dist-packages",
         "/home/kkondo/code/dynus_ws/install/gazebo_ros/local/lib/python3.10/dist-packages",
         "/home/kkondo/code/dynus_ws/install/fla_interfaces/local/lib/python3.10/dist-packages",
@@ -19,7 +19,7 @@
     ],
     "python.analysis.extraPaths": [
         "/home/kkondo/code/dynus_ws/install/multi_map_server/local/lib/python3.10/dist-packages",
-        "/home/kkondo/code/dynus_ws/install/mighty/local/lib/python3.10/dist-packages",
+        "/home/kkondo/code/dynus_ws/install/dynus/local/lib/python3.10/dist-packages",
         "/home/kkondo/code/dynus_ws/install/champ_bringup/local/lib/python3.10/dist-packages",
         "/home/kkondo/code/dynus_ws/install/gazebo_ros/local/lib/python3.10/dist-packages",
         "/home/kkondo/code/dynus_ws/install/fla_interfaces/local/lib/python3.10/dist-packages",

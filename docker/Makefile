@@ -2,12 +2,12 @@
 .PHONY: build
 build:
 	docker build \
-	  -t mighty .
+	  -t dynus .
 
 .PHONY: build-no-cache
 build-no-cache:
 	docker build \
-	--build-arg DUMMY=`date +%s` -t mighty .
+	--build-arg DUMMY=`date +%s` -t dynus .
 
 run:
 	xhost + && docker run  -it \
@@ -18,4 +18,4 @@ run:
 				--network=host \
 				--env="DISPLAY" \
 				--env="QT_X11_NO_MITSHM=1" \
-				--rm mighty
+				--rm dynus

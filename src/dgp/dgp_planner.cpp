@@ -144,10 +144,10 @@ void DGPPlanner::updateVmax(double v_max)
   v_max_ = v_max;
 }
 
-void DGPPlanner::setMapUtil(const std::shared_ptr<mighty::MapUtil<3>> &map_util)
+void DGPPlanner::setMapUtil(const std::shared_ptr<dynus::MapUtil<3>> &map_util)
 {
   // Deep copy the map_util
-  map_util_ = std::make_shared<mighty::MapUtil<3>>(*map_util);
+  map_util_ = std::make_shared<dynus::MapUtil<3>>(*map_util);
   // map_util_ = map_util;
 }
 
@@ -427,7 +427,7 @@ bool DGPPlanner::plan(const Vecf<3> &start, const Vecf<3> &start_vel, const Vecf
   double initial_g = (start - map_util_->intToFloat(start_int)).norm();
 
   // should we initialize the planner in constructor?
-  graph_search_ = std::make_shared<mighty::GraphSearch>((map_util_->map_).data(), map_util_, dim(0), dim(1), dim(2), eps, planner_verbose_, global_planner_, w_unknown_);
+  graph_search_ = std::make_shared<dynus::GraphSearch>((map_util_->map_).data(), map_util_, dim(0), dim(1), dim(2), eps, planner_verbose_, global_planner_, w_unknown_);
   graph_search_->setStartAndGoal(start, goal);
   double max_values[3] = {v_max_, a_max_, j_max_};
   graph_search_->setBounds(max_values);

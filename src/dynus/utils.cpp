@@ -6,9 +6,9 @@
  * See LICENSE file for the license information
  * -------------------------------------------------------------------------- */
 
-#include "mighty/utils.hpp"
+#include "dynus/utils.hpp"
 
-namespace mighty_utils
+namespace dynus_utils
 {
 
   dynus_interfaces::msg::PWPTraj convertPwp2PwpMsg(const PieceWisePol &pwp)
@@ -115,7 +115,7 @@ namespace mighty_utils
       m.header.stamp = rclcpp::Clock().now();
       m.action = visualization_msgs::msg::Marker::ADD;
       m.id = j;
-      m.color = getColor(mighty_utils::red_normal);
+      m.color = getColor(dynus_utils::red_normal);
       m.scale.x = 0.1;
       m.scale.y = 0.0000001; // rviz complains if not
       m.scale.z = 0.0000001; // rviz complains if not
@@ -289,43 +289,43 @@ namespace mighty_utils
 
     switch (id)
     {
-    case mighty_utils::red_normal:
+    case dynus_utils::red_normal:
       return red;
       break;
-    case mighty_utils::red_trans:
+    case dynus_utils::red_trans:
       return red_trans;
       break;
-    case mighty_utils::red_trans_trans:
+    case dynus_utils::red_trans_trans:
       return red_trans_trans;
       break;
-    case mighty_utils::blue_normal:
+    case dynus_utils::blue_normal:
       return blue;
       break;
-    case mighty_utils::blue_trans:
+    case dynus_utils::blue_trans:
       return blue_trans;
       break;
-    case mighty_utils::blue_trans_trans:
+    case dynus_utils::blue_trans_trans:
       return blue_trans_trans;
       break;
-    case mighty_utils::blue_light:
+    case dynus_utils::blue_light:
       return blue_light;
       break;
-    case mighty_utils::green_normal:
+    case dynus_utils::green_normal:
       return green;
       break;
-    case mighty_utils::yellow_normal:
+    case dynus_utils::yellow_normal:
       return yellow;
       break;
-    case mighty_utils::orange_trans:
+    case dynus_utils::orange_trans:
       return orange_trans;
       break;
-    case mighty_utils::black_trans:
+    case dynus_utils::black_trans:
       return black_trans;
       break;
-    case mighty_utils::teal_normal:
+    case dynus_utils::teal_normal:
       return teal_normal;
       break;
-    case mighty_utils::green_trans_trans:
+    case dynus_utils::green_trans_trans:
       return green_trans_trans;
       break;
     default:
@@ -773,7 +773,7 @@ namespace mighty_utils
     }
     else if (path.size() == 2)
     {
-      double travel_time = mighty_utils::getMinTimeDoubleIntegrator3D(path[0], A.vel, path[1], Eigen::Vector3d::Zero(), v_max_3d, a_max_3d);
+      double travel_time = dynus_utils::getMinTimeDoubleIntegrator3D(path[0], A.vel, path[1], Eigen::Vector3d::Zero(), v_max_3d, a_max_3d);
       return {travel_time};
     }
     else
@@ -791,7 +791,7 @@ namespace mighty_utils
     {
 
       // Compute travel time
-      double travel_time = mighty_utils::getMinTimeDoubleIntegrator3D(path[i], velocities[i], path[i + 1], velocities[i + 1], v_max_3d, a_max_3d);
+      double travel_time = dynus_utils::getMinTimeDoubleIntegrator3D(path[i], velocities[i], path[i + 1], velocities[i + 1], v_max_3d, a_max_3d);
 
       if (debug_verbose)
       {
@@ -823,4 +823,4 @@ namespace mighty_utils
     return pose;
   }
 
-} // namespace mighty_utils
+} // namespace dynus_utils

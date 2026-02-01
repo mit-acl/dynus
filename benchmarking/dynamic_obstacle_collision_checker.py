@@ -5,7 +5,7 @@ Dynamic obstacle collision + closest-distance analysis with caching.
 Example:
   python3 src/dynus/benchmarking/dynamic_obstacle_collision_checker.py 
         --num_obstacles 50 
-        --bag_folder /media/kkondo/kota_elements/mighty/dynamic_obstacle/bags/mighty 
+        --bag_folder /media/kkondo/kota_elements/dynus/dynamic_obstacle/bags/dynus 
         --drone_radius 0.1 
         --sample_interval 0.01 
         --hist_bins 60
@@ -13,7 +13,7 @@ Example:
 Re-plot later from cache only (no bag I/O):
 python3 src/dynus/benchmarking/dynamic_obstacle_collision_checker.py 
         --num_obstacles 50 
-        --bag_folder /media/kkondo/kota_elements/mighty/dynamic_obstacle/bags/mighty 
+        --bag_folder /media/kkondo/kota_elements/dynus/dynamic_obstacle/bags/dynus 
         --drone_radius 0.1 
         --sample_interval 0.01 
         --read-cache-only

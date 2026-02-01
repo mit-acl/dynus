@@ -6,9 +6,9 @@
  * See LICENSE file for the license information
  * -------------------------------------------------------------------------- */
 
-#include "mighty/mighty.hpp"
+#include "dynus/dynus.hpp"
 
-using namespace mighty;
+using namespace dynus;
 using namespace termcolor;
 
 typedef timer::Timer MyTimer;
@@ -16,10 +16,10 @@ typedef timer::Timer MyTimer;
 // ----------------------------------------------------------------------------
 
 /**
- * @brief Constructor for MIGHTY.
+ * @brief Constructor for DYNUS.
  * @param parameters par: Input configuration parameters.
  */
-MIGHTY::MIGHTY(parameters par) : par_(par)
+DYNUS::DYNUS(parameters par) : par_(par)
 {
 
   // Set up dgp_manager
@@ -68,7 +68,7 @@ MIGHTY::MIGHTY(parameters par) : par_(par)
   tmp_traj_solver_ptr->setXf(tmp_end_state);
   worst_traj_time_ = tmp_traj_solver_ptr->getInitialDt() * par_.num_N;
 
-  std::cout << bold << green << "[MIGHTY] Worst case trajectory time for pre-computation: " << worst_traj_time_ << " [s]" << reset << std::endl;
+  std::cout << bold << green << "[DYNUS] Worst case trajectory time for pre-computation: " << worst_traj_time_ << " [s]" << reset << std::endl;
 
   // Set up basis converter
   BasisConverter basis_converter;
@@ -98,7 +98,7 @@ MIGHTY::MIGHTY(parameters par) : par_(par)
 /**
  * @brief Starts adaptive k-value.
  */
-void MIGHTY::startAdaptKValue()
+void DYNUS::startAdaptKValue()
 {
 
   // Compute the average computation time
@@ -120,13 +120,13 @@ void MIGHTY::startAdaptKValue()
  * @param const state &G_term: goal state.
  * @return bool
  */
-void MIGHTY::computeG(const state &A, const state &G_term, double horizon)
+void DYNUS::computeG(const state &A, const state &G_term, double horizon)
 {
   // Initialize the result
   state local_G;
 
   // Compute pos for G
-  local_G.pos = mighty_utils::projectPointToSphere(A.pos, G_term.pos, horizon);
+  local_G.pos = dynus_utils::projectPointToSphere(A.pos, G_term.pos, horizon);
 
   // Compute yaw for G
   Eigen::Vector3d dir = (G_term.pos - local_G.pos).normalized();
@@ -143,7 +143,7 @@ void MIGHTY::computeG(const state &A, const state &G_term, double horizon)
  * @return bool
  */
 
-bool MIGHTY::needReplan(const state &local_state, const state &local_G_term, const state &last_plan_state)
+bool DYNUS::needReplan(const state &local_state, const state &local_G_term, const state &last_plan_state)
 {
 
   // Compute the distance to the terminal goal
@@ -175,7 +175,7 @@ bool MIGHTY::needReplan(const state &local_state, const state &local_G_term, con
 
 // ----------------------------------------------------------------------------
 
-bool MIGHTY::findAandAtime(state &A, double &A_time, double current_time, double last_replaning_computation_time)
+bool DYNUS::findAandAtime(state &A, double &A_time, double current_time, double last_replaning_computation_time)
 {
 
   mtx_plan_.lock();
@@ -244,7 +244,7 @@ bool MIGHTY::findAandAtime(state &A, double &A_time, double current_time, double
 
 // ----------------------------------------------------------------------------
 
-bool MIGHTY::checkIfPointOccupied(const Vec3f &point)
+bool DYNUS::checkIfPointOccupied(const Vec3f &point)
 {
   // Check if the point is free
   return dgp_manager_.checkIfPointOccupied(point);
@@ -252,7 +252,7 @@ bool MIGHTY::checkIfPointOccupied(const Vec3f &point)
 
 // ----------------------------------------------------------------------------
 
-bool MIGHTY::checkIfPointFree(const Vec3f &point)
+bool DYNUS::checkIfPointFree(const Vec3f &point)
 {
   // Check if the point is free
   return dgp_manager_.checkIfPointFree(point);
@@ -260,7 +260,7 @@ bool MIGHTY::checkIfPointFree(const Vec3f &point)
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY::findSafeSubGoal(vec_Vecf<3> &global_path)
+void DYNUS::findSafeSubGoal(vec_Vecf<3> &global_path)
 {
   // Keep the original global path
   vec_Vecf<3> original_global_path = global_path;
@@ -431,7 +431,7 @@ void MIGHTY::findSafeSubGoal(vec_Vecf<3> &global_path)
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY::computeMapSize(const Eigen::Vector3d &min_pos, const Eigen::Vector3d &max_pos)
+void DYNUS::computeMapSize(const Eigen::Vector3d &min_pos, const Eigen::Vector3d &max_pos)
 {
 
   // Get local_A
@@ -462,7 +462,7 @@ void MIGHTY::computeMapSize(const Eigen::Vector3d &min_pos, const Eigen::Vector3
 
 // ----------------------------------------------------------------------------
 
-bool MIGHTY::checkPointWithinMap(const Eigen::Vector3d &point) const
+bool DYNUS::checkPointWithinMap(const Eigen::Vector3d &point) const
 {
   // Check if the point is within the map boundaries for each axis
   return (std::abs(point[0] - map_center_[0]) <= wdx_ / 2.0) && (std::abs(point[1] - map_center_[1]) <= wdy_ / 2.0) && (std::abs(point[2] - map_center_[2]) <= wdz_ / 2.0);
@@ -470,14 +470,14 @@ bool MIGHTY::checkPointWithinMap(const Eigen::Vector3d &point) const
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY::getStaticPushPoints(vec_Vecf<3> &static_push_points)
+void DYNUS::getStaticPushPoints(vec_Vecf<3> &static_push_points)
 {
   static_push_points = static_push_points_;
 }
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY::getLocalGlobalPath(vec_Vecf<3> &local_global_path, vec_Vecf<3> &local_global_path_after_push)
+void DYNUS::getLocalGlobalPath(vec_Vecf<3> &local_global_path, vec_Vecf<3> &local_global_path_after_push)
 {
   local_global_path = local_global_path_;
   local_global_path_after_push = local_global_path_after_push_;
@@ -485,7 +485,7 @@ void MIGHTY::getLocalGlobalPath(vec_Vecf<3> &local_global_path, vec_Vecf<3> &loc
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY::getGlobalPath(vec_Vecf<3> &global_path)
+void DYNUS::getGlobalPath(vec_Vecf<3> &global_path)
 {
   mtx_global_path_.lock();
   global_path = global_path_;
@@ -494,7 +494,7 @@ void MIGHTY::getGlobalPath(vec_Vecf<3> &global_path)
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY::getOriginalGlobalPath(vec_Vecf<3> &original_global_path)
+void DYNUS::getOriginalGlobalPath(vec_Vecf<3> &original_global_path)
 {
   mtx_original_global_path_.lock();
   original_global_path = original_global_path_;
@@ -503,14 +503,14 @@ void MIGHTY::getOriginalGlobalPath(vec_Vecf<3> &original_global_path)
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY::getFreeGlobalPath(vec_Vecf<3> &free_global_path)
+void DYNUS::getFreeGlobalPath(vec_Vecf<3> &free_global_path)
 {
   free_global_path = free_global_path_;
 }
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY::resetData()
+void DYNUS::resetData()
 {
 
   final_g_ = 0.0;
@@ -538,7 +538,7 @@ void MIGHTY::resetData()
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY::retrieveData(double &final_g,
+void DYNUS::retrieveData(double &final_g,
                           double &global_planning_time,
                           double &dgp_static_jps_time,
                           double &dgp_check_path_time,
@@ -567,7 +567,7 @@ void MIGHTY::retrieveData(double &final_g,
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY::retrievePolytopes(vec_E<Polyhedron<3>> &poly_out_whole, vec_E<Polyhedron<3>> &poly_out_safe)
+void DYNUS::retrievePolytopes(vec_E<Polyhedron<3>> &poly_out_whole, vec_E<Polyhedron<3>> &poly_out_safe)
 {
   poly_out_whole = poly_out_whole_;
   poly_out_safe = poly_out_safe_;
@@ -575,21 +575,21 @@ void MIGHTY::retrievePolytopes(vec_E<Polyhedron<3>> &poly_out_whole, vec_E<Polyh
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY::retrieveGoalSetpoints(std::vector<state> &goal_setpoints)
+void DYNUS::retrieveGoalSetpoints(std::vector<state> &goal_setpoints)
 {
   goal_setpoints = goal_setpoints_;
 }
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY::retrieveListSubOptGoalSetpoints(std::vector<std::vector<state>> &list_subopt_goal_setpoints)
+void DYNUS::retrieveListSubOptGoalSetpoints(std::vector<std::vector<state>> &list_subopt_goal_setpoints)
 {
   list_subopt_goal_setpoints = list_subopt_goal_setpoints_;
 }
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY::retrieveCPs(std::vector<Eigen::Matrix<double, 3, 4>> &cps)
+void DYNUS::retrieveCPs(std::vector<Eigen::Matrix<double, 3, 4>> &cps)
 {
   cps = cps_;
 }
@@ -601,7 +601,7 @@ void MIGHTY::retrieveCPs(std::vector<Eigen::Matrix<double, 3, 4>> &cps)
  * @param double last_replaning_computation_time: Last replanning computation time.
  * @param double current_time: Current timestamp.
  */
-std::tuple<bool, bool> MIGHTY::replan(double last_replaning_computation_time, double current_time)
+std::tuple<bool, bool> DYNUS::replan(double last_replaning_computation_time, double current_time)
 {
 
   /* -------------------- Housekeeping -------------------- */
@@ -685,7 +685,7 @@ std::tuple<bool, bool> MIGHTY::replan(double last_replaning_computation_time, do
 
 // ----------------------------------------------------------------------------
 
-bool MIGHTY::generateGlobalPath(vec_Vecf<3> &global_path, double current_time, double last_replaning_computation_time)
+bool DYNUS::generateGlobalPath(vec_Vecf<3> &global_path, double current_time, double last_replaning_computation_time)
 {
 
   // Get G and G_term
@@ -813,7 +813,7 @@ bool MIGHTY::generateGlobalPath(vec_Vecf<3> &global_path, double current_time, d
 
 // ----------------------------------------------------------------------------
 
-bool MIGHTY::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_computation_time)
+bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_computation_time)
 {
 
   // Get local_A, local_G and A_time
@@ -1059,7 +1059,7 @@ bool MIGHTY::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY::getPieceWisePol(PieceWisePol &pwp)
+void DYNUS::getPieceWisePol(PieceWisePol &pwp)
 {
   pwp = pwp_to_share_;
 }
@@ -1077,7 +1077,7 @@ void MIGHTY::getPieceWisePol(PieceWisePol &pwp)
 //
 // Returns seg_end_times with size = num_seg,
 // where seg_end_times[i] is cumulative end time at end of segment i.
-std::vector<double> MIGHTY::computeWorstSegEndTimesPoly(
+std::vector<double> DYNUS::computeWorstSegEndTimesPoly(
     double initial_dt, double factor, size_t num_seg)
 {
   std::vector<double> seg_end_times;
@@ -1148,7 +1148,7 @@ std::vector<double> MIGHTY::computeWorstSegEndTimesPoly(
 
 // ----------------------------------------------------------------------------
 
-bool MIGHTY::generateLocalTrajectory(
+bool DYNUS::generateLocalTrajectory(
     EllipsoidDecomp3D &ellip,
     const vec_Vecf<3> &global_path,
     const state &local_A, const state &local_E, const std::vector<double> &sub_goal, double A_time,
@@ -1267,7 +1267,7 @@ bool MIGHTY::generateLocalTrajectory(
 
 // ----------------------------------------------------------------------------
 
-bool MIGHTY::appendToPlan()
+bool DYNUS::appendToPlan()
 {
 
   if (par_.debug_verbose)
@@ -1318,7 +1318,7 @@ bool MIGHTY::appendToPlan()
  * @brief Gets the terminal goal state.
  * @param state &G_term: Output terminal goal state.
  */
-void MIGHTY::getGterm(state &G_term)
+void DYNUS::getGterm(state &G_term)
 {
   mtx_G_term_.lock();
   G_term = G_term_;
@@ -1331,7 +1331,7 @@ void MIGHTY::getGterm(state &G_term)
  * @brief Sets the terminal goal state.
  * @param state G_term: Terminal goal state to set.
  */
-void MIGHTY::setGterm(const state &G_term)
+void DYNUS::setGterm(const state &G_term)
 {
   mtx_G_term_.lock();
   G_term_ = G_term;
@@ -1344,7 +1344,7 @@ void MIGHTY::setGterm(const state &G_term)
  * @brief Gets the subgoal.
  * @param state &G: Output subgoal.
  */
-void MIGHTY::getG(state &G)
+void DYNUS::getG(state &G)
 {
   mtx_G_.lock();
   G = G_;
@@ -1357,7 +1357,7 @@ void MIGHTY::getG(state &G)
  * @brief Gets point E
  * @param state &G: Output point E
  */
-void MIGHTY::getE(state &E)
+void DYNUS::getE(state &E)
 {
   mtx_E_.lock();
   E = E_;
@@ -1370,7 +1370,7 @@ void MIGHTY::getE(state &E)
  * @brief Sets the subgoal.
  * @param state G: Subgoal to set.
  */
-void MIGHTY::setG(const state &G)
+void DYNUS::setG(const state &G)
 {
   mtx_G_.lock();
   G_ = G;
@@ -1383,7 +1383,7 @@ void MIGHTY::setG(const state &G)
  * @brief Gets A (starting point for global planning).
  * @param state &G: Output A.
  */
-void MIGHTY::getA(state &A)
+void DYNUS::getA(state &A)
 {
   mtx_A_.lock();
   A = A_;
@@ -1396,7 +1396,7 @@ void MIGHTY::getA(state &A)
  * @brief Sets A (starting point for global planning).
  * @param state &G: Input A.
  */
-void MIGHTY::setA(const state &A)
+void DYNUS::setA(const state &A)
 {
   mtx_A_.lock();
   A_ = A;
@@ -1405,7 +1405,7 @@ void MIGHTY::setA(const state &A)
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY::getA_time(double &A_time)
+void DYNUS::getA_time(double &A_time)
 {
   mtx_A_time_.lock();
   A_time = A_time_;
@@ -1418,7 +1418,7 @@ void MIGHTY::getA_time(double &A_time)
  * @brief Sets A (starting point for global planning)'s time
  * @param state &G: Input A time
  */
-void MIGHTY::setA_time(double A_time)
+void DYNUS::setA_time(double A_time)
 {
   mtx_A_time_.lock();
   A_time_ = A_time;
@@ -1431,7 +1431,7 @@ void MIGHTY::setA_time(double A_time)
  * @brief Gets the current state.
  * @param state &state: Output current state.
  */
-void MIGHTY::getState(state &state)
+void DYNUS::getState(state &state)
 {
   mtx_state_.lock();
   state = state_;
@@ -1444,7 +1444,7 @@ void MIGHTY::getState(state &state)
  * @brief Gets the last plan state
  * @param state &state: Output last plan state
  */
-void MIGHTY::getLastPlanState(state &state)
+void DYNUS::getLastPlanState(state &state)
 {
   mtx_plan_.lock();
   state = plan_.back();
@@ -1457,7 +1457,7 @@ void MIGHTY::getLastPlanState(state &state)
  * @brief Gets trajs_
  * @param std::vector<std::shared_ptr<dynTraj>> &trajs: Output trajs_
  */
-void MIGHTY::getTrajs(std::vector<std::shared_ptr<dynTraj>> &out)
+void DYNUS::getTrajs(std::vector<std::shared_ptr<dynTraj>> &out)
 {
   std::lock_guard<std::mutex> lock(mtx_trajs_);
   out = trajs_; // copies shared_ptr only, not expressions
@@ -1469,7 +1469,7 @@ void MIGHTY::getTrajs(std::vector<std::shared_ptr<dynTraj>> &out)
  * @brief Cleans up old trajectories.
  * @param double current_time: Current timestamp.
  */
-void MIGHTY::cleanUpOldTrajs(double current_time)
+void DYNUS::cleanUpOldTrajs(double current_time)
 {
   std::lock_guard<std::mutex> lock(mtx_trajs_);
 
@@ -1492,7 +1492,7 @@ void MIGHTY::cleanUpOldTrajs(double current_time)
  * @param dynTraj new_traj: New trajectory to add.
  * @param double current_time: Current timestamp.
  */
-void MIGHTY::addTraj(std::shared_ptr<dynTraj> new_traj, double current_time)
+void DYNUS::addTraj(std::shared_ptr<dynTraj> new_traj, double current_time)
 {
 
   // Evaluate
@@ -1521,7 +1521,7 @@ void MIGHTY::addTraj(std::shared_ptr<dynTraj> new_traj, double current_time)
  * @brief Updates the current state.
  * @param state data: New state data.
  */
-void MIGHTY::updateState(state data)
+void DYNUS::updateState(state data)
 {
 
   // If we are doing hardware and provide goal in global frame (e.g. vicon), we need to transform the goal to the local frame
@@ -1583,7 +1583,7 @@ void MIGHTY::updateState(state data)
  * @param state &next_goal: Output next goal state.
  * @return bool
  */
-bool MIGHTY::getNextGoal(state &next_goal)
+bool DYNUS::getNextGoal(state &next_goal)
 {
 
   // Check if the planner is initialized
@@ -1678,7 +1678,7 @@ bool MIGHTY::getNextGoal(state &next_goal)
  * @brief Computes the desired yaw for the next goal.
  * @param state &next_goal: Next goal state to update with desired yaw.
  */
-void MIGHTY::getDesiredYaw(state &next_goal)
+void DYNUS::getDesiredYaw(state &next_goal)
 {
 
   double diff = 0.0;
@@ -1712,7 +1712,7 @@ void MIGHTY::getDesiredYaw(state &next_goal)
     return;
   }
 
-  mighty_utils::angle_wrap(diff);
+  dynus_utils::angle_wrap(diff);
   if (fabs(diff) < 0.04 && drone_status_ == DroneStatus::YAWING)
   {
     changeDroneStatus(DroneStatus::TRAVELING);
@@ -1723,7 +1723,7 @@ void MIGHTY::getDesiredYaw(state &next_goal)
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY::yaw(double diff, state &next_goal)
+void DYNUS::yaw(double diff, state &next_goal)
 {
   saturate(diff, -par_.dc * par_.w_max, par_.dc * par_.w_max);
   dyaw_filtered_ = (1 - par_.alpha_filter_dyaw) * (copysign(1, diff) * par_.w_max) + par_.alpha_filter_dyaw * dyaw_filtered_;
@@ -1738,7 +1738,7 @@ void MIGHTY::yaw(double diff, state &next_goal)
  * @brief Sets the terminal goal.
  * @param const state &term_goal: Desired terminal goal state.
  */
-void MIGHTY::setTerminalGoal(const state &term_goal)
+void DYNUS::setTerminalGoal(const state &term_goal)
 {
 
   // Get the state
@@ -1750,7 +1750,7 @@ void MIGHTY::setTerminalGoal(const state &term_goal)
 
   // Project the terminal goal to the sphere
   mtx_G_.lock();
-  G_.pos = mighty_utils::projectPointToSphere(local_state.pos, term_goal.pos, par_.horizon);
+  G_.pos = dynus_utils::projectPointToSphere(local_state.pos, term_goal.pos, par_.horizon);
   mtx_G_.unlock();
 
   changeDroneStatus(DroneStatus::TRAVELING);
@@ -1765,7 +1765,7 @@ void MIGHTY::setTerminalGoal(const state &term_goal)
  * @brief Changes the drone's status (YAWING, TRAVELING, GOAL_SEEN, GOAL_REACHED).
  * @param int new_status: New status value.
  */
-void MIGHTY::changeDroneStatus(int new_status)
+void DYNUS::changeDroneStatus(int new_status)
 {
   if (new_status == drone_status_)
     return;
@@ -1817,7 +1817,7 @@ void MIGHTY::changeDroneStatus(int new_status)
  * @brief Checks if all necessary components are initialized.
  * @return bool
  */
-bool MIGHTY::checkReadyToReplan()
+bool DYNUS::checkReadyToReplan()
 {
   return state_initialized_ &&
          terminal_goal_initialized_ &&
@@ -1834,7 +1834,7 @@ bool MIGHTY::checkReadyToReplan()
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY::updateMapPtr(
+void DYNUS::updateMapPtr(
     const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_map,
     const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_unk)
 {
@@ -1856,7 +1856,7 @@ void MIGHTY::updateMapPtr(
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY::updateMap(double current_time)
+void DYNUS::updateMap(double current_time)
 {
   // Update the map size
   state local_state, local_G;
@@ -1898,7 +1898,7 @@ void MIGHTY::updateMap(double current_time)
     else
     {
       RCLCPP_WARN(
-          rclcpp::get_logger("mighty"),
+          rclcpp::get_logger("dynus"),
           "updateMap: member pclptr_map_ was null or empty; skipping KD-tree update");
     }
   }
@@ -1918,7 +1918,7 @@ void MIGHTY::updateMap(double current_time)
     else
     {
       RCLCPP_WARN(
-          rclcpp::get_logger("mighty"),
+          rclcpp::get_logger("dynus"),
           "updateMap: member pclptr_unk_ was null or empty; skipping KD‐tree update");
     }
   }
@@ -1926,7 +1926,7 @@ void MIGHTY::updateMap(double current_time)
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY::updateOccupancyMapPtr(
+void DYNUS::updateOccupancyMapPtr(
     const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_map)
 {
   // store the incoming clouds
@@ -1943,7 +1943,7 @@ void MIGHTY::updateOccupancyMapPtr(
 
 // ----------------------------------------------------------------------------
 
-void MIGHTY::updateOccupancyMap(double current_time)
+void DYNUS::updateOccupancyMap(double current_time)
 {
 
   // Update the map size
@@ -1981,7 +1981,7 @@ void MIGHTY::updateOccupancyMap(double current_time)
     else
     {
       RCLCPP_WARN(
-          rclcpp::get_logger("mighty"),
+          rclcpp::get_logger("dynus"),
           "updateMap: member pclptr_map_ was null or empty; skipping KD-tree update");
     }
   }
@@ -1989,7 +1989,7 @@ void MIGHTY::updateOccupancyMap(double current_time)
 
 // ----------------------------------------------------------------------------
 
-double MIGHTY::computeObstPosAndTrajMaxTimeForMapUpdate(
+double DYNUS::computeObstPosAndTrajMaxTimeForMapUpdate(
     vec_Vecf<3> &obst_pos,
     std::vector<vec_Vecf<3>> &pred_samples, // [K][M]
     std::vector<float> &pred_times,         // [M], relative times from now
@@ -2067,7 +2067,7 @@ double MIGHTY::computeObstPosAndTrajMaxTimeForMapUpdate(
 
 // ----------------------------------------------------------------------------
 
-std::shared_ptr<mighty::VoxelMapUtil> MIGHTY::getMapUtilSharedPtr()
+std::shared_ptr<dynus::VoxelMapUtil> DYNUS::getMapUtilSharedPtr()
 {
   return dgp_manager_.getMapUtilSharedPtr();
 }
@@ -2078,7 +2078,7 @@ std::shared_ptr<mighty::VoxelMapUtil> MIGHTY::getMapUtilSharedPtr()
  * @brief Set the initial pose.
  * @param const geometry_msgs::msg::TransformStamped &init_pose: Initial pose.
  */
-void MIGHTY::setInitialPose(const geometry_msgs::msg::TransformStamped &init_pose)
+void DYNUS::setInitialPose(const geometry_msgs::msg::TransformStamped &init_pose)
 {
   init_pose_ = init_pose;
 
@@ -2107,7 +2107,7 @@ void MIGHTY::setInitialPose(const geometry_msgs::msg::TransformStamped &init_pos
 // ----------------------------------------------------------------------------
 
 // Apply the initial pose transformation to the pwp
-void MIGHTY::applyInitiPoseTransform(PieceWisePol &pwp)
+void DYNUS::applyInitiPoseTransform(PieceWisePol &pwp)
 {
   // Loop thru the intervals
   for (int i = 0; i < pwp.coeff_x.size(); i++)
@@ -2135,7 +2135,7 @@ void MIGHTY::applyInitiPoseTransform(PieceWisePol &pwp)
 // ----------------------------------------------------------------------------
 
 // Apply the inverse of initial pose transformation to the pwp
-void MIGHTY::applyInitiPoseInverseTransform(PieceWisePol &pwp)
+void DYNUS::applyInitiPoseInverseTransform(PieceWisePol &pwp)
 {
   // Loop thru the intervals
   for (int i = 0; i < pwp.coeff_x.size(); i++)
@@ -2166,7 +2166,7 @@ void MIGHTY::applyInitiPoseInverseTransform(PieceWisePol &pwp)
  * @brief Checks if the goal is reached.
  * @return bool
  */
-bool MIGHTY::goalReachedCheck()
+bool DYNUS::goalReachedCheck()
 {
   if (checkReadyToReplan() && drone_status_ == DroneStatus::GOAL_REACHED)
   {

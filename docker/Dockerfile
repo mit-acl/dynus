@@ -1,7 +1,7 @@
 FROM ros:humble
 
 LABEL Maintainer="Kota Kondo <kkondo@mit.edu>" \
-      Description="Ubuntu 22.04, ROS2 humble for MIGHTY"
+      Description="Ubuntu 22.04, ROS2 humble for DYNUS"
 
 # Set environment variables
 ##########################################
@@ -44,22 +44,22 @@ RUN apt install -y  ros-${ROS_DISTRO}-desktop \
                         build-essential \
                         nlohmann-json3-dev
 
-# Install MIGHTY and dependencies
+# Install DYNUS and dependencies
 ##########################################
-RUN mkdir -p /home/kkondo/code/mighty_ws/src
-WORKDIR /home/kkondo/code/mighty_ws/src
+RUN mkdir -p /home/kkondo/code/dynus_ws/src
+WORKDIR /home/kkondo/code/dynus_ws/src
 # dummy arg to invalidate cache and build from here
 ARG DUMMY=unknown
-RUN DUMMY=${DUMMY} git clone https://github.com/mit-acl/mighty.git
-WORKDIR /home/kkondo/code/mighty_ws/src/mighty
+RUN DUMMY=${DUMMY} git clone https://github.com/mit-acl/dynus.git
+WORKDIR /home/kkondo/code/dynus_ws/src/dynus
 RUN git switch dev
-WORKDIR /home/kkondo/code/mighty_ws/src
+WORKDIR /home/kkondo/code/dynus_ws/src
 RUN git clone https://github.com/kotakondo/dynus_interfaces.git
 RUN git clone https://github.com/kotakondo/realsense_gazebo_plugin.git
 RUN git clone https://github.com/kotakondo/livox_laser_simulation_ros2.git
 RUN git clone https://github.com/kotakondo/gazebo_ros_pkgs.git
 RUN git clone https://gitlab.com/mit-acl/lab/acl-mapping.git
-WORKDIR /home/kkondo/code/mighty_ws/src/acl-mapping
+WORKDIR /home/kkondo/code/dynus_ws/src/acl-mapping
 RUN git switch ros2
 RUN mkdir -p /home/kkondo/code/decomp_ws/src
 WORKDIR /home/kkondo/code/decomp_ws/src
@@ -88,7 +88,7 @@ WORKDIR /home/kkondo/code/livox_ws/src/livox_ros_driver2
 RUN . /opt/ros/humble/setup.sh && ./build.sh humble
 
 ### for other packages
-WORKDIR /home/kkondo/code/mighty_ws
+WORKDIR /home/kkondo/code/dynus_ws
 RUN . /opt/ros/humble/setup.sh && \
     . /home/kkondo/code/decomp_ws/install/setup.sh && \
     export CMAKE_PREFIX_PATH=/home/kkondo/code/livox_ws/install/livox_ros_driver2:/home/kkondo/code/decomp_ws/install/decomp_util && colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release
@@ -110,7 +110,7 @@ RUN echo 'alias sb="source ~/.bashrc"' >> ~/.bashrc
 RUN echo 'alias eb="code ~/.bashrc"' >> ~/.bashrc
 RUN echo 'alias gs="git status"' >> ~/.bashrc
 RUN echo 'alias gp="git push"' >> ~/.bashrc
-RUN echo 'alias roscd="cd ~/code/mighty_ws"' >> ~/.bashrc
+RUN echo 'alias roscd="cd ~/code/dynus_ws"' >> ~/.bashrc
 RUN echo 'alias cb="roscd && colcon build && sb"' >> ~/.bashrc
 RUN echo 'alias ss="roscd && source install/setup.bash"' >> ~/.bashrc
 RUN echo 'alias cbd="clear && roscd && colcon build && ss"' >> ~/.bashrc
@@ -122,6 +122,6 @@ RUN echo 'alias tks="tmux kill-server"' >> ~/.bashrc
 
 # Set up Entry Point
 # ##########################################
-COPY ./mighty.sh /
-RUN chmod +x /mighty.sh
-ENTRYPOINT ["/mighty.sh"]
+COPY ./dynus.sh /
+RUN chmod +x /dynus.sh
+ENTRYPOINT ["/dynus.sh"]

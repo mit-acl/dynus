@@ -1,7 +1,7 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "geometry_msgs/msg/twist.hpp"
-#include <mighty/mighty.hpp>
+#include <dynus/dynus.hpp>
 #include "dynus_interfaces/msg/goal.hpp"
 #include "dynus_interfaces/msg/state.hpp"
 #include "tf2/LinearMath/Quaternion.h"

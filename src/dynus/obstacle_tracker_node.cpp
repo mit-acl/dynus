@@ -1,4 +1,4 @@
-#include <mighty/obstacle_tracker_node.hpp>
+#include <dynus/obstacle_tracker_node.hpp>
 #include <limits>
 
 // Adaptive EKF Prediction Step for 3D
@@ -129,7 +129,7 @@ void ObstacleTrackerNode::declareAndsetParameters()
     this->declare_parameter("cluster_bbox_cutoff_size", 5.0);
     this->declare_parameter("use_life_time_for_box_visualization", false);
     this->declare_parameter("box_visualization_duration", 3.0);
-    this->declare_parameter("mighty_map_res", 0.5);
+    this->declare_parameter("dynus_map_res", 0.5);
     this->declare_parameter("velocity_threshold", 0.1);
     this->declare_parameter("acceleration_threshold", 0.1);
     this->declare_parameter("use_hardware", false);
@@ -148,7 +148,7 @@ void ObstacleTrackerNode::declareAndsetParameters()
     cluster_bbox_cutoff_size_ = this->get_parameter("cluster_bbox_cutoff_size").as_double();
     use_life_time_for_box_visualization_ = this->get_parameter("use_life_time_for_box_visualization").as_bool();
     box_visualization_duration_ = this->get_parameter("box_visualization_duration").as_double();
-    mighty_map_res_ = this->get_parameter("mighty_map_res").as_double();
+    dynus_map_res_ = this->get_parameter("dynus_map_res").as_double();
     velocity_threshold_ = this->get_parameter("velocity_threshold").as_double();
     acceleration_threshold_ = this->get_parameter("acceleration_threshold").as_double();
     use_hardware_ = this->get_parameter("use_hardware").as_bool();
@@ -166,7 +166,7 @@ void ObstacleTrackerNode::declareAndsetParameters()
     // RCLCPP_INFO(this->get_logger(), "cluster_bbox_cutoff_size: %f", cluster_bbox_cutoff_size_);
     // RCLCPP_INFO(this->get_logger(), "use_life_time_for_box_visualization: %d", use_life_time_for_box_visualization_);
     // RCLCPP_INFO(this->get_logger(), "box_visualization_duration: %f", box_visualization_duration_);
-    // RCLCPP_INFO(this->get_logger(), "mighty_map_res: %f", mighty_map_res_);
+    // RCLCPP_INFO(this->get_logger(), "dynus_map_res: %f", dynus_map_res_);
     // RCLCPP_INFO(this->get_logger(), "velocity_threshold: %f", velocity_threshold_);
     // RCLCPP_INFO(this->get_logger(), "acceleration_threshold: %f", acceleration_threshold_);
     // RCLCPP_INFO(this->get_logger(), "use_hardware: %d", use_hardware_);
@@ -190,7 +190,7 @@ void ObstacleTrackerNode::pointcloudCallback(const sensor_msgs::msg::PointCloud2
     // Voxel grid filtering to downsample the cloud
     pcl::VoxelGrid<pcl::PointXYZ> vg;
     vg.setInputCloud(cloud);
-    // vg.setLeafSize(mighty_map_res_, mighty_map_res_, mighty_map_res_);
+    // vg.setLeafSize(dynus_map_res_, dynus_map_res_, dynus_map_res_);
     vg.setLeafSize(0.2, 0.2, 0.2);
     vg.filter(*cloud);
 
@@ -630,7 +630,7 @@ void ObstacleTrackerNode::publishPredictions(const std::vector<Cluster> &cluster
         msg.bbox.push_back(clusters[i].ekf_state.bbox.x());
         msg.bbox.push_back(clusters[i].ekf_state.bbox.y());
         msg.bbox.push_back(clusters[i].ekf_state.bbox.z());
-        msg.pwp = mighty_utils::convertPwp2PwpMsg(pwp);
+        msg.pwp = dynus_utils::convertPwp2PwpMsg(pwp);
         msg.ekf_cov_p.push_back(clusters[i].ekf_state.P(0, 0));
         msg.ekf_cov_p.push_back(clusters[i].ekf_state.P(1, 1));
         msg.ekf_cov_p.push_back(clusters[i].ekf_state.P(2, 2));

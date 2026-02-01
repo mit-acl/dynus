@@ -1,4 +1,4 @@
-# MIGHTY: Hermite Spline-based Efficient Trajectory Planning #
+# DYNUS: Hermite Spline-based Efficient Trajectory Planning #
 
 If you like this project, please consider starring ⭐ the repo!
 
@@ -6,27 +6,27 @@ If you like this project, please consider starring ⭐ the repo!
 
 | **Trajectory** | **Forest** |
 | ------------------------- | ------------------------- |
-<a target="_blank" href="https://youtu.be/Pvb-VPUdLvg"><img src="./imgs/mighty_gifs_complex_benchmarks.gif" width="360" height="240" alt="Complex Benchmarks"></a> | <a target="_blank" href="https://youtu.be/Pvb-VPUdLvg"><img src="./imgs/mighty_gifs_hard_forest.gif" width="360" height="240" alt="Static Forest"></a> |
+<a target="_blank" href="https://youtu.be/Pvb-VPUdLvg"><img src="./imgs/dynus_gifs_complex_benchmarks.gif" width="360" height="240" alt="Complex Benchmarks"></a> | <a target="_blank" href="https://youtu.be/Pvb-VPUdLvg"><img src="./imgs/dynus_gifs_hard_forest.gif" width="360" height="240" alt="Static Forest"></a> |
 
 | **Dynamic Obstacles** | **Long Flight** |
 | ------------------------- | ------------------------- |
-<a target="_blank" href="https://youtu.be/Pvb-VPUdLvg"><img src="./imgs/mighty_gifs_dynamic_sim.gif" width="360" height="240" alt="Dynamic Obstacles"></a> | <a target="_blank" href="https://youtu.be/Pvb-VPUdLvg"><img src="./imgs/mighty_gifs_hw_long_flight.gif" width="360" height="240" alt="Hardware Long Flight"></a>
+<a target="_blank" href="https://youtu.be/Pvb-VPUdLvg"><img src="./imgs/dynus_gifs_dynamic_sim.gif" width="360" height="240" alt="Dynamic Obstacles"></a> | <a target="_blank" href="https://youtu.be/Pvb-VPUdLvg"><img src="./imgs/dynus_gifs_hw_long_flight.gif" width="360" height="240" alt="Hardware Long Flight"></a>
 
 | **Fast Flight 1** | **Fast Flight 2** |
 | ------------------------- | ------------------------- |
-<a target="_blank" href="https://youtu.be/Pvb-VPUdLvg"><img src="./imgs/mighty_gifs_hw_fast_flight_1.gif" width="360" height="240" alt="Hardware Fast Flight 1"></a> | <a target="_blank" href="https://youtu.be/Pvb-VPUdLvg"><img src="./imgs/mighty_gifs_hw_fast_flight_2.gif" width="360" height="240" alt="Hardware Fast Flight 2"></a>
+<a target="_blank" href="https://youtu.be/Pvb-VPUdLvg"><img src="./imgs/dynus_gifs_hw_fast_flight_1.gif" width="360" height="240" alt="Hardware Fast Flight 1"></a> | <a target="_blank" href="https://youtu.be/Pvb-VPUdLvg"><img src="./imgs/dynus_gifs_hw_fast_flight_2.gif" width="360" height="240" alt="Hardware Fast Flight 2"></a>
 
 | **Dynamic Env 1** | **Dynamic Env 2** |
 | ------------------------- | ------------------------- |
-<a target="_blank" href="https://youtu.be/Pvb-VPUdLvg"><img src="./imgs/mighty_gifs_hw_dynamic_1.gif" width="360" height="240" alt="Hardware Dynamic Env 1"></a> | <a target="_blank" href="https://youtu.be/Pvb-VPUdLvg"><img src="./imgs/mighty_gifs_hw_dynamic_2.gif" width="360" height="240" alt="Hardware Dynamic Env 2"></a>
+<a target="_blank" href="https://youtu.be/Pvb-VPUdLvg"><img src="./imgs/dynus_gifs_hw_dynamic_1.gif" width="360" height="240" alt="Hardware Dynamic Env 1"></a> | <a target="_blank" href="https://youtu.be/Pvb-VPUdLvg"><img src="./imgs/dynus_gifs_hw_dynamic_2.gif" width="360" height="240" alt="Hardware Dynamic Env 2"></a>
 
 ## Paper
 
-MIGHTY: Hermite Spline-based Efficient Trajectory Planning is available [https://arxiv.org/abs/2511.10822](https://arxiv.org/abs/2511.10822)!
+DYNUS: Hermite Spline-based Efficient Trajectory Planning is available [https://arxiv.org/abs/2511.10822](https://arxiv.org/abs/2511.10822)!
 
 ```bibtex
 @article{kondo2025mighty,
-      title={MIGHTY: Hermite Spline-based Efficient Trajectory Planning}, 
+      title={DYNUS: Hermite Spline-based Efficient Trajectory Planning}, 
       author={Kota Kondo and Yuwei Wu and Vijay Kumar and Jonathan P. How},
       year={2025},
       eprint={2511.10822},
@@ -42,7 +42,7 @@ The full video is available [https://youtu.be/Pvb-VPUdLvg](https://youtu.be/Pvb-
 
 ## Interactive Demo
 
-If you are interested in an interactive demo of MIGHTY, please switch to the `interactive_demo` branch [https://github.com/mit-acl/mighty/tree/interactive_demo] by running:
+If you are interested in an interactive demo of DYNUS, please switch to the `interactive_demo` branch [https://github.com/mit-acl/dynus/tree/interactive_demo] by running:
 
 ```bash
 git checkout interactive_demo
@@ -55,7 +55,7 @@ Since you might want to use interactive demos, when you fork this repository, pl
 
 ## Setup
 
-MIGHTY has been tested on both Docker and native installations on Ubuntu 22.04 with ROS 2 Humble.
+DYNUS has been tested on both Docker and native installations on Ubuntu 22.04 with ROS 2 Humble.
 
 ### Use Docker (Recommended)
 
@@ -66,12 +66,12 @@ MIGHTY has been tested on both Docker and native installations on Ubuntu 22.04 w
    ```bash
    mkdir -p ~/code/ws/src
    cd ~/code/ws/src
-   git clone https://github.com/mit-acl/mighty.git
-   cd src/mighty/docker
+   git clone https://github.com/mit-acl/dynus.git
+   cd src/dynus/docker
    ```
 
 3. **BUILD:**
-    - Navigate to the docker folder in your mighty repo (eg. `cd ~/code/ws/src/mighty/docker/`) and run this
+    - Navigate to the docker folder in your dynus repo (eg. `cd ~/code/ws/src/dynus/docker/`) and run this
       ```bash
       make build
       ```
@@ -108,20 +108,20 @@ MIGHTY has been tested on both Docker and native installations on Ubuntu 22.04 w
    ```bash
    mkdir -p ~/code/ws
    cd ~/code/ws
-   git clone https://github.com/mit-acl/mighty.git
-   cd mighty
+   git clone https://github.com/mit-acl/dynus.git
+   cd dynus
    ```
 
 2. **Run the Setup Script:**
    ```bash
    ./setup.sh
    ```
-   This script will first install ROS 2 Humble, then MIGHTY and its dependencies. Please note that this script modifies your `~/.bashrc` file.
+   This script will first install ROS 2 Humble, then DYNUS and its dependencies. Please note that this script modifies your `~/.bashrc` file.
 
  3. **Run the Simulation**
     Run the simulation. You might need to change the path to `setup.bash` to its absolute path (eg. `/home/kkondo/code/ws/install/setup.bash`).
     ```bash
-    cd ~/code/mighty_ws && ./src/mighty/launch/run_mighty_sim.sh ~/code/mighty_ws/install/setup.bash
+    cd ~/code/dynus_ws && ./src/dynus/launch/run_dynus_sim.sh ~/code/dynus_ws/install/setup.bash
     ```
 
 ### Notes
@@ -129,7 +129,7 @@ MIGHTY has been tested on both Docker and native installations on Ubuntu 22.04 w
 <details>
   <summary><b>Static Environment Benchmarking </b></summary>
   - ```bash
-   colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select mighty global_mapper_ros && . install/setup.bash && ros2 run mighty unc_benchmark_node.py
+   colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select dynus global_mapper_ros && . install/setup.bash && ros2 run dynus unc_benchmark_node.py
     ```
 </details>
 
@@ -143,7 +143,7 @@ MIGHTY has been tested on both Docker and native installations on Ubuntu 22.04 w
 <details>
   <summary><b>Generate Safety Corridor </b></summary>
   - ```bash
-   colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select mighty && . install/setup.bash && tmuxp load src/dynus/launch/generate_sfc.yaml
+   colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select dynus && . install/setup.bash && tmuxp load src/dynus/launch/generate_sfc.yaml
     ```
   This generates safety corridors for the benchmark environments and saves them in `sfc_dir` (e.g. `/home/kkondo/code/dynus_ws/src/dynus/data`).
 </details>
@@ -151,7 +151,7 @@ MIGHTY has been tested on both Docker and native installations on Ubuntu 22.04 w
 <details>
   <summary><b>Standardized Benchmark </b></summary>
   - ```bash
-   colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select mighty && . install/setup.bash && tmuxp load src/dynus/launch/local_traj_benchmark.yaml
+   colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select dynus && . install/setup.bash && tmuxp load src/dynus/launch/local_traj_benchmark.yaml
     ```
   This runs the local trajectory benchmark and saves the results in `/home/kkondo/code/dynus_ws/src/dynus/benchmark_data`.
   
@@ -160,25 +160,25 @@ MIGHTY has been tested on both Docker and native installations on Ubuntu 22.04 w
 <details>
   <summary><b>Visualize Trajectories from Different Planners </b></summary>
   - ```bash
-   colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select mighty && . install/setup.bash && tmuxp load src/dynus/launch/visualize_local_trajs.yaml
+   colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select dynus && . install/setup.bash && tmuxp load src/dynus/launch/visualize_local_trajs.yaml
     ```
   This reads trajectories from `traj_dump_root_dirs_` and visualizes them in RViz.
   
 </details>
 
 <details>
-  <summary><b>MIGHTY with Gazebo (and hence ACL mapper) </b></summary>
-  Make sure `sim_env` parameter in mighty.yaml is set to `gazebo` and run the following commands:
+  <summary><b>DYNUS with Gazebo (and hence ACL mapper) </b></summary>
+  Make sure `sim_env` parameter in dynus.yaml is set to `gazebo` and run the following commands:
   - ```bash
-   colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select mighty global_mapper global_mapper_ros ros2_livox_simulation && . install/setup.bash && ./src/dynus/launch/run_mighty_sim.sh /home/kkondo/code/dynus_ws/install/setup.bash
+   colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select dynus global_mapper global_mapper_ros ros2_livox_simulation && . install/setup.bash && ./src/dynus/launch/run_dynus_sim.sh /home/kkondo/code/dynus_ws/install/setup.bash
     ```
 </details>
 
 <details>
-  <summary><b>Multi-MIGHTY with Fake Sensing</b></summary>
-  Make sure `sim_env` parameter in mighty.yaml is set to `fake_sim` and run:
+  <summary><b>Multi-DYNUS with Fake Sensing</b></summary>
+  Make sure `sim_env` parameter in dynus.yaml is set to `fake_sim` and run:
   - ```bash
-    colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release && ./src/dynus/launch/run_mighty_sim.sh /home/kkondo/code/dynus_ws/install/setup.bash
+    colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release && ./src/dynus/launch/run_dynus_sim.sh /home/kkondo/code/dynus_ws/install/setup.bash
     ```
 </details>
 
@@ -186,7 +186,7 @@ MIGHTY has been tested on both Docker and native installations on Ubuntu 22.04 w
   <summary><b>Bag Recording</b></summary>
 
   - ```bash
-    python3 src/mighty/scripts/bag_record.py --bag_number 3
+    python3 src/dynus/scripts/bag_record.py --bag_number 3
     ```
 </details>
 

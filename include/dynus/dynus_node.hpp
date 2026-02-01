@@ -7,8 +7,8 @@
  * -------------------------------------------------------------------------- */
 
 #include "rclcpp/rclcpp.hpp"
-#include "mighty/mighty_type.hpp"
-#include "mighty/mighty.hpp"
+#include "dynus/dynus_type.hpp"
+#include "dynus/dynus.hpp"
 #include "dgp/utils.hpp"
 #include <dynus_interfaces/msg/dyn_traj.hpp>
 #include <dynus_interfaces/msg/dyn_traj_array.hpp>
@@ -16,7 +16,7 @@
 #include "dynus_interfaces/msg/goal.hpp"
 #include "dynus_interfaces/msg/yaw_output.hpp"
 #include "dynus_interfaces/msg/pn_adaptation.hpp"
-#include <mighty/utils.hpp>
+#include <dynus/utils.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2_eigen/tf2_eigen.h>
@@ -73,7 +73,7 @@ typedef message_filters::Synchronizer<MySyncPolicy> Sync;
 
 // ROS2 component (run-time composition)
 // common practice is to use namespace for components
-namespace mighty
+namespace dynus
 {
 
     using PCLPoint = pcl::PointXYZ;
@@ -237,7 +237,7 @@ namespace mighty
         int marker_fov_id_ = 0;
 
         // DYNUS pointer
-        std::shared_ptr<MIGHTY> mighty_ptr_;
+        std::shared_ptr<DYNUS> dynus_ptr_;
 
         // Global Path Benchmarking
         std::string file_path_;        // only for benchmarking
@@ -339,4 +339,4 @@ namespace mighty
         double actual_traj_line_width_ = 0.15;    // meters
     };
 
-} // namespace mighty
+} // namespace dynus

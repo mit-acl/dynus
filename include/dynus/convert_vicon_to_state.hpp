@@ -4,7 +4,7 @@
 #include "geometry_msgs/msg/vector3.hpp"
 #include "geometry_msgs/msg/quaternion.hpp"
 #include "std_msgs/msg/header.hpp"
-#include <mighty/mighty.hpp>
+#include <dynus/dynus.hpp>
 #include "dynus_interfaces/msg/state.hpp"
 #include "message_filters/subscriber.h"
 #include "message_filters/synchronizer.h"

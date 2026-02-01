@@ -121,7 +121,7 @@ dynus_node:
         min_wdx: 15.0                           # [m] Minimum width of the map
         min_wdy: 15.0                           # [m] Minimum depth of the map
         min_wdz: 4.0                           # [m] Minimum height of the map
-        mighty_map_res: 0.3              # [m] Resolution of the map
+        dynus_map_res: 0.3              # [m] Resolution of the map
         
         # Communication delay parameters
         use_comm_delay_inflation: true  # [-] Use communication delay inflation

@@ -13,8 +13,8 @@
 #include <Eigen/Dense>
 #include <visualization_msgs/msg/marker_array.hpp>
 #include <dynus_interfaces/msg/dyn_traj.hpp>
-#include <mighty/mighty_type.hpp>
-#include <mighty/utils.hpp>
+#include <dynus/dynus_type.hpp>
+#include <dynus/utils.hpp>
 #include <tf2_eigen/tf2_eigen.h>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/passthrough.h>
@@ -91,7 +91,7 @@ private:
     double cluster_bbox_cutoff_size_;
     bool use_life_time_for_box_visualization_;
     double box_visualization_duration_;
-    double mighty_map_res_;
+    double dynus_map_res_;
     double velocity_threshold_;
     double acceleration_threshold_;
     bool use_hardware_;

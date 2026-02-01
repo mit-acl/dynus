@@ -86,7 +86,7 @@ def generate_multiagent_yaml(setup_bash: Path, agents: list, ros_domain_id: int 
         panes.append({
             'shell_command': [
                 'sleep 10',
-                f"ros2 launch dynus onboard_mighty.launch.py namespace:={agent['namespace']} "
+                f"ros2 launch dynus onboard_dynus.launch.py namespace:={agent['namespace']} "
                 f"x:={agent['x']} y:={agent['y']} z:={agent['z']} yaw:={agent['yaw']}"
             ]
         })
@@ -133,7 +133,7 @@ def generate_gazebo_yaml(setup_bash: Path, goal: tuple,
         # Base station with Gazebo
         {
             'shell_command': [
-                f'ros2 launch dynus base_mighty.launch.py use_dyn_obs:={str(use_dyn_obs).lower()} '
+                f'ros2 launch dynus base_dynus.launch.py use_dyn_obs:={str(use_dyn_obs).lower()} '
                 f'use_gazebo_gui:={str(use_gazebo_gui).lower()} use_rviz:={str(use_rviz).lower()} env:={env}'
             ]
         }
@@ -152,7 +152,7 @@ def generate_gazebo_yaml(setup_bash: Path, goal: tuple,
     panes.append({
         'shell_command': [
             'sleep 5',
-            f'ros2 launch dynus onboard_mighty.launch.py namespace:=NX01 x:={start_x} y:={start_y} z:={start_z} yaw:={start_yaw}'
+            f'ros2 launch dynus onboard_dynus.launch.py namespace:=NX01 x:={start_x} y:={start_y} z:={start_z} yaw:={start_yaw}'
         ]
     })
 

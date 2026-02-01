@@ -20,7 +20,7 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <pcl/point_types.h>
 #include <pcl/kdtree/kdtree_flann.h>
-#include "mighty/mighty_type.hpp"
+#include "dynus/dynus_type.hpp"
 #include <deque>
 
 #define RED 1

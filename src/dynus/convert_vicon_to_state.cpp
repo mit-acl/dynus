@@ -1,4 +1,4 @@
-#include "mighty/convert_vicon_to_state.hpp"
+#include "dynus/convert_vicon_to_state.hpp"
 
 PoseTwistToStateNode::PoseTwistToStateNode() : Node("pose_twist_to_state_node")
 {

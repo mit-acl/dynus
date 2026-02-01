@@ -7,7 +7,7 @@
 
 #include <iostream>
 #include "dgp/data_type.hpp"
-#include <mighty/mighty_type.hpp>
+#include <dynus/dynus_type.hpp>
 #include <pcl/kdtree/kdtree_flann.h>
 #include "timer.hpp"
 #include <omp.h>
@@ -16,7 +16,7 @@
 #include <functional>
 #include <cstdint>
 
-namespace mighty
+namespace dynus
 {
 
   // The type of map data Tmap is defined as a 1D array
@@ -1458,6 +1458,6 @@ namespace mighty
   };
 
   typedef MapUtil<3> VoxelMapUtil;
-} // namespace mighty
+} // namespace dynus
 
 #endif

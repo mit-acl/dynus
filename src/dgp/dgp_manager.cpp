@@ -10,7 +10,7 @@
 
 /// The type of map data Tmap is defined as a 1D array
 using Tmap = std::vector<char>;
-using namespace mighty;
+using namespace dynus;
 using namespace termcolor;
 
 typedef timer::Timer MyTimer;
@@ -33,7 +33,7 @@ void DGPManager::setParameters(const parameters &par)
     local_box_size_ = {static_cast<float>(par.local_box_size[0]), static_cast<float>(par.local_box_size[1]), static_cast<float>(par.local_box_size[2])};
 
     // shared pointer to the map util for actual planning
-    map_util_ = std::make_shared<mighty::VoxelMapUtil>(par.factor_dgp * par.res, par.x_min, par.x_max, par.y_min, par.y_max, par.z_min, par.z_max, par.inflation_dgp, par.obst_max_vel);
+    map_util_ = std::make_shared<dynus::VoxelMapUtil>(par.factor_dgp * par.res, par.x_min, par.x_max, par.y_min, par.y_max, par.z_min, par.z_max, par.inflation_dgp, par.obst_max_vel);
 
     bool dynamic_obstacle_sphere_as_hard = par_.global_planner == "astar_heat" ? false : true;
     bool dynamic_obstacle_sphere_as_soft = !dynamic_obstacle_sphere_as_hard;
@@ -100,7 +100,7 @@ void DGPManager::setDynamicPredictedSamples(const std::vector<vec_Vecf<3>> &pred
         map_util_->setDynamicPredictedSamples(pred_samples, pred_times);
 }
 
-std::shared_ptr<mighty::VoxelMapUtil> DGPManager::getMapUtilSharedPtr()
+std::shared_ptr<dynus::VoxelMapUtil> DGPManager::getMapUtilSharedPtr()
 {
     std::lock_guard<std::mutex> lock(mtx_map_util_);
     return map_util_;
@@ -128,7 +128,7 @@ void DGPManager::setupDGPPlanner(const std::string &global_planner, bool global_
     // Create the map_util_for_planning
     // This is the beginning of the planning, so we fetch the map_util_ and don't update it for the entire planning process (updating while planning makes the planner slower)
     mtx_map_util_.lock();
-    map_util_for_planning_ = std::make_shared<mighty::VoxelMapUtil>(*map_util_);
+    map_util_for_planning_ = std::make_shared<dynus::VoxelMapUtil>(*map_util_);
     mtx_map_util_.unlock();
 }
 
@@ -166,7 +166,7 @@ bool DGPManager::checkIfPointOccupied(const Vec3f &point)
 
 // Sample along [p0, p1] at a safe step to ensure we don't skip thin obstacles.
 // Uses the occupancy from the (already inflated) planning map.
-inline bool isSegmentFree(const mighty::VoxelMapUtil &map,
+inline bool isSegmentFree(const dynus::VoxelMapUtil &map,
                           const Vec3f &p0,
                           const Vec3f &p1,
                           const double sample_step)
@@ -197,7 +197,7 @@ inline bool isSegmentFree(const mighty::VoxelMapUtil &map,
 
 // Greedily collapse a path into maximal collision-free segments.
 // This mirrors the "generate a long segment if it’s collision free" behavior.
-inline void collapseIntoLongSegments(const mighty::VoxelMapUtil &map,
+inline void collapseIntoLongSegments(const dynus::VoxelMapUtil &map,
                                      double res,
                                      vec_Vecf<3> &path_inout,
                                      double sample_step = -1.0)
@@ -245,7 +245,7 @@ bool DGPManager::solveDGP(const Vec3f &start_sent, const Vec3f &start_vel, const
 
     {
         std::lock_guard<std::mutex> lock(mtx_map_util_);
-        map_util_for_planning_ = std::make_shared<mighty::VoxelMapUtil>(*map_util_);
+        map_util_for_planning_ = std::make_shared<dynus::VoxelMapUtil>(*map_util_);
     }
 
     // Set start and goal
@@ -280,7 +280,7 @@ bool DGPManager::solveDGP(const Vec3f &start_sent, const Vec3f &start_vel, const
     // planner_ptr_->cleanUpPath(path);
 
     // Add more vertices if necessary
-    mighty_utils::createMoreVertexes(path, max_dist_vertexes_);
+    dynus_utils::createMoreVertexes(path, max_dist_vertexes_);
 
     return result;
 }
@@ -674,7 +674,7 @@ namespace
         return it2->second;
     }
 
-    inline bool isUnknownVoxel(const mighty::VoxelMapUtil &map, const Veci<3> &idx)
+    inline bool isUnknownVoxel(const dynus::VoxelMapUtil &map, const Veci<3> &idx)
     {
         // Unknown := neither free nor occupied.
         return (!map.isFree(idx)) && (!map.isOccupied(idx));

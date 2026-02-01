@@ -198,7 +198,7 @@ Visualization Manager:
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /mighty/temporal_test_markers
+            Value: /dynus/temporal_test_markers
           Value: true
         - Alpha: 0.20000000298023224
           BoundColor: 255; 0; 0
@@ -213,7 +213,7 @@ Visualization Manager:
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /mighty/poly_time_layer
+            Value: /dynus/poly_time_layer
           Value: false
           VsColor: 0; 255; 0
           VsScale: 1

@@ -18,7 +18,7 @@
 
 #include <decomp_rviz_plugins/data_ros_utils.hpp>
 #include <unsupported/Eigen/Polynomials>
-#include <mighty/mighty_type.hpp>
+#include <dynus/dynus_type.hpp>
 #include "timer.hpp"
 
 using namespace termcolor;

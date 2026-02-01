@@ -170,7 +170,7 @@ public:
         }
 
         // Package path
-        package_path_ = ament_index_cpp::get_package_share_directory("mighty");
+        package_path_ = ament_index_cpp::get_package_share_directory("dynus");
 
         RCLCPP_INFO(this->get_logger(), "Package path: %s", package_path_.c_str());
         RCLCPP_INFO(this->get_logger(), "FakeSim initialized");
@@ -399,7 +399,7 @@ private:
         marker.pose.orientation.w = state_.quat.w;
 
         marker.mesh_use_embedded_materials = true;
-        marker.mesh_resource = "package://mighty/meshes/quadrotor/quadrotor.dae";
+        marker.mesh_resource = "package://dynus/meshes/quadrotor/quadrotor.dae";
         marker.scale.x = 0.75;
         marker.scale.y = 0.75;
         marker.scale.z = 0.75;

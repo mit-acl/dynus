@@ -17,7 +17,7 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <visualization_msgs/msg/marker.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
-#include <mighty/mighty_type.hpp>
+#include <dynus/dynus_type.hpp>
 #include <dgp/utils.hpp>
 #include <deque>
 
@@ -25,7 +25,7 @@
 #include "dynus_interfaces/msg/coeff_poly3.hpp"
 #include "dynus_interfaces/msg/dyn_traj.hpp"
 
-namespace mighty_utils
+namespace dynus_utils
 {
 
     // Define colors
@@ -122,6 +122,6 @@ namespace mighty_utils
     return (T(0) < val) - (val < T(0));
     }
 
-}  // namespace mighty_utils
+}  // namespace dynus_utils
 
 #endif

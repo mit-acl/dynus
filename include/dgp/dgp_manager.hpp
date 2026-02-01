@@ -86,7 +86,7 @@ public:
     void getVecUnknownOccupied(vec_Vec3f &vec_uo);
     void updateVecUnknownOccupied(const vec_Vec3f &vec_uo);
     void insertVecOccupiedToVecUnknownOccupied();
-    std::shared_ptr<mighty::VoxelMapUtil> getMapUtilSharedPtr();
+    std::shared_ptr<dynus::VoxelMapUtil> getMapUtilSharedPtr();
 
     // Helper: construct Veci<3> from 3 ints.
     static inline Veci<3> idxs_to_veci3(int x, int y, int z)
@@ -96,8 +96,8 @@ public:
         return v;
     }
 
-    std::shared_ptr<mighty::VoxelMapUtil> map_util_;
-    std::shared_ptr<mighty::VoxelMapUtil> map_util_for_planning_;
+    std::shared_ptr<dynus::VoxelMapUtil> map_util_;
+    std::shared_ptr<dynus::VoxelMapUtil> map_util_for_planning_;
     std::unique_ptr<DGPPlanner> planner_ptr_;
 
 private:

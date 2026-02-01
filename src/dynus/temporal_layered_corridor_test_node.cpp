@@ -19,10 +19,10 @@
 #include <vector>
 #include <algorithm>
 
-#include "mighty/mighty_type.hpp"
-#include "mighty/utils.hpp"
+#include "dynus/dynus_type.hpp"
+#include "dynus/utils.hpp"
 #include "dgp/dgp_manager.hpp"
-#include "mighty/gurobi_solver.hpp"
+#include "dynus/gurobi_solver.hpp"
 
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
@@ -30,7 +30,7 @@
 #include <iomanip>
 
 using namespace std::chrono_literals;
-using namespace mighty;
+using namespace dynus;
 
 using Vec3d = Eigen::Vector3d;
 using Vec3f = Eigen::Matrix<double, 3, 1>;
@@ -348,8 +348,8 @@ public:
         declare_parameter<std::vector<double>>("static_obstacles_flat", std::vector<double>{});
 
         // Visualization / playback
-        declare_parameter<std::string>("topic_poly_layer", "/mighty/poly_time_layer");
-        declare_parameter<std::string>("topic_markers", "/mighty/temporal_test_markers");
+        declare_parameter<std::string>("topic_poly_layer", "/dynus/poly_time_layer");
+        declare_parameter<std::string>("topic_markers", "/dynus/temporal_test_markers");
         declare_parameter<bool>("cycle_layers", true);
         declare_parameter<double>("cycle_period_sec", 0.4);
         declare_parameter<int>("fixed_layer", 0); // used when cycle_layers=false

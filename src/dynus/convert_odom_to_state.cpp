@@ -1,4 +1,4 @@
-#include <mighty/convert_odom_to_state.hpp>
+#include <dynus/convert_odom_to_state.hpp>
 
 OdometryToStateNode::OdometryToStateNode() : Node("odometry_to_state_node")
 {
