@@ -130,7 +130,8 @@ public:
       const vec_Vecf<3> &obst_pos,
       const vec_Vec3f &base_uo,
       vec_E<Polyhedron<3>> &poly_out_safe,
-      double goal_pull_time);
+      const std::vector<LinearConstraint3D>* precomputed_spatial_constraints = nullptr,
+      const vec_E<Polyhedron<3>>* precomputed_spatial_poly_out = nullptr);
   void resetData();
   void retrieveData(double &final_g, double &global_planning_time, double &dgp_static_jps_time, double &dgp_check_path_time, double &dgp_dynamic_astar_time, double &dgp_recover_path_time, double &cvx_decomp_time, double &local_traj_computatoin_time, double &safety_check_time, double &safe_paths_time, double &yaw_sequence_time, double &yaw_fitting_time);
   void retrievePolytopes(vec_E<Polyhedron<3>> &poly_out_whole, vec_E<Polyhedron<3>> &poly_out_safe);

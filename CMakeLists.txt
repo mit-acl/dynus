@@ -1,9 +1,19 @@
 cmake_minimum_required(VERSION 3.8)
 project(dynus)
 
+# Set C++ standard to C++17 (required for std::scoped_lock)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
+
+# Performance optimization flags
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -march=native -DNDEBUG")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffast-math -funroll-loops")
+# Link-time optimization for better cross-TU optimization
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
 
 # avoid Found-related error (ref: https://stackoverflow.com/questions/18327197/opencv-is-considered-to-be-not-found)
 set(decomp_rviz_plugins_FOUND 1)

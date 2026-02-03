@@ -324,8 +324,6 @@ public:
 
         declare_parameter<double>("max_gurobi_comp_time_sec", 5.0);
         declare_parameter<double>("jerk_smooth_weight", 1.0e+1);
-        declare_parameter<double>("goal_pull_weight", 1.0e+2);
-        declare_parameter<double>("goal_pull_time_buffer", 1.5);
 
         declare_parameter<bool>("using_variable_elimination", true);
         declare_parameter<bool>("debug_verbose", true);
@@ -411,9 +409,6 @@ public:
 
         par_.max_gurobi_comp_time_sec = get_parameter("max_gurobi_comp_time_sec").as_double();
         par_.jerk_smooth_weight = get_parameter("jerk_smooth_weight").as_double();
-        par_.goal_pull_weight = get_parameter("goal_pull_weight").as_double();
-        par_.goal_pull_time_buffer = get_parameter("goal_pull_time_buffer").as_double();
-
         par_.using_variable_elimination = get_parameter("using_variable_elimination").as_bool();
         par_.debug_verbose = get_parameter("debug_verbose").as_bool();
 
@@ -601,13 +596,6 @@ private:
 
         // Temporal-layered corridor (your new API)
         solver_->setPolytopesTimeLayered(l_constraints_by_time_);
-
-        // Sub-goal pull (optional; keep goal pull time consistent with solver’s usage)
-        {
-            std::vector<double> sub_goal = {goal_.x(), goal_.y(), goal_.z()};
-            solver_->setSubGoal(sub_goal);
-            solver_->setGoalPullTime(0.05); // pull toward goal across the horizon
-        }
 
         bool gurobi_error = false;
         double grb_ms = 0.0;

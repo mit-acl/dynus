@@ -10,6 +10,7 @@
 #include <dynus/gurobi_solver.hpp>
 #include <dynus/gurobi_solver_utils.hpp>
 #include <chrono>
+#include <iomanip>
 #include <unistd.h>
 
 void mycallback::callback()
@@ -136,40 +137,45 @@ void SolverGurobi::setDynamicConstraintsFaster_()
     {
         for (int axis = 0; axis < 3; ++axis)
         {
+            // Safe FASTER: constrain ALL control points
+            // Original FASTER: only constrain first point (leads to violations)
+            if (planner_name_ == "faster")
+            {
+                // Constrain ALL velocity CPs
+                auto vel_cps = getVelCP(segment, axis);
+                for (int i = 0; i < (int)vel_cps.size(); ++i)
+                {
+                    dyn_cons_.push_back(m_.addConstr(vel_cps[i] <= v_max_, "max_vel_f_k" + std::to_string(segment) + "_i" + std::to_string(i) + "_axis_" + std::to_string(axis)));
+                    dyn_cons_.push_back(m_.addConstr(vel_cps[i] >= -v_max_, "min_vel_f_k" + std::to_string(segment) + "_i" + std::to_string(i) + "_axis_" + std::to_string(axis)));
+                }
 
-            // FASTER actually only constrains the very first point -> actually leads to constraint violation
-            dyn_cons_.push_back(m_.addConstr(getVel(segment, 0, axis) <= v_max_, "MaxVel_t" + std::to_string(segment) + "_axis_" + std::to_string(axis)));
-            dyn_cons_.push_back(m_.addConstr(getVel(segment, 0, axis) >= -v_max_, "MinVel_t" + std::to_string(segment) + "_axis_" + std::to_string(axis)));
+                // Constrain ALL accel CPs
+                auto acc_cps = getAccelCP(segment, axis);
+                for (int i = 0; i < (int)acc_cps.size(); ++i)
+                {
+                    dyn_cons_.push_back(m_.addConstr(acc_cps[i] <= a_max_, "max_acc_f_k" + std::to_string(segment) + "_i" + std::to_string(i) + "_axis_" + std::to_string(axis)));
+                    dyn_cons_.push_back(m_.addConstr(acc_cps[i] >= -a_max_, "min_acc_f_k" + std::to_string(segment) + "_i" + std::to_string(i) + "_axis_" + std::to_string(axis)));
+                }
 
-            dyn_cons_.push_back(m_.addConstr(getAccel(segment, 0, axis) <= a_max_, "MaxAccel_t" + std::to_string(segment) + "_axis_" + std::to_string(axis)));
-            dyn_cons_.push_back(m_.addConstr(getAccel(segment, 0, axis) >= -a_max_, "MinAccel_t" + std::to_string(segment) + "_axis_" + std::to_string(axis)));
+                // Constrain ALL jerk CPs
+                auto jerk_cps = getJerkCP(segment, axis);
+                for (int i = 0; i < (int)jerk_cps.size(); ++i)
+                {
+                    dyn_cons_.push_back(m_.addConstr(jerk_cps[i] <= j_max_, "max_jerk_f_k" + std::to_string(segment) + "_i" + std::to_string(i) + "_axis_" + std::to_string(axis)));
+                    dyn_cons_.push_back(m_.addConstr(jerk_cps[i] >= -j_max_, "min_jerk_f_k" + std::to_string(segment) + "_i" + std::to_string(i) + "_axis_" + std::to_string(axis)));
+                }
+            }
+            else  // original_faster: only constrain first point
+            {
+                dyn_cons_.push_back(m_.addConstr(getVel(segment, 0, axis) <= v_max_, "MaxVel_t" + std::to_string(segment) + "_axis_" + std::to_string(axis)));
+                dyn_cons_.push_back(m_.addConstr(getVel(segment, 0, axis) >= -v_max_, "MinVel_t" + std::to_string(segment) + "_axis_" + std::to_string(axis)));
 
-            dyn_cons_.push_back(m_.addConstr(getJerk(segment, 0, axis) <= j_max_, "MaxJerk_t" + std::to_string(segment) + "_axis_" + std::to_string(axis)));
-            dyn_cons_.push_back(m_.addConstr(getJerk(segment, 0, axis) >= -j_max_, "MinJerk_t" + std::to_string(segment) + "_axis_" + std::to_string(axis)));
+                dyn_cons_.push_back(m_.addConstr(getAccel(segment, 0, axis) <= a_max_, "MaxAccel_t" + std::to_string(segment) + "_axis_" + std::to_string(axis)));
+                dyn_cons_.push_back(m_.addConstr(getAccel(segment, 0, axis) >= -a_max_, "MinAccel_t" + std::to_string(segment) + "_axis_" + std::to_string(axis)));
 
-            // // constrain ALL velocity CPs
-            // auto vel_cps = getVelCP(segment, axis);
-            // for (int i = 0; i < (int)vel_cps.size(); ++i)
-            // {
-            //     dyn_cons_.push_back(m_.addConstr(vel_cps[i] <= v_max_, "max_vel_f_k" + std::to_string(segment)));
-            //     dyn_cons_.push_back(m_.addConstr(vel_cps[i] >= -v_max_, "min_vel_f_k" + std::to_string(segment)));
-            // }
-
-            // // constrain ALL accel CPs
-            // auto acc_cps = getAccelCP(segment, axis);
-            // for (int i = 0; i < (int)acc_cps.size(); ++i)
-            // {
-            //     dyn_cons_.push_back(m_.addConstr(acc_cps[i] <= a_max_, "max_acc_f_k" + std::to_string(segment)));
-            //     dyn_cons_.push_back(m_.addConstr(acc_cps[i] >= -a_max_, "min_acc_f_k" + std::to_string(segment)));
-            // }
-
-            // // constrain ALL jerk CPs (1 per segment/axis)
-            // auto jerk_cps = getJerkCP(segment, axis);
-            // for (int i = 0; i < (int)jerk_cps.size(); ++i)
-            // {
-            //     dyn_cons_.push_back(m_.addConstr(jerk_cps[i] <= j_max_, "max_jerk_f_k" + std::to_string(segment)));
-            //     dyn_cons_.push_back(m_.addConstr(jerk_cps[i] >= -j_max_, "min_jerk_f_k" + std::to_string(segment)));
-            // }
+                dyn_cons_.push_back(m_.addConstr(getJerk(segment, 0, axis) <= j_max_, "MaxJerk_t" + std::to_string(segment) + "_axis_" + std::to_string(axis)));
+                dyn_cons_.push_back(m_.addConstr(getJerk(segment, 0, axis) >= -j_max_, "MinJerk_t" + std::to_string(segment) + "_axis_" + std::to_string(axis)));
+            }
         }
     }
 }
@@ -194,7 +200,6 @@ void SolverGurobi::initializeSolver(const parameters &par)
     w_max_ = par.w_max;
     debug_verbose_ = par.debug_verbose;
     jerk_smooth_weight_ = par.jerk_smooth_weight;
-    goal_pull_weight_ = par.goal_pull_weight;
     using_variable_elimination_ = par.using_variable_elimination; // benchmark param for DYNUS with/without var elimination
 
     // Time limit
@@ -676,16 +681,6 @@ void SolverGurobi::findIntervalIdxAndDt(double time_in_whole_traj, int &interval
     }
 }
 
-void SolverGurobi::setSubGoal(const std::vector<double> &sub_goal)
-{
-    sub_goal_ = sub_goal;
-}
-
-void SolverGurobi::setGoalPullTime(double goal_pull_time)
-{
-    goal_pull_time_ = goal_pull_time;
-}
-
 void SolverGurobi::setObjective()
 {
     GRBQuadExpr jerk_smooth_cost = 0.0;
@@ -697,31 +692,8 @@ void SolverGurobi::setObjective()
         jerk_smooth_cost += GetNorm2(ut); // ||jerk||^2
     }
 
-    GRBQuadExpr goal_pull_cost = 0.0;
-
-    // Optional: pull an intermediate point p(t_ref) toward final state xf
-    if (goal_pull_weight_ > 0.0 && goal_pull_time_ >= 0.0)
-    {
-        // Avoid edge-case at exactly total_traj_time_ (your findIntervalIdxAndDt uses '<')
-        const double eps = 1e-6;
-        const double t_ref = std::min(std::max(goal_pull_time_, 0.0), total_traj_time_ - eps);
-
-        int interval_idx = 0;
-        double tau = 0.0;
-        findIntervalIdxAndDt(t_ref, interval_idx, tau);
-
-        // p(t_ref) as linear expressions
-        GRBLinExpr px = getPos(interval_idx, tau, 0);
-        GRBLinExpr py = getPos(interval_idx, tau, 1);
-        GRBLinExpr pz = getPos(interval_idx, tau, 2);
-
-        // distance to final state
-        std::vector<GRBLinExpr> d = {px - sub_goal_[0], py - sub_goal_[1], pz - sub_goal_[2]};
-        goal_pull_cost = GetNorm2(d); // ||p(t_ref) - sub_goal||^2
-    }
-
-    // Combine
-    GRBQuadExpr obj = jerk_smooth_weight_ * jerk_smooth_cost + goal_pull_weight_ * goal_pull_cost;
+    // Objective: minimize jerk smoothness
+    GRBQuadExpr obj = jerk_smooth_weight_ * jerk_smooth_cost;
 
     m_.setObjective(obj, GRB_MINIMIZE);
 }
@@ -1725,7 +1697,7 @@ bool SolverGurobi::generateNewTrajectory(bool &gurobi_error_detected,
     // Use sequential factor sweeping for FASTER
     if (use_single_thread)
     {
-        double factor_used = 0.0;
+        double factor_used = factor;
         // ignore the provided `factor` and sweep internally
         const bool ok = generateNewTrajectorySequentialFactors(
             gurobi_error_detected, gurobi_computation_time, factor_used);
@@ -1805,6 +1777,24 @@ bool SolverGurobi::generateNewTrajectorySequentialFactors(
     gurobi_computation_time_ms = 0.0;
     factor_that_worked = 0.0;
 
+    // Timing variables
+    using std::chrono::steady_clock;
+    using std::chrono::duration;
+
+    double total_findDT_ms = 0.0;
+    double total_setX_ms = 0.0;
+    double total_constraintsX0_ms = 0.0;
+    double total_constraintsXf_ms = 0.0;
+    double total_continuity_ms = 0.0;
+    double total_polytopes_ms = 0.0;
+    double total_dynamic_ms = 0.0;
+    double total_objective_ms = 0.0;
+    double total_mapsize_ms = 0.0;
+    double total_optimizer_ms = 0.0;
+    double total_goalsetpoints_ms = 0.0;
+    double total_getcoeff_ms = 0.0;
+    int num_iterations = 0;
+
     // factor_initial_, factor_final_, factor_constant_step_size should come from par_
     for (double f = factor_initial_;
          f <= factor_final_ + 1e-9 && !solved && !cb_.should_terminate_;
@@ -1812,9 +1802,6 @@ bool SolverGurobi::generateNewTrajectorySequentialFactors(
     {
         try
         {
-
-            std::cout << "Trying factor: " << f << std::endl;
-
             findDT(f);
 
             if (usingFaster_() || !using_variable_elimination_)
@@ -1825,7 +1812,7 @@ bool SolverGurobi::generateNewTrajectorySequentialFactors(
             {
                 setX();
             }
-            
+
             // FASTER formulation requires explicit constraints (no elimination)
             setConstraintsX0();
             setConstraintsXf();
@@ -1834,7 +1821,6 @@ bool SolverGurobi::generateNewTrajectorySequentialFactors(
             setDynamicConstraints(); // in FASTER mode this must constrain all CPs
             setObjective();
             setMapSizeConstraints();
-
             solved = callOptimizer();
             if (solved)
             {
@@ -2072,8 +2058,8 @@ bool SolverGurobi::callOptimizer()
         {
             if (debug_verbose_)
                 std::cout << "GUROBI Status: Infeasible or Unbounded" << std::endl;
-            m_.computeIIS(); // Compute the Irreducible Inconsistent Subsystem and write it on a file
-            m_.write("/media/kkondo/T7/dynus/debug/num_" + std::to_string(file_t_) + ".ilp");
+            // m_.computeIIS(); // Compute the Irreducible Inconsistent Subsystem and write it on a file
+            // m_.write("/media/kkondo/T7/dynus/debug/num_" + std::to_string(file_t_) + ".ilp");
         }
 
         if (optimstatus == GRB_NUMERIC)

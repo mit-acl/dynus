@@ -112,9 +112,6 @@ public:
     void findClosestIndexFromTime(const double t, int &index, const std::vector<double> &time);
     dynTraj adjustTrajTime(const dynTraj &traj);
 
-    void setSubGoal(const std::vector<double> &sub_goal);
-    void setGoalPullTime(double goal_pull_time);
-
     inline GRBLinExpr getPos(int t, double tau, int ii) const;
     inline GRBLinExpr getVel(int t, double tau, int ii) const;
     inline GRBLinExpr getAccel(int t, double tau, int ii) const;
@@ -294,13 +291,6 @@ protected:
 
     // Optimization weights
     double jerk_smooth_weight_ = 10.0;
-    double goal_pull_weight_ = 10.0;
-
-    // goal pull time
-    double goal_pull_time_ = -1.0;
-
-    // sub goal (goal for global plan) for goal pulling
-    std::vector<double> sub_goal_{0.0, 0.0, 0.0};
 
     double factor_initial_ = 0.6;
     double factor_final_ = 2.0;

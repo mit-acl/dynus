@@ -7,6 +7,7 @@
  * -------------------------------------------------------------------------- */
 
 #include "dgp/dgp_manager.hpp"
+#include <mutex>
 
 /// The type of map data Tmap is defined as a 1D array
 using Tmap = std::vector<char>;
@@ -289,6 +290,7 @@ bool DGPManager::checkIfPathInFree(const vec_Vecf<3> &path, vec_Vecf<3> &free_pa
 {
     // Initialize result
     free_path.clear();
+    free_path.reserve(path.size());
     free_path.push_back(path[0]);
 
     // Plan only in free space if required
@@ -313,9 +315,9 @@ bool DGPManager::checkIfPathInFree(const vec_Vecf<3> &path, vec_Vecf<3> &free_pa
 
 void DGPManager::pushPathIntoFreeSpace(const vec_Vecf<3> &path, vec_Vecf<3> &free_path)
 {
-
     // Initialize result
     free_path.clear();
+    free_path.reserve(path.size());
     free_path.push_back(path[0]);
 
     // Plan only in free space if required
@@ -344,17 +346,15 @@ bool DGPManager::checkIfPointHasNonFreeNeighbour(const Vec3f &point) const
 void DGPManager::getOccupiedCells(vec_Vecf<3> &occupied_cells)
 {
     // Get the occupied cells
-    mtx_map_util_.lock();
+    std::lock_guard<std::mutex> lock(mtx_map_util_);
     occupied_cells = map_util_->getOccupiedCloud();
-    mtx_map_util_.unlock();
 }
 
 void DGPManager::getFreeCells(vec_Vecf<3> &free_cells)
 {
     // Get the free cells
-    mtx_map_util_.lock();
+    std::lock_guard<std::mutex> lock(mtx_map_util_);
     free_cells = map_util_->getFreeCloud();
-    mtx_map_util_.unlock();
 }
 
 void DGPManager::getComputationTime(double &global_planning_time, double &dgp_static_jps_time, double &dgp_check_path_time, double &dgp_dynamic_astar_time, double &dgp_recover_path_time)
@@ -369,39 +369,32 @@ void DGPManager::getComputationTime(double &global_planning_time, double &dgp_st
 
 void DGPManager::getVecOccupied(vec_Vec3f &vec_o)
 {
-    mtx_vec_o_.lock();
+    std::lock_guard<std::mutex> lock(mtx_vec_o_);
     vec_o = vec_o_;
-    mtx_vec_o_.unlock();
 }
 
 void DGPManager::updateVecOccupied(const vec_Vec3f &vec_o)
 {
-    mtx_vec_o_.lock();
+    std::lock_guard<std::mutex> lock(mtx_vec_o_);
     vec_o_ = vec_o;
-    mtx_vec_o_.unlock();
 }
 
 void DGPManager::getVecUnknownOccupied(vec_Vec3f &vec_uo)
 {
-    mtx_vec_uo_.lock();
+    std::lock_guard<std::mutex> lock(mtx_vec_uo_);
     vec_uo = vec_uo_;
-    mtx_vec_uo_.unlock();
 }
 
 void DGPManager::updateVecUnknownOccupied(const vec_Vec3f &vec_uo)
 {
-    mtx_vec_uo_.lock();
+    std::lock_guard<std::mutex> lock(mtx_vec_uo_);
     vec_uo_ = vec_uo;
-    mtx_vec_uo_.unlock();
 }
 
 void DGPManager::insertVecOccupiedToVecUnknownOccupied()
 {
-    mtx_vec_uo_.lock();
-    mtx_vec_o_.lock();
+    std::scoped_lock lock(mtx_vec_uo_, mtx_vec_o_);
     vec_uo_.insert(vec_uo_.end(), vec_o_.begin(), vec_o_.end());
-    mtx_vec_o_.unlock();
-    mtx_vec_uo_.unlock();
 }
 
 bool DGPManager::cvxEllipsoidDecomp(

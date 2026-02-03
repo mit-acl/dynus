@@ -78,6 +78,7 @@ struct parameters
   bool use_path_push_for_visualization;
 
   // Decomposition parameters
+  std::string environment_assumption;
   std::vector<double> local_box_size;
   double min_dist_from_agent_to_traj;
   bool use_shrinked_box;
@@ -139,8 +140,6 @@ struct parameters
   double obst_max_vel;        // maximum velocity of dynamic obstacles
   double max_gurobi_comp_time_sec; // maximum Gurobi computation time per replanning
   double jerk_smooth_weight; // weight for the jerk smoothness
-  double goal_pull_weight;   // weight for pulling the trajectory to the goal
-  double goal_pull_time_buffer; // goal_pull_time = goal_pull_time_buffer * previous_replanning_time
   bool using_variable_elimination = true;
 
   // Dynamic obstacles parameters

@@ -234,6 +234,7 @@ namespace dynus
         parameters par_;
         double final_g_ = 0.0;                  // only for debugging
         bool verbose_computation_time_ = false; // only for debugging
+        bool local_traj_comp_verbose_ = false;  // only for debugging
         int marker_fov_id_ = 0;
 
         // DYNUS pointer

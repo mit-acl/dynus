@@ -237,6 +237,7 @@ void DYNUS_NODE::declareParameters()
   this->declare_parameter("use_path_push_for_visualization", false);
 
   // Decomposition parameters
+  this->declare_parameter("environment_assumption", "static");
   this->declare_parameter("local_box_size", std::vector<float>{2.0, 2.0, 2.0});
   this->declare_parameter("min_dist_from_agent_to_traj", 6.0);
   this->declare_parameter("use_shrinked_box", false);
@@ -286,6 +287,7 @@ void DYNUS_NODE::declareParameters()
   this->declare_parameter("planner_Co", 0.5);
   this->declare_parameter("planner_Cw", 1.0);
   this->declare_parameter("verbose_computation_time", false);
+  this->declare_parameter("local_traj_comp_verbose", false);
   this->declare_parameter("drone_bbox", std::vector<double>{0.5, 0.5, 0.5});
   this->declare_parameter("goal_radius", 0.5);
   this->declare_parameter("goal_seen_radius", 2.0);
@@ -300,10 +302,8 @@ void DYNUS_NODE::declareParameters()
   this->declare_parameter("factor_final", 5.0);
   this->declare_parameter("factor_constant_step_size", 0.1);
   this->declare_parameter("obst_max_vel", 0.5);
-  this->declare_parameter("max_gurobi_comp_time_sec", 0.5);
+  this->declare_parameter("max_gurobi_comp_time_sec", 0.05);
   this->declare_parameter("jerk_smooth_weight", 1.0e+1);
-  this->declare_parameter("goal_pull_weight", 1.0e+2);
-  this->declare_parameter("goal_pull_time_buffer", 1.5);
 
   // Dynamic obstacles parameters
   this->declare_parameter("traj_lifetime", 10.0);
@@ -392,6 +392,7 @@ void DYNUS_NODE::setParameters()
   // Static obstacle push parameters
 
   // Decomposition parameters
+  par_.environment_assumption = this->get_parameter("environment_assumption").as_string();
   par_.local_box_size = this->get_parameter("local_box_size").as_double_array();
   par_.min_dist_from_agent_to_traj = this->get_parameter("min_dist_from_agent_to_traj").as_double();
   par_.use_shrinked_box = this->get_parameter("use_shrinked_box").as_bool();
@@ -427,6 +428,7 @@ void DYNUS_NODE::setParameters()
   par_.a_max = this->get_parameter("a_max").as_double();
   par_.j_max = this->get_parameter("j_max").as_double();
   verbose_computation_time_ = this->get_parameter("verbose_computation_time").as_bool();
+  local_traj_comp_verbose_ = this->get_parameter("local_traj_comp_verbose").as_bool();
   par_.drone_bbox = this->get_parameter("drone_bbox").as_double_array();
   par_.drone_radius = par_.drone_bbox[0] / 2.0;
   par_.goal_radius = this->get_parameter("goal_radius").as_double();
@@ -444,8 +446,6 @@ void DYNUS_NODE::setParameters()
   par_.obst_max_vel = this->get_parameter("obst_max_vel").as_double();
   par_.max_gurobi_comp_time_sec = this->get_parameter("max_gurobi_comp_time_sec").as_double();
   par_.jerk_smooth_weight = this->get_parameter("jerk_smooth_weight").as_double();
-  par_.goal_pull_weight = this->get_parameter("goal_pull_weight").as_double();
-  par_.goal_pull_time_buffer = this->get_parameter("goal_pull_time_buffer").as_double();
 
   // Dynamic obstacles parameters
   par_.traj_lifetime = this->get_parameter("traj_lifetime").as_double();
@@ -542,7 +542,7 @@ void DYNUS_NODE::printParameters()
   RCLCPP_INFO(this->get_logger(), "Use Path Push for Paper?: %d", par_.use_path_push_for_visualization);
 
   // Static obstacle push parameters
-
+  RCLCPP_INFO(this->get_logger(), "Environment Assumption: %s", par_.environment_assumption.c_str());
   RCLCPP_INFO(this->get_logger(), "Local Box Size: (%f, %f, %f)", par_.local_box_size[0], par_.local_box_size[1], par_.local_box_size[2]);
   RCLCPP_INFO(this->get_logger(), "Min Dist from Agent to Traj: %f", par_.min_dist_from_agent_to_traj);
   RCLCPP_INFO(this->get_logger(), "Use Shrinked Box: %d", par_.use_shrinked_box);
@@ -578,6 +578,7 @@ void DYNUS_NODE::printParameters()
   RCLCPP_INFO(this->get_logger(), "A Max: %f", par_.a_max);
   RCLCPP_INFO(this->get_logger(), "J Max: %f", par_.j_max);
   RCLCPP_INFO(this->get_logger(), "Verbose Computation Time: %d", verbose_computation_time_);
+  RCLCPP_INFO(this->get_logger(), "Local Traj Comp Verbose: %d", local_traj_comp_verbose_);
   RCLCPP_INFO(this->get_logger(), "Drone Bbox: (%f, %f, %f)", par_.drone_bbox[0], par_.drone_bbox[1], par_.drone_bbox[2]);
   RCLCPP_INFO(this->get_logger(), "Goal Radius: %f", par_.goal_radius);
   RCLCPP_INFO(this->get_logger(), "Goal Seen Radius: %f", par_.goal_seen_radius);
@@ -594,8 +595,6 @@ void DYNUS_NODE::printParameters()
   RCLCPP_INFO(this->get_logger(), "Obst Max Vel: %f", par_.obst_max_vel);
   RCLCPP_INFO(this->get_logger(), "Max Gurobi Comp Time Sec: %f", par_.max_gurobi_comp_time_sec);
   RCLCPP_INFO(this->get_logger(), "Jerk Smooth Weight: %f", par_.jerk_smooth_weight);
-  RCLCPP_INFO(this->get_logger(), "Goal Pull Weight: %f", par_.goal_pull_weight);
-  RCLCPP_INFO(this->get_logger(), "Goal Pull Time Buffer: %f", par_.goal_pull_time_buffer);
 
   // Dynamic obstacles parameters
   RCLCPP_INFO(this->get_logger(), "Traj Lifetime: %f", par_.traj_lifetime);
@@ -784,13 +783,17 @@ void DYNUS_NODE::replanCallback()
     publishStaticPushPoints();
   }
 
-  // If verbose_computation_time_ or use_benchmark_ is true, we need to retrieve data from dynus_ptr_
-  if (verbose_computation_time_ || use_benchmark_)
+  // If verbose_computation_time_ or use_benchmark_ or local_traj_comp_verbose_ is true, we need to retrieve data from dynus_ptr_
+  if (verbose_computation_time_ || use_benchmark_ || local_traj_comp_verbose_)
     retrieveData();
 
   // Verbose computation time to the terminal
   if (verbose_computation_time_)
     printComputationTime(replanning_result);
+
+  // Verbose only local trajectory computation time
+  if (local_traj_comp_verbose_ && !verbose_computation_time_)
+    std::cout << "Local Traj Time [ms]: " << local_traj_computation_time_ << std::endl;
 
   // Record the data
   // if (replanning_result && use_benchmark_)
@@ -854,10 +857,8 @@ void DYNUS_NODE::publishVelocityInText(const Eigen::Vector3d &position, double v
 
   // Set velocity's precision to 2 decimal points
   std::ostringstream oss;
-  oss << std::fixed << std::setprecision(2) << velocity;
-
-  // Make a string
-  std::string text = oss.str() + "m/s";
+  oss << std::fixed << std::setprecision(2) << velocity << "m/s";
+  std::string text = oss.str();
 
   visualization_msgs::msg::Marker marker;
   marker.header.frame_id = "map";
@@ -1004,8 +1005,8 @@ void DYNUS_NODE::convertDynTrajMsg2DynTraj(const dynus_interfaces::msg::DynTraj 
   if (traj->is_agent && par_.use_comm_delay_inflation)
   {
     // Get the delay (current time - msg time)
-    traj->communication_delay = this->now().seconds();
-    -msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9;
+    traj->communication_delay = this->now().seconds() -
+        (msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9);
 
     // Sanity check - if the delay is negative, set it to 0 - send warning message: it's probably due to the clock synchronization issue
     if (traj->communication_delay < 0)
@@ -1033,7 +1034,8 @@ void DYNUS_NODE::publisCps()
   marker_array.markers.resize(cps_.size());
 
   // Loop through the control points (std::vector<Eigen::Matrix<double, 3, 4>>)
-  for (int seg = 0; seg < cps_.size(); seg++)
+  const size_t num_segments = cps_.size();
+  for (size_t seg = 0; seg < num_segments; ++seg)
   {
 
     // Create a marker
@@ -1118,7 +1120,8 @@ void DYNUS_NODE::publishStaticPushPoints()
   marker.color.b = 1.0;
 
   // Loop through the static push points
-  for (int idx = 0; idx < static_push_points_.size(); idx++)
+  const size_t num_points = static_push_points_.size();
+  for (size_t idx = 0; idx < num_points; ++idx)
   {
     geometry_msgs::msg::Point point;
     point.x = static_push_points_[idx](0);
@@ -1792,8 +1795,8 @@ void DYNUS_NODE::createMarkerArrayFromVec_Vec3f(
 {
 
   visualization_msgs::msg::Marker marker;
-  marker.header.frame_id = "map";              // Set the appropriate frame
-  marker.header.stamp = rclcpp::Clock().now(); // Use ROS2 clock
+  marker.header.frame_id = "map";
+  marker.header.stamp = this->now();
   marker.ns = "namespace_" + std::to_string(namespace_id);
   marker.id = 0;
   marker.type = visualization_msgs::msg::Marker::CUBE_LIST; // Each point will be visualized as a cube

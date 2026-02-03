@@ -42,6 +42,72 @@ namespace dynus
       setObstMaxVelocity(obst_max_vel);                     // Set obstacle maximum velocity
     }
 
+    // Copy constructor (needed because std::mutex is not copyable)
+    MapUtil(const MapUtil& other)
+      : map_(other.map_),
+        heat_(other.heat_),
+        dynamic_heat_enabled_(other.dynamic_heat_enabled_),
+        dynamic_as_occupied_(other.dynamic_as_occupied_),
+        heat_w_(other.heat_w_),
+        heat_alpha0_(other.heat_alpha0_),
+        heat_alpha1_(other.heat_alpha1_),
+        heat_p_(other.heat_p_),
+        heat_q_(other.heat_q_),
+        heat_tau_ratio_(other.heat_tau_ratio_),
+        heat_gamma_(other.heat_gamma_),
+        heat_Hmax_(other.heat_Hmax_),
+        dyn_base_inflation_m_(other.dyn_base_inflation_m_),
+        heat_num_samples_(other.heat_num_samples_),
+        dyn_pred_samples_(other.dyn_pred_samples_),
+        dyn_pred_times_(other.dyn_pred_times_),
+        static_heat_enabled_(other.static_heat_enabled_),
+        static_heat_alpha_(other.static_heat_alpha_),
+        static_heat_p_(other.static_heat_p_),
+        static_heat_Hmax_(other.static_heat_Hmax_),
+        static_heat_rmax_m_(other.static_heat_rmax_m_),
+        static_heat_default_radius_m_(other.static_heat_default_radius_m_),
+        static_heat_boundary_only_(other.static_heat_boundary_only_),
+        static_heat_apply_on_unknown_(other.static_heat_apply_on_unknown_),
+        static_heat_exclude_dynamic_(other.static_heat_exclude_dynamic_),
+        static_heat_radius_fn_(other.static_heat_radius_fn_),
+        static_heat_off_(other.static_heat_off_),
+        static_heat_off_Rcell_(other.static_heat_off_Rcell_),
+        static_heat_off_res_(other.static_heat_off_res_),
+        static_heat_off_rmax_m_(other.static_heat_off_rmax_m_),
+        // static_heat_mutex_ is default-constructed (mutexes cannot be copied)
+        res_(other.res_),
+        total_size_(other.total_size_),
+        inflation_(other.inflation_),
+        origin_d_(other.origin_d_),
+        center_map_(other.center_map_),
+        dim_(other.dim_),
+        prev_dim_(other.prev_dim_),
+        x_map_min_(other.x_map_min_),
+        x_map_max_(other.x_map_max_),
+        y_map_min_(other.y_map_min_),
+        y_map_max_(other.y_map_max_),
+        z_map_min_(other.z_map_min_),
+        z_map_max_(other.z_map_max_),
+        x_min_(other.x_min_),
+        x_max_(other.x_max_),
+        y_min_(other.y_min_),
+        y_max_(other.y_max_),
+        z_min_(other.z_min_),
+        z_max_(other.z_max_),
+        obst_max_vel_(other.obst_max_vel_),
+        cells_x_(other.cells_x_),
+        cells_y_(other.cells_y_),
+        cells_z_(other.cells_z_),
+        val_occ_(other.val_occ_),
+        val_free_(other.val_free_),
+        val_unknown_(other.val_unknown_),
+        map_initialized_(other.map_initialized_),
+        min_point_(other.min_point_),
+        max_point_(other.max_point_)
+    {
+      // Mutex is default-constructed
+    }
+
     // Destructor
     ~MapUtil()
     {
@@ -543,7 +609,19 @@ namespace dynus
             //   continue;
 
             const float u = std::min(1.0f, std::max(0.0f, o.d_m / Rm));
-            float w = static_heat_alpha_ * std::pow(1.0f - u, float(static_heat_p_));
+            const float base = 1.0f - u;
+            float power_result;
+            if (static_heat_p_ == 2) {
+              power_result = base * base;
+            } else if (static_heat_p_ == 3) {
+              power_result = base * base * base;
+            } else if (static_heat_p_ == 4) {
+              const float base2 = base * base;
+              power_result = base2 * base2;
+            } else {
+              power_result = std::pow(base, float(static_heat_p_));
+            }
+            float w = static_heat_alpha_ * power_result;
 
             if (static_heat_Hmax_ > 0.0f)
               w = std::min(w, static_heat_Hmax_);
@@ -1390,9 +1468,11 @@ namespace dynus
     mutable int static_heat_off_Rcell_{-1};
     mutable float static_heat_off_res_{-1.0f};
     mutable float static_heat_off_rmax_m_{-1.0f};
+    mutable std::mutex static_heat_mutex_;
 
     inline void ensureStaticHeatOffsets(int Rcell) const
     {
+      std::lock_guard<std::mutex> lock(static_heat_mutex_);
       if (static_heat_off_Rcell_ == Rcell &&
           static_heat_off_res_ == (float)res_ &&
           std::fabs(static_heat_off_rmax_m_ - static_heat_rmax_m_) < 1e-6f)

@@ -30,6 +30,7 @@ DYNUS::DYNUS(parameters par) : par_(par)
   {
     // Dynamic factor search
     num_dynamic_factors_ = static_cast<int>((2 * par_.dynamic_factor_k_radius) / par_.factor_constant_step_size) + 1;
+    factors_.reserve(num_dynamic_factors_);
     for (int i = 0; i < num_dynamic_factors_; i++)
     {
       double factor = par_.dynamic_factor_initial_mean - par_.dynamic_factor_k_radius + i * par_.factor_constant_step_size;
@@ -41,6 +42,7 @@ DYNUS::DYNUS(parameters par) : par_(par)
   {
     // Constant factor search
     num_dynamic_factors_ = static_cast<int>((par_.factor_final - par_.factor_initial) / par_.factor_constant_step_size) + 1;
+    factors_.reserve(num_dynamic_factors_);
     for (int i = 0; i < num_dynamic_factors_; i++)
     {
       double factor = par_.factor_initial + i * par_.factor_constant_step_size;
@@ -49,6 +51,7 @@ DYNUS::DYNUS(parameters par) : par_(par)
   }
 
   // Set up unconstrained optimization solver for whole trajectory
+  whole_traj_solver_ptrs_.reserve(num_dynamic_factors_);
   for (int i = 0; i < num_dynamic_factors_; i++)
   {
     whole_traj_solver_ptrs_.push_back(std::make_shared<SolverGurobi>());
@@ -102,11 +105,12 @@ void DYNUS::startAdaptKValue()
 {
 
   // Compute the average computation time
-  for (int i = 0; i < store_computation_times_.size(); i++)
+  const size_t num_samples = store_computation_times_.size();
+  for (const auto &comp_time : store_computation_times_)
   {
-    est_comp_time_ += store_computation_times_[i];
+    est_comp_time_ += comp_time;
   }
-  est_comp_time_ = est_comp_time_ / store_computation_times_.size();
+  est_comp_time_ = est_comp_time_ / num_samples;
 
   // Start k_value adaptation
   use_adapt_k_value_ = true;
@@ -233,7 +237,9 @@ bool DYNUS::findAandAtime(state &A, double &A_time, double current_time, double 
   }
 
   // Check if A is within the map (especially for z)
-  if (A.pos[2] < par_.z_min || A.pos[2] > par_.z_max, A.pos[0] < par_.x_min || A.pos[0] > par_.x_max, A.pos[1] < par_.y_min || A.pos[1] > par_.y_max)
+  if ((A.pos[2] < par_.z_min || A.pos[2] > par_.z_max) ||
+      (A.pos[0] < par_.x_min || A.pos[0] > par_.x_max) ||
+      (A.pos[1] < par_.y_min || A.pos[1] > par_.y_max))
   {
     printf("A (%f, %f, %f) is out of the map\n", A.pos[0], A.pos[1], A.pos[2]);
     return false;
@@ -884,8 +890,32 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
   sub_goal.push_back(local_G.pos[1]);
   sub_goal.push_back(local_G.pos[2]);
 
-  // Compute goal pull time
-  const double goal_pull_time = par_.goal_pull_time_buffer * last_replaning_computation_time;
+  // Pre-compute convex decomposition if environment is static
+  std::vector<LinearConstraint3D> shared_spatial_constraints;
+  vec_E<Polyhedron<3>> shared_spatial_poly_out;
+  bool use_precomputed_constraints = (par_.environment_assumption == "static");
+
+  if (use_precomputed_constraints)
+  {
+    // For static environment, use spatial-only decomposition (not time-layered)
+    // Compute seg_end_times based on worst-case trajectory time per spatial segment
+    const size_t P = (global_path.size() >= 2) ? (global_path.size() - 1) : 0;
+    std::vector<double> seg_end_times = computeWorstSegEndTimesPoly(initial_dt, factors_[0], P);
+
+    // Run spatial convex decomposition once before threading
+    if (!dgp_manager_.cvxEllipsoidDecomp(
+            ellip_workers_[0],
+            global_path,
+            base_map,
+            obst_pos,
+            seg_end_times,
+            shared_spatial_constraints,
+            shared_spatial_poly_out))
+    {
+      std::cout << bold << red << "Precomputed spatial convex decomposition failed for static environment" << reset << std::endl;
+      return false;
+    }
+  }
 
   std::vector<std::future<std::tuple<bool, double, double, double, vec_E<Polyhedron<3>>>>> futures;
   futures.reserve(factors_.size());
@@ -896,7 +926,8 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
 
     futures.push_back(std::async(std::launch::async,
                                  [this, i, factor, &global_path, local_A, local_E, sub_goal, A_time,
-                                  initial_dt, &obst_pos, &base_map, goal_pull_time]()
+                                  initial_dt, &obst_pos, &base_map, use_precomputed_constraints,
+                                  &shared_spatial_constraints, &shared_spatial_poly_out]()
                                      -> std::tuple<bool, double, double, double, vec_E<Polyhedron<3>>>
                                  {
                                    try
@@ -920,7 +951,8 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
                                          obst_pos,
                                          base_map, // base_uo snapshot
                                          thread_poly_out_safe,
-                                         goal_pull_time);
+                                         use_precomputed_constraints ? &shared_spatial_constraints : nullptr,
+                                         use_precomputed_constraints ? &shared_spatial_poly_out : nullptr);
 
                                      return {result, thread_gurobi_time, thread_convx_decomp_time, factor, thread_poly_out_safe};
                                    }
@@ -1009,22 +1041,26 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
   {
     // update list_subopt_goal_setpoints_ (vec_goal_setpoints without the successful one)
     list_subopt_goal_setpoints_.clear();
+    list_subopt_goal_setpoints_.reserve(vec_goal_setpoints.size() - 1);
     for (size_t i = 0; i < vec_goal_setpoints.size(); ++i)
     {
       if (i != successful_index && !vec_goal_setpoints[i].empty())
       {
-        list_subopt_goal_setpoints_.push_back(vec_goal_setpoints[i]);
+        list_subopt_goal_setpoints_.push_back(std::move(vec_goal_setpoints[i]));
       }
     }
 
     // update the factors_ vector
     if (par_.use_dynamic_factor)
     {
+      // Save the successful factor BEFORE clearing
+      double successful_factor = factors_[successful_index];
+
       // clear factors_ first
       factors_.clear();
+      factors_.reserve(num_dynamic_factors_);
 
       // Set the successful factor to be the mean of k-radius factors
-      double successful_factor = factors_[successful_index];
       for (int i = 0; i < num_dynamic_factors_; i++)
       {
         double factor = successful_factor - par_.dynamic_factor_k_radius + i * par_.factor_constant_step_size;
@@ -1038,18 +1074,16 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
   }
   else
   {
-
-    // if the initial optimization failed, we increase the factors_ for next replanning
-    if (par_.use_dynamic_factor && !dynamic_factor_inital_sucess_)
+    // if the optimization failed, we increase the factors_ for next replanning
+    if (par_.use_dynamic_factor)
     {
-
-      double last_unsuccessful_factor = factors_.back();
-      int num_factors = factors_.size();
-      factors_.clear();
-      for (size_t i = 0; i < num_factors; ++i)
+      if (!dynamic_factor_inital_sucess_)
       {
-        double factor = last_unsuccessful_factor + (i + 1) * par_.factor_constant_step_size;
-        factors_.push_back(factor);
+        // shift all the factors in factors_ by factor_constant_step_size
+        for (size_t i = 0; i < factors_.size(); i++)
+        {
+          factors_[i] = factors_[i] + par_.factor_constant_step_size;
+        }
       }
     }
   }
@@ -1160,7 +1194,8 @@ bool DYNUS::generateLocalTrajectory(
     const vec_Vecf<3> &obst_pos,
     const vec_Vec3f &base_uo,
     vec_E<Polyhedron<3>> &poly_out_safe,
-    double goal_pull_time)
+    const std::vector<LinearConstraint3D>* precomputed_spatial_constraints,
+    const vec_E<Polyhedron<3>>* precomputed_spatial_poly_out)
 {
 
   // P: spatial corridor pieces (global segments)
@@ -1188,63 +1223,68 @@ bool DYNUS::generateLocalTrajectory(
   // Timer for computing the safe corridor
   MyTimer cvx_decomp_timer(true);
 
-  // Layered safe corridor polytopes: [N][P]
+  // Check if we have precomputed spatial constraints (static environment)
+  bool use_spatial_only = (precomputed_spatial_constraints != nullptr && precomputed_spatial_poly_out != nullptr);
+
+  // Declare constraints outside if block so they're available for solver setup
   std::vector<std::vector<LinearConstraint3D>> l_constraints_by_time;
-  std::vector<vec_E<Polyhedron<3>>> poly_out_by_time; // [N][P], for picking representative poly_out_safe
+  std::vector<vec_E<Polyhedron<3>>> poly_out_by_time; // [N][P]
 
-  if (!dgp_manager_.cvxEllipsoidDecompTimeLayered(
-          ellip,
-          global_path,
-          base_uo,
-          obst_pos,
-          time_end_times,
-          l_constraints_by_time,
-          poly_out_by_time))
+  if (use_spatial_only)
   {
-    std::cout << bold << red << "Time-layered convex decomposition failed" << reset << std::endl;
-    poly_out_safe.clear();
-    return false;
+    // Static environment: use precomputed spatial-only constraints
+    // Copy the spatial polytopes for visualization
+    poly_out_safe = *precomputed_spatial_poly_out;
+    cvx_decomp_time = 0.0; // No decomposition time since we're using precomputed
   }
-
-  cvx_decomp_time = cvx_decomp_timer.getElapsedMicros() / 1000.0;
-  // std::cout << "Convex Decomposition Time (ms): " << cvx_decomp_time << std::endl;
-
-  // Pick one representative polytope per spatial segment p for visualization/debug:
-  // choose the smallest time layer n such that time_end_times[n] >= seg_end_times[p]
-  // poly_out_safe.clear();
-  // poly_out_safe.resize(P);
-
-  // for (size_t p = 0; p < P; ++p)
-  // {
-  //   const double t_need = (p < seg_end_times.size()) ? seg_end_times[p] : time_end_times.back();
-
-  //   size_t n_rep = 0;
-  //   while (n_rep + 1 < N && time_end_times[n_rep] < t_need)
-  //     ++n_rep;
-
-  //   poly_out_safe[p] = poly_out_by_time[n_rep][p];
-  // }
-
-  // Add ALL polytopes (all time layers, all segments) for visualization/debug.
-  poly_out_safe.clear();
-  poly_out_safe.reserve(N * P);
-
-  for (size_t n = 0; n < N; ++n)
+  else
   {
-    for (size_t p = 0; p < P; ++p)
+    // Dynamic environment: compute time-layered constraints for this thread
+    if (!dgp_manager_.cvxEllipsoidDecompTimeLayered(
+            ellip,
+            global_path,
+            base_uo,
+            obst_pos,
+            time_end_times,
+            l_constraints_by_time,
+            poly_out_by_time))
     {
-      poly_out_safe.emplace_back(poly_out_by_time[n][p]);
+      std::cout << bold << red << "Time-layered convex decomposition failed" << reset << std::endl;
+      poly_out_safe.clear();
+      return false;
+    }
+
+    cvx_decomp_time = cvx_decomp_timer.getElapsedMicros() / 1000.0;
+
+    // Build poly_out_safe from all time layers for visualization
+    poly_out_safe.clear();
+    poly_out_safe.reserve(N * P);
+    for (size_t n = 0; n < N; ++n)
+    {
+      for (size_t p = 0; p < P; ++p)
+      {
+        poly_out_safe.emplace_back(poly_out_by_time[n][p]);
+      }
     }
   }
 
   // Initialize the solver.
   whole_traj_solver_ptr->setX0(local_A);                                 // Initial condition
   whole_traj_solver_ptr->setXf(local_E);                                 // Final condition
-  whole_traj_solver_ptr->setPolytopesTimeLayered(l_constraints_by_time); // <-- NEW
+
+  // Set polytopes based on environment type
+  if (use_spatial_only)
+  {
+    // Static environment: use spatial-only polytopes
+    whole_traj_solver_ptr->setPolytopes(*precomputed_spatial_constraints);
+  }
+  else
+  {
+    // Dynamic environment: use time-layered polytopes
+    whole_traj_solver_ptr->setPolytopesTimeLayered(l_constraints_by_time);
+  }
   whole_traj_solver_ptr->setT0(A_time);                                  // Initial time (kept as-is)
   whole_traj_solver_ptr->setInitialDt(initial_dt);                       // Initial dt
-  whole_traj_solver_ptr->setSubGoal(sub_goal);                           // Subgoal for goal pulling
-  whole_traj_solver_ptr->setGoalPullTime(goal_pull_time);                // Goal pull time
 
   // Solve the optimization problem.
   bool gurobi_error_detected = false;

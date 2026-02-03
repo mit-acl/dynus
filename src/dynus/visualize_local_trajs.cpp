@@ -642,20 +642,30 @@ static bool parseTrajCsv(const fs::path &csv_path, TrajCsv &out)
 
 static inline std::string prettyPlannerName(const std::string &planner_key)
 {
+    // DYNUS
     if (planner_key == "dynus_N4")
-        return std::string("DYNUS(N=4)");
+        return std::string("DYNUS (N=4)");
     if (planner_key == "dynus_N5")
-        return std::string("DYNUS(N=5)");
+        return std::string("DYNUS (N=5)");
     if (planner_key == "dynus_N6")
-        return std::string("DYNUS(N=6)");
-    if (planner_key == "faster_N4")
-        return std::string("FASTER(N=4)");
-    if (planner_key == "faster_N5")
-        return std::string("FASTER(N=5)");
-    if (planner_key == "faster_N6")
-        return std::string("FASTER(N=6)");
+        return std::string("DYNUS (N=6)");
+
+    // FASTER (original)
+    if (planner_key == "original_faster_N4")
+        return std::string("FASTER (N=4)");
+    if (planner_key == "original_faster_N5")
+        return std::string("FASTER (N=5)");
+    if (planner_key == "original_faster_N6")
+        return std::string("FASTER (N=6)");
+
+    // SUPER
     if (planner_key == "super")
         return "SUPER";
+
+    // Skip safe_faster trajectories by returning empty string
+    if (planner_key.find("safe_faster") != std::string::npos)
+        return "";
+
     return planner_key;
 }
 
