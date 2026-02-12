@@ -38,11 +38,11 @@ def generate_launch_description():
     p_num_arg = DeclareLaunchArgument('p_num', default_value=p_num, description='Polygon number')
     min_dist_arg = DeclareLaunchArgument('min_dist', default_value=min_dist, description='Minimum distance')
     odometry_topic_arg = DeclareLaunchArgument('odometry_topic', default_value=odometry_topic, description='Odometry topic')
-    
+
     # 地图属性以及是否使用动力学仿真
-    use_mockamap = LaunchConfiguration('use_mockamap', default=False) # map_generator or mockamap 
+    use_mockamap = LaunchConfiguration('use_mockamap', default=False) # map_generator or mockamap
     use_mockamap_arg = DeclareLaunchArgument('use_mockamap', default_value=use_mockamap, description='Choose map type, map_generator or mockamap')
-    use_dynamic = LaunchConfiguration('use_dynamic', default=True)  
+    use_dynamic = LaunchConfiguration('use_dynamic', default=True)
     use_dynamic_arg = DeclareLaunchArgument('use_dynamic', default_value=use_dynamic, description='Use Drone Simulation Considering Dynamics or Not')
     rviz_config_path = os.path.join(get_package_share_directory('dynus'), 'rviz', 'dynus.rviz')
 

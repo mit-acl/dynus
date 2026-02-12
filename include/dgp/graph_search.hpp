@@ -179,7 +179,7 @@ namespace dynus
      * @param global_planner initial guess planner, optional, default as ""
      * @param res map resolution, optional, default as 0.5
      */
-    GraphSearch(const int *cMap, const std::shared_ptr<dynus::VoxelMapUtil> &map_util, int xDim, int yDim, int zDim, double eps, bool verbose, std::string global_planner, double w_unknown, double w_align = 60.0, double decay_len_cells = 20.0, double w_side = 0.2);
+    GraphSearch(const int8_t *cMap, const std::shared_ptr<dynus::VoxelMapUtil> &map_util, int xDim, int yDim, int zDim, double eps, bool verbose, std::string global_planner, double w_unknown, double w_align = 60.0, double decay_len_cells = 20.0, double w_side = 0.2);
 
     /**
      * @brief start 3D planning thread
@@ -268,15 +268,15 @@ namespace dynus
       return hm_[id];
     }
 
-    /// cMap pointer
-    const int *cMap_;
+    /// cMap pointer (int8_t for 75% memory savings)
+    const int8_t *cMap_;
 
     int xDim_, yDim_, zDim_;
     double eps_;
     bool verbose_;
 
-    const int val_free_ = 0;
-    const int val_occupied_ = 100;
+    const int8_t val_free_ = 0;
+    const int8_t val_occupied_ = 100;
     const int val_unknown_ = -1;
 
     const double w_unknown_ = 1.5; // cost for unknown cells, in multiples of base cost (1 for orthogonal step)

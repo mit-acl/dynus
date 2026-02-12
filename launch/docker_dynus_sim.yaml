@@ -5,7 +5,7 @@ windows:
     shell_command_before:
     - source /home/kkondo/code/dynus_ws/install/setup.bash
     - source /home/kkondo/code/decomp_ws/install/setup.bash
-    - export ROS_DOMAIN_ID=7
+    - export ROS_DOMAIN_ID=20
     panes:
       # base station
       - shell_command:

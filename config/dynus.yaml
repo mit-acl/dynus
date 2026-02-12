@@ -12,7 +12,7 @@ dynus_node:
     ros__parameters:
 
         # Sim environment
-        sim_env: "gazebo"                            # ["gazebo", "fake_sim"]
+        sim_env: "gazebo"                            # ["gazebo", "fake_sim", "rviz_only"]
         use_global_pc: true                          # [-] Use global pointcloud (treat the environment as known environment)
 
         # Vehicle type
@@ -32,24 +32,59 @@ dynus_node:
         global_planner: "astar_heat"                                # ["sjps", "sastar", "astar_heat"]
         factor_dgp: 1.0                                         # do not change - [m] actual_resolution = factor_dgp * (resolution of the map)
         inflation_dgp: 0.45                                     # [m] The obstacles are inflated (to run DGP) by this amount
-        x_min: -1000.0                                          # [m] x_min of the map
-        x_max: 1000.0                                           # [m] x_max of the map
-        y_min: -1000.0                                          # [m] y_min of the map
-        y_max: 1000.0                                           # [m] y_max of the map
+        x_min: -5.0                                             # [m] x_min of the map (tightened for corridor)
+        x_max: 110.0                                            # [m] x_max of the map (tightened for corridor)
+        y_min: -5.0                                            # [m] y_min of the map (tightened for corridor)
+        y_max: 5.0                                             # [m] y_max of the map (tightened for corridor)
         z_min: 0.5                                              # [m] points below this are considered ground
         z_max: 5.0                                              # [m] DGP is run with resolution=factor_dgp*(resolution of the map)
         dgp_timeout_duration_ms: 1000                           # [ms] Timeout duration for the DGP
+        max_num_expansion: 100000                                # [-] Maximum number of node expansions allowed
         use_free_start: true                                    # [-] Use free start for the DGP
         free_start_factor: 2.0                                  # [-] Factor for the free start
         use_free_goal: false                                    # [-] Use free goal for the DGP
         free_goal_factor: 2.0                                   # [-] Factor for the free goal
         global_planner_huristic_weight: 2.0         # [-] Weight for the heuristic in the global planner
-        heat_weight: 5.0                           # [-] Weight for the heat in the global planner
-        max_dist_vertexes: 1.5                      # [m] Maximum distance between two consecutive vertexes
+        heat_weight: 3.0                           # [-] Weight for the heat in the global planner
+        max_dist_vertexes: 1.0                      # [m] Maximum distance between two consecutive vertexes
         w_unknown: 0.0                              # [-] Weight for the unknown cells in the global planner
         w_align: 0.0                               # [-] Weight for the alignment with the initial velocity in the global planner
         decay_len_cells: 100.0                     # [-] Decay length for the alignment with the initial velocity in the global planner
         w_side: 0.0                                # [-] Weight for the side tie-break in the global planner
+
+        # Heat map parameters (soft cost layer)
+        use_heat_map: true                          # [-] Enable heat map
+
+        # Dynamic obstacle heat (time-varying soft costs)
+        dynamic_heat_enabled: true                  # [-] Enable dynamic heat computation
+        dynamic_as_occupied_current: true           # [-] Mark current position as hard occupied
+        dynamic_as_occupied_future: false           # [-] Mark future positions as hard occupied
+        use_only_curr_pos_for_dynamic_obst: true   # [-] Use only current position (no future trajectory prediction) for fair comparison
+        heat_alpha0: 0.2                            # [-] Reachability blob weight
+        heat_alpha1: 1.0                            # [-] Trajectory tube weight
+        heat_p: 2                                   # [-] Reachability falloff power
+        heat_q: 2                                   # [-] Tube falloff power
+        heat_tau_ratio: 0.5                         # [-] Time decay ratio
+        heat_gamma: 0.0                             # [m/s] Tube radius growth rate
+        heat_Hmax: 2.0                             # [-] Maximum heat value cap
+        dyn_base_inflation_m: 0.1                   # [m] Base inflation for dynamic obstacles
+        dyn_heat_tube_radius_m: 0.5                 # [m] Radius of heat corridor
+        heat_num_samples: 15                        # [-] Number of samples for heat computation
+
+        # Static obstacle heat (boundary halo)
+        static_heat_enabled: true                   # [-] Enable static heat computation
+        static_heat_alpha: 1.0                      # [-] Peak heat at obstacle boundary
+        static_heat_p: 2                            # [-] Falloff power
+        static_heat_Hmax: 5.0                      # [-] Maximum static heat value
+        static_heat_rmax_m: 1.0                     # [m] Maximum radius for halo
+        static_heat_default_radius_m: 0.5           # [m] Default radius
+        static_heat_boundary_only: true             # [-] Use only boundary voxels
+        static_heat_apply_on_unknown: false         # [-] Apply heat on unknown cells
+        static_heat_exclude_dynamic: true           # [-] Exclude dynamic obstacles
+
+        # Soft-cost obstacles (traversable at high cost)
+        use_soft_cost_obstacles: true              # [-] Enable soft-cost mode
+        obstacle_soft_cost: 5.0                   # [-] Cost per occupied cell step
 
         # Post global path smoothing parameters
         los_cells: 0                                 # [cells] number of cells for the line-of-sight inflation for the post global path smoothing
@@ -57,38 +92,38 @@ dynus_node:
         min_turn: 0.0                           # [deg] minimum turn angle for the post global path smoothing
 
         # Decomposition module parameters
-        environment_assumption: "static"        # ["static", "dynamic"] Environment assumption for convex decomposition
+        environment_assumption: "dynamic"        # ["static", "dynamic"] Environment assumption for convex decomposition
         local_box_size: [3.0, 3.0, 3.0]         # [m] Size of the local box (smaller, faster)
         min_dist_from_agent_to_traj: 10.0        # [m] Minimum distance from the agent to the trajectory
         use_shrinked_box: false                 # [-] Use shrinked box for the convex decomposition
         shrinked_box_size: 0.0                  # [m] Size of the shrinked box
 
         # Optimization parameters
-        horizon: 15.0                               # [m] Horizon
+        horizon: 8.0                               # [m] Horizon
         dc: 0.01                                    # [s] Duration for the interpolation=Value of the timer pubGoal
-        v_max: 1.0                                  # [m/s]  max velocity
-        a_max: 2.0                                 # [m/s2] max acceleration
-        j_max: 3.0                                 # [m/s3] max jerk
+        dynamic_constraint_type: "Linf"               # [-] Constraint type: "Linf" (per-axis |v|≤vmax), "L2" (||v||₂≤vmax), "L1" (||v||₁≤vmax)
+        v_max: 5.0                                  # [m/s]  max velocity
+        a_max: 20.0                                 # [m/s2] max acceleration
+        j_max: 100.0                                 # [m/s3] max jerk
         drone_bbox: [0.2, 0.2, 0.2]                 # [m] Size of the bounding box for the obstacles
         goal_radius: 0.5                           # [m] Radius of the goal
         goal_seen_radius: 2.0                       # [m] Radius of the goal that the drone can see and stop replanning. Note that if this number is too small, the trajectory planning becomes extremely difficult.
         
         # DYNUS specific parameters
-        num_P: 2                                    # [-] Number of polytopes (num_P <= num_N)
+        num_P: 3                                    # [-] Number of polytopes (num_P <= num_N)
         num_N: 5                                    # [-] Number of trajectory pieces
         use_dynamic_factor: true                  # [-] Use dynamic factor for the trajectory time allocation
-        dynamic_factor_k_radius: 0.2              # [-] the factors are [prev_successful_factor - k_radius, prev_successful_factor - k_radius + factor_constant_step_size, ..., prev_successful_factor, ... prev_successful_factor + k_radius]        
+        dynamic_factor_k_radius: 0.4              # [-] the factors are [prev_successful_factor - k_radius, prev_successful_factor - k_radius + factor_constant_step_size, ..., prev_successful_factor, ... prev_successful_factor + k_radius]        
         dynamic_factor_initial_mean: 1.5               # [-] Initial factor for the dynamic factor search (only used when use_dynamic_factor is true)
         factor_initial: 1.0                       # [-] Initial factor for the trajectory time allocation
         factor_final: 1.6                         # [-] Final factor for the trajectory time allocation
         factor_constant_step_size: 0.1          # [-] Step size for the constant factor increase
-        obst_max_vel: 1.0                         # [m/s] Maximum velocity of the dynamic obstacles
-        max_gurobi_comp_time_sec: 0.05            # [s] Maximum Gurobi computation time per replanning
+        obst_max_vel: 0.5                         # [m/s] Maximum velocity of the dynamic obstacles
+        max_gurobi_comp_time_sec: 1.0            # [s] Maximum Gurobi computation time per replanning
         jerk_smooth_weight: 1.0e+1                # [-] Weight for the jerk smoothness
 
         # Dynamic obstacle parameters
         traj_lifetime: 7.0                          # [s] Time to keep the trajectory
-        dynamic_obstacle_base_inflation: 0.5        # [m] Inflation for the dynamic obstacles
 
         # Dynamic k_value parameters
         num_replanning_before_adapt: 10             # [-] Number of replanning before adapting the k_value
@@ -108,9 +143,9 @@ dynus_node:
         
         # Debug flags
         global_planner_verbose: false           # debug output
-        debug_verbose: false                    # [-] Verbose the debug information
+        debug_verbose: true                    # [-] Verbose the debug information
         verbose_computation_time: false         # [-] Verbose the computation time
-        local_traj_comp_verbose: true          # [-] Verbose the local trajectory computation time
+        local_traj_comp_verbose: false          # [-] Verbose the local trajectory computation time
 
         # Map parameters
         map_buffer: 1.0                         # [m] buffer for goal & A point

@@ -91,7 +91,8 @@ DYNUS_NODE::DYNUS_NODE() : Node("dynus_node")
   pub_point_G_term_ = this->create_publisher<geometry_msgs::msg::PointStamped>("point_G_term", 10);                                                   // visual level 1
   pub_current_state_ = this->create_publisher<geometry_msgs::msg::PointStamped>("point_current_state", 10);                                           // visual level 1
   pub_vel_text_ = this->create_publisher<visualization_msgs::msg::Marker>("vel_text", 10);                                                            // visual level 1
-  pub_dynamic_heat_cloud_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("dynamic_heat_cloud", 10);
+  pub_dynamic_heat_cloud_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("heat_cloud", 10);
+  pub_occupied_cloud_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("dynus_occupied_cloud", 10);
 
   // Debug publishers
   pub_yaw_output_ = this->create_publisher<dynus_interfaces::msg::YawOutput>("yaw_output", 10);
@@ -155,6 +156,14 @@ DYNUS_NODE::DYNUS_NODE() : Node("dynus_node")
                                                                                            std::bind(&DYNUS_NODE::occupancyMapCallback, this, std::placeholders::_1),
                                                                                            options_map);
   }
+  else if (par_.sim_env == "rviz_only")
+  {
+    // In rviz_only mode, initialize map with empty point cloud (no sensor simulation)
+    // This initializes the DGP manager so planner can start
+    pcl::PointCloud<pcl::PointXYZ>::Ptr empty_map_pc(new pcl::PointCloud<pcl::PointXYZ>());
+    dynus_ptr_->updateOccupancyMapPtr(empty_map_pc);
+    RCLCPP_INFO(this->get_logger(), "[rviz_only] Initialized map with empty point cloud");
+  }
   else
   {
     // Synchronize the occupancy grid and unknown grid
@@ -215,6 +224,7 @@ void DYNUS_NODE::declareParameters()
   this->declare_parameter("z_min", 0.0);
   this->declare_parameter("z_max", 5.0);
   this->declare_parameter("dgp_timeout_duration_ms", 1000);
+  this->declare_parameter("max_num_expansion", 10000);
   this->declare_parameter("use_free_start", false);
   this->declare_parameter("free_start_factor", 1.0);
   this->declare_parameter("use_free_goal", false);
@@ -225,6 +235,34 @@ void DYNUS_NODE::declareParameters()
   this->declare_parameter("decay_len_cells", 20.0);
   this->declare_parameter("w_side", 0.2);
   this->declare_parameter("heat_weight", 5.0);
+
+  // Heat map parameters
+  this->declare_parameter("use_heat_map", true);
+  this->declare_parameter("dynamic_heat_enabled", true);
+  this->declare_parameter("dynamic_as_occupied_current", true);
+  this->declare_parameter("dynamic_as_occupied_future", false);
+  this->declare_parameter("use_only_curr_pos_for_dynamic_obst", false);
+  this->declare_parameter("heat_alpha0", 1.0);
+  this->declare_parameter("heat_alpha1", 2.0);
+  this->declare_parameter("heat_p", 2);
+  this->declare_parameter("heat_q", 2);
+  this->declare_parameter("heat_tau_ratio", 0.5);
+  this->declare_parameter("heat_gamma", 0.0);
+  this->declare_parameter("heat_Hmax", 10.0);
+  this->declare_parameter("dyn_base_inflation_m", 0.5);
+  this->declare_parameter("dyn_heat_tube_radius_m", 2.0);
+  this->declare_parameter("heat_num_samples", 15);
+  this->declare_parameter("static_heat_enabled", true);
+  this->declare_parameter("static_heat_alpha", 2.0);
+  this->declare_parameter("static_heat_p", 2);
+  this->declare_parameter("static_heat_Hmax", 50.0);
+  this->declare_parameter("static_heat_rmax_m", 1.0);
+  this->declare_parameter("static_heat_default_radius_m", 0.5);
+  this->declare_parameter("static_heat_boundary_only", true);
+  this->declare_parameter("static_heat_apply_on_unknown", false);
+  this->declare_parameter("static_heat_exclude_dynamic", true);
+  this->declare_parameter("use_soft_cost_obstacles", false);
+  this->declare_parameter("obstacle_soft_cost", 100.0);
 
   // LOS post processing parameters
   this->declare_parameter("los_cells", 3);
@@ -269,6 +307,7 @@ void DYNUS_NODE::declareParameters()
   // Optimization parameters
   this->declare_parameter("horizon", 20.0);
   this->declare_parameter("dc", 0.01);
+  this->declare_parameter("dynamic_constraint_type", "Linf");
   this->declare_parameter("v_max", 1.0);
   this->declare_parameter("a_max", 1.0);
   this->declare_parameter("j_max", 1.0);
@@ -307,7 +346,6 @@ void DYNUS_NODE::declareParameters()
 
   // Dynamic obstacles parameters
   this->declare_parameter("traj_lifetime", 10.0);
-  this->declare_parameter("dynamic_obstacle_base_inflation", 0.2);
 
   // Dynamic k_value parameters
   this->declare_parameter("num_replanning_before_adapt", 10);
@@ -368,6 +406,7 @@ void DYNUS_NODE::setParameters()
   par_.z_min = this->get_parameter("z_min").as_double();
   par_.z_max = this->get_parameter("z_max").as_double();
   par_.dgp_timeout_duration_ms = this->get_parameter("dgp_timeout_duration_ms").as_int();
+  par_.max_num_expansion = this->get_parameter("max_num_expansion").as_int();
   par_.use_free_start = this->get_parameter("use_free_start").as_bool();
   par_.free_start_factor = this->get_parameter("free_start_factor").as_double();
   par_.use_free_goal = this->get_parameter("use_free_goal").as_bool();
@@ -378,6 +417,34 @@ void DYNUS_NODE::setParameters()
   par_.decay_len_cells = this->get_parameter("decay_len_cells").as_double();
   par_.w_side = this->get_parameter("w_side").as_double();
   par_.heat_weight = this->get_parameter("heat_weight").as_double();
+
+  // Heat map parameters
+  par_.use_heat_map = this->get_parameter("use_heat_map").as_bool();
+  par_.dynamic_heat_enabled = this->get_parameter("dynamic_heat_enabled").as_bool();
+  par_.dynamic_as_occupied_current = this->get_parameter("dynamic_as_occupied_current").as_bool();
+  par_.dynamic_as_occupied_future = this->get_parameter("dynamic_as_occupied_future").as_bool();
+  par_.use_only_curr_pos_for_dynamic_obst = this->get_parameter("use_only_curr_pos_for_dynamic_obst").as_bool();
+  par_.heat_alpha0 = this->get_parameter("heat_alpha0").as_double();
+  par_.heat_alpha1 = this->get_parameter("heat_alpha1").as_double();
+  par_.heat_p = this->get_parameter("heat_p").as_int();
+  par_.heat_q = this->get_parameter("heat_q").as_int();
+  par_.heat_tau_ratio = this->get_parameter("heat_tau_ratio").as_double();
+  par_.heat_gamma = this->get_parameter("heat_gamma").as_double();
+  par_.heat_Hmax = this->get_parameter("heat_Hmax").as_double();
+  par_.dyn_base_inflation_m = this->get_parameter("dyn_base_inflation_m").as_double();
+  par_.dyn_heat_tube_radius_m = this->get_parameter("dyn_heat_tube_radius_m").as_double();
+  par_.heat_num_samples = this->get_parameter("heat_num_samples").as_int();
+  par_.static_heat_enabled = this->get_parameter("static_heat_enabled").as_bool();
+  par_.static_heat_alpha = this->get_parameter("static_heat_alpha").as_double();
+  par_.static_heat_p = this->get_parameter("static_heat_p").as_int();
+  par_.static_heat_Hmax = this->get_parameter("static_heat_Hmax").as_double();
+  par_.static_heat_rmax_m = this->get_parameter("static_heat_rmax_m").as_double();
+  par_.static_heat_default_radius_m = this->get_parameter("static_heat_default_radius_m").as_double();
+  par_.static_heat_boundary_only = this->get_parameter("static_heat_boundary_only").as_bool();
+  par_.static_heat_apply_on_unknown = this->get_parameter("static_heat_apply_on_unknown").as_bool();
+  par_.static_heat_exclude_dynamic = this->get_parameter("static_heat_exclude_dynamic").as_bool();
+  par_.use_soft_cost_obstacles = this->get_parameter("use_soft_cost_obstacles").as_bool();
+  par_.obstacle_soft_cost = this->get_parameter("obstacle_soft_cost").as_double();
 
   // LOS post processing parameters
   par_.los_cells = this->get_parameter("los_cells").as_int();
@@ -424,6 +491,7 @@ void DYNUS_NODE::setParameters()
   // Optimization parameters
   par_.horizon = this->get_parameter("horizon").as_double();
   par_.dc = this->get_parameter("dc").as_double();
+  par_.dynamic_constraint_type = this->get_parameter("dynamic_constraint_type").as_string();
   par_.v_max = this->get_parameter("v_max").as_double();
   par_.a_max = this->get_parameter("a_max").as_double();
   par_.j_max = this->get_parameter("j_max").as_double();
@@ -449,7 +517,6 @@ void DYNUS_NODE::setParameters()
 
   // Dynamic obstacles parameters
   par_.traj_lifetime = this->get_parameter("traj_lifetime").as_double();
-  par_.dynamic_obstacle_base_inflation = this->get_parameter("dynamic_obstacle_base_inflation").as_double();
 
   // Dynamic k_value parameters
   par_.num_replanning_before_adapt = this->get_parameter("num_replanning_before_adapt").as_int();
@@ -598,7 +665,6 @@ void DYNUS_NODE::printParameters()
 
   // Dynamic obstacles parameters
   RCLCPP_INFO(this->get_logger(), "Traj Lifetime: %f", par_.traj_lifetime);
-  RCLCPP_INFO(this->get_logger(), "Dynamic Obstacle Base Inflation: %f", par_.dynamic_obstacle_base_inflation);
 
   // Dynamic k_value parameters
   RCLCPP_INFO(this->get_logger(), "Num Replanning Before Adapt: %d", par_.num_replanning_before_adapt);
@@ -754,13 +820,17 @@ void DYNUS_NODE::replanCallback()
     publishLocalGlobalPath();
 
   if (dgp_result && par_.visual_level >= 2)
+  {
     publishDynamicHeatCloud();
+    publishOccupiedCloud();
+  }
 
   // For visualization of the local trajectory
   if (replanning_result && par_.visual_level >= 1)
     publishTraj();
 
   // For visualization of the safe corridor
+  std::cout << "dgp_result: " << dgp_result << std::endl;
   if (dgp_result && par_.visual_level >= 1)
     publishPoly();
 
@@ -946,48 +1016,80 @@ void DYNUS_NODE::convertDynTrajMsg2DynTraj(const dynus_interfaces::msg::DynTraj 
   // Get id
   traj->id = msg.id;
 
-  // Get pwp
-  traj->pwp = dynus_utils::convertPwpMsg2Pwp(msg.pwp);
+  // Check if we should skip future trajectory information (for fair comparison)
+  bool skip_future_traj = par_.use_only_curr_pos_for_dynamic_obst && !msg.is_agent;
 
-  // Get covariances
-  if (!msg.is_agent)
+  // Get pwp (skip if only using current position for obstacles)
+  if (!skip_future_traj)
+  {
+    traj->pwp = dynus_utils::convertPwpMsg2Pwp(msg.pwp);
+  }
+  else
+  {
+    // Create stationary trajectory at current position for fair comparison
+    // Use current position from msg.pos and create zero velocity trajectory
+    traj->traj_x = std::to_string(msg.pos.x);
+    traj->traj_y = std::to_string(msg.pos.y);
+    traj->traj_z = std::to_string(msg.pos.z);
+    traj->traj_vx = "0.0";
+    traj->traj_vy = "0.0";
+    traj->traj_vz = "0.0";
+
+    // Compile as stationary point
+    if (traj->compileAnalytic())
+    {
+      traj->mode = dynTraj::Mode::Analytic;
+    }
+    else
+    {
+      RCLCPP_WARN(this->get_logger(),
+                  "Failed to compile stationary trajectory for obstacle id=%d at pos=[%.2f, %.2f, %.2f]",
+                  msg.id, msg.pos.x, msg.pos.y, msg.pos.z);
+    }
+  }
+
+  // Get covariances (skip if only using current position for obstacles)
+  if (!msg.is_agent && !skip_future_traj)
   {
     traj->ekf_cov_p = dynus_utils::convertCovMsg2Cov(msg.ekf_cov_p); // ekf cov
     traj->ekf_cov_q = dynus_utils::convertCovMsg2Cov(msg.ekf_cov_q); // ekf cov
     traj->poly_cov = dynus_utils::convertCovMsg2Cov(msg.poly_cov);   // future traj cov
   }
 
-  // Get analytical functions
-  if (msg.function.size() == 3)
+  // Get analytical functions (skip if only using current position for obstacles)
+  if (!skip_future_traj)
   {
-    traj->traj_x = msg.function[0];
-    traj->traj_y = msg.function[1];
-    traj->traj_z = msg.function[2];
-  }
-
-  if (msg.velocity.size() == 3)
-  {
-    traj->traj_vx = msg.velocity[0];
-    traj->traj_vy = msg.velocity[1];
-    traj->traj_vz = msg.velocity[2];
-  }
-
-  if (msg.function.size() == 3 && msg.velocity.size() == 3)
-  {
-    if (traj->compileAnalytic())
+    if (msg.function.size() == 3)
     {
-      // Change the mode only when we successfully compiled the analytic trajectory
-      traj->mode = dynTraj::Mode::Analytic;
-      // printf("Successfully compiled analytic traj id=%d\n", traj->id);
+      traj->traj_x = msg.function[0];
+      traj->traj_y = msg.function[1];
+      traj->traj_z = msg.function[2];
     }
-    else
+
+    if (msg.velocity.size() == 3)
     {
-      RCLCPP_ERROR(
-          this->get_logger(),
-          "Failed to compile analytic traj id=%d, falling back to zeros.",
-          traj->id);
-      // leave mode as whatever it was (Piecewise/Quintic),
-      // or explicitly set a safe default here
+      traj->traj_vx = msg.velocity[0];
+      traj->traj_vy = msg.velocity[1];
+      traj->traj_vz = msg.velocity[2];
+    }
+
+    if (msg.function.size() == 3 && msg.velocity.size() == 3)
+    {
+      if (traj->compileAnalytic())
+      {
+        // Change the mode only when we successfully compiled the analytic trajectory
+        traj->mode = dynTraj::Mode::Analytic;
+        // printf("Successfully compiled analytic traj id=%d\n", traj->id);
+      }
+      else
+      {
+        RCLCPP_ERROR(
+            this->get_logger(),
+            "Failed to compile analytic traj id=%d, falling back to zeros.",
+            traj->id);
+        // leave mode as whatever it was (Piecewise/Quintic),
+        // or explicitly set a safe default here
+      }
     }
   }
 
@@ -1516,6 +1618,8 @@ void DYNUS_NODE::publishPoly()
   // retrieve the polyhedra
   dynus_ptr_->retrievePolytopes(poly_whole_, poly_safe_);
 
+  std::cout << "Number of polyhedra for whole trajectory: " << poly_whole_.size() << std::endl;
+
   // For whole trajectory
   if (!poly_whole_.empty())
   {
@@ -1717,44 +1821,16 @@ void DYNUS_NODE::publishDynamicHeatCloud()
   if (!any_heat)
     return;
 
-  // -------- Tunables --------
-  const int stride = 2;             // 1 = every voxel, 2 = every 2 voxels, etc.
-  const float heat_min = 0.05f;     // only publish voxels with heat >= this
-  const size_t max_points = 200000; // hard cap for safety
-  // --------------------------
+  // Use new efficient API - only iterates over voxels with heat > threshold
+  const float heat_threshold = 0.05f;
+  const vec_Vecf<3> heat_cloud = map_util->getHeatCloud(heat_threshold);
 
-  const auto dim = map_util->getDim(); // Veci<3>
-  const int nx = dim(0);
-  const int ny = dim(1);
-  const int nz = dim(2);
+  if (heat_cloud.empty())
+    return;
 
-  // Use Eigen-aligned vector type from your data_type.h
-  vec_Vec3f pts;
-  std::vector<float> intens;
-  pts.reserve(50000);
-  intens.reserve(50000);
+  const float max_heat = map_util->getMaxHeat();
 
-  for (int x = 0; x < nx; x += stride)
-  {
-    for (int y = 0; y < ny; y += stride)
-    {
-      for (int z = 0; z < nz; z += stride)
-      {
-        const float h = map_util->getHeat(x, y, z);
-        if (h < heat_min)
-          continue;
-
-        const Vec3f p = map_util->intToFloat(Veci<3>(x, y, z)); // Vec3f is double[3]
-        pts.push_back(p);
-        intens.push_back(h);
-
-        if (pts.size() >= max_points)
-          goto BUILD_MSG;
-      }
-    }
-  }
-
-BUILD_MSG:
+  // Build PointCloud2 message
   sensor_msgs::msg::PointCloud2 msg;
   msg.header.frame_id = "map";
   msg.header.stamp = this->now();
@@ -1766,23 +1842,100 @@ BUILD_MSG:
       "y", 1, sensor_msgs::msg::PointField::FLOAT32,
       "z", 1, sensor_msgs::msg::PointField::FLOAT32,
       "intensity", 1, sensor_msgs::msg::PointField::FLOAT32);
-  modifier.resize(pts.size());
+  modifier.resize(heat_cloud.size());
 
   sensor_msgs::PointCloud2Iterator<float> iter_x(msg, "x");
   sensor_msgs::PointCloud2Iterator<float> iter_y(msg, "y");
   sensor_msgs::PointCloud2Iterator<float> iter_z(msg, "z");
   sensor_msgs::PointCloud2Iterator<float> iter_i(msg, "intensity");
 
-  for (size_t k = 0; k < pts.size(); ++k, ++iter_x, ++iter_y, ++iter_z, ++iter_i)
+  for (size_t i = 0; i < heat_cloud.size(); ++i)
+  {
+    const Vec3f &pt = heat_cloud[i];
+    *iter_x = pt.x();
+    *iter_y = pt.y();
+    *iter_z = pt.z();
+
+    const Veci<3> idx = map_util->floatToInt(pt);
+    const float h = map_util->getHeat(idx.x(), idx.y(), idx.z());
+    *iter_i = (max_heat > 1e-6f) ? (h / max_heat) : 0.0f;
+
+    ++iter_x; ++iter_y; ++iter_z; ++iter_i;
+  }
+
+  pub_dynamic_heat_cloud_->publish(msg);
+}
+
+// ----------------------------------------------------------------------------
+
+void DYNUS_NODE::publishOccupiedCloud()
+{
+  if (!pub_occupied_cloud_)
+    return;
+
+  auto map_util = dynus_ptr_->getMapUtilSharedPtr();
+  if (!map_util)
+    return;
+
+  // -------- Tunables --------
+  const int stride = 1;             // 1 = every voxel (we want to see all occupied cells)
+  const size_t max_points = 500000; // hard cap for safety
+  // --------------------------
+
+  const auto dim = map_util->getDim(); // Veci<3>
+  const int nx = dim(0);
+  const int ny = dim(1);
+  const int nz = dim(2);
+
+  // Use Eigen-aligned vector type
+  vec_Vec3f pts;
+  pts.reserve(50000);
+
+  for (int x = 0; x < nx; x += stride)
+  {
+    for (int y = 0; y < ny; y += stride)
+    {
+      for (int z = 0; z < nz; z += stride)
+      {
+        const int idx = map_util->getIndex(Veci<3>(x, y, z));
+        if (!map_util->isOccupied(idx))
+          continue;
+
+        const Vec3f p = map_util->intToFloat(Veci<3>(x, y, z));
+        pts.push_back(p);
+
+        if (pts.size() >= max_points)
+          goto BUILD_OCC_MSG;
+      }
+    }
+  }
+
+BUILD_OCC_MSG:
+  sensor_msgs::msg::PointCloud2 msg;
+  msg.header.frame_id = "map";
+  msg.header.stamp = this->now();
+
+  sensor_msgs::PointCloud2Modifier modifier(msg);
+  modifier.setPointCloud2Fields(
+      3,
+      "x", 1, sensor_msgs::msg::PointField::FLOAT32,
+      "y", 1, sensor_msgs::msg::PointField::FLOAT32,
+      "z", 1, sensor_msgs::msg::PointField::FLOAT32);
+  modifier.resize(pts.size());
+
+  sensor_msgs::PointCloud2Iterator<float> iter_x(msg, "x");
+  sensor_msgs::PointCloud2Iterator<float> iter_y(msg, "y");
+  sensor_msgs::PointCloud2Iterator<float> iter_z(msg, "z");
+
+  for (size_t k = 0; k < pts.size(); ++k, ++iter_x, ++iter_y, ++iter_z)
   {
     const auto &p = pts[k];
     *iter_x = static_cast<float>(p(0));
     *iter_y = static_cast<float>(p(1));
     *iter_z = static_cast<float>(p(2));
-    *iter_i = intens[k];
   }
 
-  pub_dynamic_heat_cloud_->publish(msg);
+  pub_occupied_cloud_->publish(msg);
 }
 
 // ----------------------------------------------------------------------------

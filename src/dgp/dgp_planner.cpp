@@ -376,7 +376,7 @@ bool DGPPlanner::plan(const Vecf<3> &start, const Vecf<3> &start_vel, const Vecf
   status_ = 0;
 
   const Veci<3> start_int = map_util_->floatToInt(start);
-  if (map_util_->isOutside(start_int) || map_util_->isOccupied(start_int))
+  if (map_util_->isOutside(start_int) || (!map_util_->useSoftCostObstacles() && map_util_->isOccupied(start_int)))
   {
     if (planner_verbose_)
     {
@@ -398,19 +398,24 @@ bool DGPPlanner::plan(const Vecf<3> &start, const Vecf<3> &start_vel, const Vecf
     return false;
   }
 
-  const Veci<3> goal_int = map_util_->floatToInt(goal);
-  if (map_util_->isOutside(goal_int) || map_util_->isOccupied(goal_int))
+  Veci<3> goal_int = map_util_->floatToInt(goal);
+  const Veci<3> dim = map_util_->getDim();
+
+  // If goal is outside the map, clamp to nearest boundary cell
+  if (map_util_->isOutside(goal_int))
   {
-    if (planner_verbose_)
-    {
-      printf(ANSI_COLOR_RED "goal_int: %d %d %d\n" ANSI_COLOR_RESET, goal_int(0), goal_int(1), goal_int(2));
-      printf(ANSI_COLOR_RED "is outside in x: %d\n" ANSI_COLOR_RESET, map_util_->isOutsideXYZ(goal_int, 0));
-      printf(ANSI_COLOR_RED "is outside in y: %d\n" ANSI_COLOR_RESET, map_util_->isOutsideXYZ(goal_int, 1));
-      printf(ANSI_COLOR_RED "is outside in z: %d\n" ANSI_COLOR_RESET, map_util_->isOutsideXYZ(goal_int, 2));
-      std::cout << "Map origin: " << map_util_->getOrigin().transpose() << std::endl;
-    }
+    for (int i = 0; i < 3; ++i)
+      goal_int(i) = std::clamp(goal_int(i), 0, dim(i) - 1);
+  }
+
+  // In non-soft-cost mode, reject if goal cell is occupied
+  if (!map_util_->useSoftCostObstacles() && map_util_->isOccupied(goal_int))
+  {
+    std::cout << bold << red << "goal is occupied!"
+              << " goal=" << goal.transpose()
+              << " goal_int=" << goal_int.transpose()
+              << reset << std::endl;
     status_ = 2;
-    std::cout << bold << red << "goal is not free!" << reset << std::endl;
     return false;
   }
 
@@ -420,8 +425,6 @@ bool DGPPlanner::plan(const Vecf<3> &start, const Vecf<3> &start_vel, const Vecf
       printf(ANSI_COLOR_RED "need to set the map!\n" ANSI_COLOR_RESET);
     return -1;
   }
-
-  const Veci<3> dim = map_util_->getDim();
 
   // compute initial g value (this is due to the fact that the actual initial position is not on the grid)
   double initial_g = (start - map_util_->intToFloat(start_int)).norm();
@@ -433,7 +436,7 @@ bool DGPPlanner::plan(const Vecf<3> &start, const Vecf<3> &start_vel, const Vecf
   graph_search_->setBounds(max_values);
 
   // Run global plan module
-  int max_expand = 1000000;
+  int max_expand = max_expand_;
   graph_search_->plan(start_int(0), start_int(1), start_int(2), goal_int(0), goal_int(1), goal_int(2), initial_g, global_planning_time_, dgp_static_jps_time_, dgp_check_path_time_, dgp_dynamic_astar_time_, dgp_recover_path_time_, current_time, start_vel, max_expand, dgp_timeout_duration_ms_);
 
   const auto path = graph_search_->getPath();

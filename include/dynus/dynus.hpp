@@ -128,6 +128,7 @@ public:
       double factor,
       double initial_dt,
       const vec_Vecf<3> &obst_pos,
+      const vec_Vecf<3> &obst_bbox,
       const vec_Vec3f &base_uo,
       vec_E<Polyhedron<3>> &poly_out_safe,
       const std::vector<LinearConstraint3D>* precomputed_spatial_constraints = nullptr,
@@ -150,6 +151,7 @@ public:
   void updateOccupancyMapPtr(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_map);
   void updateOccupancyMap(double current_time);
   double computeObstPosAndTrajMaxTimeForMapUpdate(vec_Vecf<3> &obst_pos,
+                                                  vec_Vecf<3> &obst_bbox,                // bbox of each obstacle
                                                   std::vector<vec_Vecf<3>> &pred_samples, // [K][M]
                                                   std::vector<float> &pred_times,         // [M], relative times from now
                                                   double current_time);
@@ -222,6 +224,7 @@ private:
   double dyaw_filtered_ = 0.0;                     // Filtered dyaw
   PieceWisePol pwp_to_share_;                      // Piecewise polynomial to share
   vec_Vecf<3> obst_pos_;
+  vec_Vecf<3> obst_bbox_;                          // Bbox half-extents for each obstacle
 
   // Drone status
   int drone_status_ = DroneStatus::GOAL_REACHED; // status_ can be TRAVELING, GOAL_SEEN, GOAL_REACHED

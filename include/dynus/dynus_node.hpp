@@ -133,6 +133,7 @@ namespace dynus
         void publishLocalGlobalPath();
         void publishVelocityInText(const Eigen::Vector3d &position, double velocity);
         void publishDynamicHeatCloud();
+        void publishOccupiedCloud();
 
         // Timers for callback
         rclcpp::TimerBase::SharedPtr timer_replanning_;
@@ -201,6 +202,7 @@ namespace dynus
         rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_p_points_;
         rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr pub_vel_text_;
         rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_dynamic_heat_cloud_;
+        rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_occupied_cloud_;
 
         // Subscribers
         rclcpp::Subscription<dynus_interfaces::msg::DynTraj>::SharedPtr sub_traj_;

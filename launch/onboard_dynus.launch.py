@@ -27,6 +27,7 @@ def generate_launch_description():
     global_planner_arg = DeclareLaunchArgument('global_planner', default_value='sjps', description='Global planner to use') # global planner
     use_benchmark_arg = DeclareLaunchArgument('use_benchmark', default_value='false', description='Flag to indicate whether to use the global planner benchmark') # global planner benchmark
     use_hardware_arg = DeclareLaunchArgument('use_hardware', default_value='false', description='Flag to indicate whether to use hardware or simulation') # flag to indicte if this is hardware or simulation
+    sim_env_arg = DeclareLaunchArgument('sim_env', default_value='', description='Simulation environment (gazebo, fake_sim). Empty string uses value from config file.') # override sim_env from config
     publish_odom_arg  = DeclareLaunchArgument('publish_odom', default_value='true')
     odom_topic_arg    = DeclareLaunchArgument('odom_topic', default_value='visual_slam/odom')
     odom_frame_id_arg = DeclareLaunchArgument('odom_frame_id', default_value='map')
@@ -50,6 +51,7 @@ def generate_launch_description():
         global_planner = LaunchConfiguration('global_planner').perform(context)
         use_benchmark = convert_str_to_bool(LaunchConfiguration('use_benchmark').perform(context))
         use_hardware = convert_str_to_bool(LaunchConfiguration('use_hardware').perform(context))
+        sim_env_override = LaunchConfiguration('sim_env').perform(context)
         publish_odom = convert_str_to_bool(LaunchConfiguration('publish_odom').perform(context))
         odom_topic = LaunchConfiguration('odom_topic').perform(context)
         odom_frame_id = LaunchConfiguration('odom_frame_id').perform(context)
@@ -69,7 +71,11 @@ def generate_launch_description():
 
         # Extract specific node parameters
         parameters = parameters['dynus_node']['ros__parameters']
-    
+
+        # Override sim_env if provided
+        if sim_env_override:
+            parameters['sim_env'] = sim_env_override
+
         # Update parameters for benchmarking
         parameters['file_path'] = data_file
         parameters['use_benchmark'] = bool(use_benchmark)
@@ -202,8 +208,8 @@ def generate_launch_description():
         nodes_to_start = [dynus_node]
         nodes_to_start.append(pose_twist_to_state_node) if use_hardware else None
         nodes_to_start.append(fake_sim_node) if not use_hardware else None
-        nodes_to_start.append(robot_state_publisher_node) # if parameters['sim_env'] == 'gazebo' else None
-        nodes_to_start.append(spawn_entity_node) # if parameters['sim_env'] == 'gazebo' else None
+        nodes_to_start.append(robot_state_publisher_node) if parameters['sim_env'] == 'gazebo' else None
+        nodes_to_start.append(spawn_entity_node) if parameters['sim_env'] == 'gazebo' else None
         nodes_to_start.append(pcl_render_node) if parameters['sim_env'] == 'fake_sim' else None
         nodes_to_start.append(obstacle_tracker_node) if use_obstacle_tracker else None
 
@@ -221,6 +227,7 @@ def generate_launch_description():
         global_planner_arg,
         use_benchmark_arg,
         use_hardware_arg,
+        sim_env_arg,
         publish_odom_arg,
         odom_topic_arg,
         odom_frame_id_arg,

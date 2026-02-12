@@ -157,9 +157,10 @@ public:
                     o.x0 = item.value("x0", 0.0);
                     o.y0 = item.value("y0", 0.0);
                     o.z0 = item.value("z0", 0.0);
-                    o.bbox[0] = item.value("size", 1.0);
-                    o.bbox[1] = item.value("size", 1.0);
-                    o.bbox[2] = item.value("size", 1.0);
+                    // Support both old "size" and new "size_x/y/z" formats
+                    o.bbox[0] = item.value("size_x", item.value("size", 1.0));
+                    o.bbox[1] = item.value("size_y", item.value("size", 1.0));
+                    o.bbox[2] = item.value("size_z", item.value("size", 1.0));
                     obstacles_.push_back(std::move(o));
                 }
                 for (auto &o : obstacles_)

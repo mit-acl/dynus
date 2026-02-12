@@ -10,7 +10,7 @@ typedef timer::Timer MyTimer;
 static inline double clamp01(double x) { return x < -1.0 ? -1.0 : (x > 1.0 ? 1.0 : x); }
 static inline double hypot2d(double x, double y) { return std::sqrt(x * x + y * y); }
 
-GraphSearch::GraphSearch(const int *cMap, const std::shared_ptr<dynus::VoxelMapUtil> &map_util, int xDim, int yDim, int zDim, double eps, bool verbose, std::string global_planner, double w_unknown, double w_align, double decay_len_cells, double w_side) : cMap_(cMap), map_util_(map_util), xDim_(xDim), yDim_(yDim), zDim_(zDim), eps_(eps), verbose_(verbose), global_planner_(global_planner), w_unknown_(w_unknown), w_align_(w_align), decay_len_cells_(decay_len_cells), w_side_(w_side)
+GraphSearch::GraphSearch(const int8_t *cMap, const std::shared_ptr<dynus::VoxelMapUtil> &map_util, int xDim, int yDim, int zDim, double eps, bool verbose, std::string global_planner, double w_unknown, double w_align, double decay_len_cells, double w_side) : cMap_(cMap), map_util_(map_util), xDim_(xDim), yDim_(yDim), zDim_(zDim), eps_(eps), verbose_(verbose), global_planner_(global_planner), w_unknown_(w_unknown), w_align_(w_align), decay_len_cells_(decay_len_cells), w_side_(w_side)
 {
   hm_.assign(xDim_ * yDim_ * zDim_, nullptr);
   seen_.assign(xDim_ * yDim_ * zDim_, false);
@@ -162,6 +162,10 @@ bool GraphSearch::static_jps_plan(StatePtr &currNode_ptr, int max_expand, int st
   int expand_iteration = 0;
   cMap_ = (map_util_->map_).data();
 
+  // Track the best (closest-to-goal) node for partial path recovery
+  StatePtr best_node = currNode_ptr;
+  double best_h = currNode_ptr->h;
+
   if (verbose_)
   {
     std::cout << "[GraphSearch] planner=\"" << global_planner_ << "\" use_jps="
@@ -177,20 +181,29 @@ bool GraphSearch::static_jps_plan(StatePtr &currNode_ptr, int max_expand, int st
     auto current_time = std::chrono::steady_clock::now();
     if (std::chrono::duration_cast<std::chrono::milliseconds>(current_time - start_time) > timeout_duration)
     {
-      std::cerr << "Timeout occurred. Exiting safely.\n";
-      return false;
+      std::cerr << "astar_heat: timeout after " << expand_iteration << " expansions, recovering partial path\n";
+      path_ = recoverPath(best_node, start_id);
+      return !path_.empty() && path_.size() > 1;
     }
 
     if (pq_.empty())
     {
-      std::cerr << "Error: Priority queue is empty!" << std::endl;
-      return false;
+      std::cerr << "astar_heat: priority queue empty after " << expand_iteration << " expansions, recovering partial path\n";
+      path_ = recoverPath(best_node, start_id);
+      return !path_.empty() && path_.size() > 1;
     }
 
     // get element with smallest cost
     currNode_ptr = pq_.top();
     pq_.pop();
     currNode_ptr->closed = true; // Add to closed list
+
+    // Update best node (closest to goal by heuristic)
+    if (currNode_ptr->h < best_h)
+    {
+      best_h = currNode_ptr->h;
+      best_node = currNode_ptr;
+    }
 
     if (currNode_ptr->id == goal_id)
     {
@@ -264,11 +277,9 @@ bool GraphSearch::static_jps_plan(StatePtr &currNode_ptr, int max_expand, int st
 
     if (max_expand > 0 && expand_iteration >= max_expand)
     {
-      if (verbose_)
-      {
-        printf("max_expandStep [%d] Reached\n\n", max_expand);
-      }
-      return false;
+      std::cerr << "astar_heat: max_expand [" << max_expand << "] reached, recovering partial path\n";
+      path_ = recoverPath(best_node, start_id);
+      return !path_.empty() && path_.size() > 1;
     }
   }
 
@@ -674,8 +685,16 @@ void GraphSearch::getSucc(const StatePtr &curr, std::vector<int> &succ_ids, std:
     int new_x = curr->x + d[0];
     int new_y = curr->y + d[1];
     int new_z = curr->z + d[2];
+
+    // Check if occupied - skip unless soft-cost mode is enabled
     if (isOccupied(new_x, new_y, new_z))
-      continue;
+    {
+      if (!map_util_ || !map_util_->useSoftCostObstacles())
+      {
+        continue;  // Hard obstacle, skip
+      }
+      // Soft-cost mode: allow traversal but add penalty below
+    }
 
     int new_id = coordToId(new_x, new_y, new_z);
     if (new_id < 0 || new_id >= (int)hm_.size())
@@ -706,6 +725,17 @@ void GraphSearch::getSucc(const StatePtr &curr, std::vector<int> &succ_ids, std:
       {
         const float h = map_util_->getHeat(new_x, new_y, new_z);
         step_cost += (double)(w_heat * h);
+      }
+    }
+
+    // -------- Add soft obstacle cost if enabled --------
+    if (use_heat && map_util_ && map_util_->useSoftCostObstacles())
+    {
+      if (isOccupied(new_x, new_y, new_z))  // Check if this cell is occupied
+      {
+        const float w_heat = map_util_->getHeatWeight();
+        const float soft_cost = map_util_->getObstacleSoftCost();
+        step_cost += (double)(w_heat * soft_cost);
       }
     }
 

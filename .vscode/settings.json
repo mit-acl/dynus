@@ -34,5 +34,6 @@
         "/home/kkondo/code/dynus_ws/install/decomp_ros_msgs/lib/python3.12/site-packages",
         "/opt/ros/humble/lib/python3.10/site-packages",
         "/opt/ros/humble/local/lib/python3.10/dist-packages"
-    ]
+    ],
+    "github.copilot.chat.codeGeneration.useInstructionFiles": true
 }

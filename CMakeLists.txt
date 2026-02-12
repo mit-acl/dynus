@@ -196,6 +196,7 @@ install(PROGRAMS
   scripts/goal_sender.py
   scripts/goal_monitor_node.py
   scripts/generate_random_forest.py
+  scripts/rviz_obstacles_node.py
   benchmarking/dynamic_obstacle_benchmark_node.py
   benchmarking/unc_benchmark_node.py
   DESTINATION lib/${PROJECT_NAME}

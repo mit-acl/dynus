@@ -227,6 +227,7 @@ protected:
     double dirf_[2];
     double x0_[3 * 3];
     double t0_;
+    std::string dynamic_constraint_type_;  // "Linf", "L1", or "L2"
     double v_max_;
     double a_max_;
     double j_max_;
@@ -267,6 +268,7 @@ protected:
     std::vector<GRBConstr> final_cons_;
     std::vector<GRBConstr> map_cons_;
     std::vector<GRBConstr> dyn_cons_;
+    std::vector<GRBQConstr> dyn_qcons_;  // Quadratic constraints (for norm-based mode)
 
     std::vector<std::vector<GRBVar>> b_; // binary variables (only used by the MIQP)
     // std::vector<std::vector<GRBVar>> x_;

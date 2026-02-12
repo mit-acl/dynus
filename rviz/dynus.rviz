@@ -6,8 +6,8 @@ Panels:
       Expanded:
         - /Common1
         - /Common1/TF1/Frames1
+        - /Common1/Dynamic Obstacles GT1
         - /NX011
-        - /NX011/Planning1
         - /NX011/Planning1/NX01 DGP Free Path1/Topic1
         - /NX011/Planning1/NX01 Traj1/Topic1
         - /NX011/Mapping1
@@ -37,7 +37,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: NX01 ACL Map Occupied
+    SyncSource: NX01 Heat Cloud
 Visualization Manager:
   Class: ""
   Displays:
@@ -92,7 +92,7 @@ Visualization Manager:
           Enabled: true
           Name: Dynamic Obstacles GT
           Namespaces:
-            {}
+            dyn_obs_mesh: true
           Topic:
             Depth: 5
             Durability Policy: Volatile
@@ -164,7 +164,7 @@ Visualization Manager:
             Filter size: 10
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /NX01/dynamic_heat_cloud
+            Value: /NX01/heat_cloud
           Use Fixed Frame: true
           Use rainbow: true
           Value: false
@@ -774,15 +774,49 @@ Visualization Manager:
               Use Fixed Frame: true
               Use rainbow: true
               Value: true
+            - Alpha: 1
+              Autocompute Intensity Bounds: true
+              Autocompute Value Bounds:
+                Max Value: 10
+                Min Value: -10
+                Value: true
+              Axis: Z
+              Channel Name: intensity
+              Class: rviz_default_plugins/PointCloud2
+              Color: 255; 255; 255
+              Color Transformer: Intensity
+              Decay Time: 0
+              Enabled: false
+              Invert Rainbow: false
+              Max Color: 255; 255; 255
+              Max Intensity: 1
+              Min Color: 0; 0; 0
+              Min Intensity: 0.03333510830998421
+              Name: NX01 Heat Cloud
+              Position Transformer: XYZ
+              Selectable: true
+              Size (Pixels): 3
+              Size (m): 0.10000000149011612
+              Style: Flat Squares
+              Topic:
+                Depth: 5
+                Durability Policy: Volatile
+                Filter size: 10
+                History Policy: Keep Last
+                Reliability Policy: Reliable
+                Value: /NX01/heat_cloud
+              Use Fixed Frame: true
+              Use rainbow: true
+              Value: false
           Enabled: true
           Name: Mapping
         - Class: rviz_common/Group
           Displays:
             - Class: rviz_default_plugins/Marker
-              Enabled: false
+              Enabled: true
               Name: NX01 Vel Text
               Namespaces:
-                {}
+                velocity: true
               Topic:
                 Depth: 5
                 Durability Policy: Volatile
@@ -790,7 +824,7 @@ Visualization Manager:
                 History Policy: Keep Last
                 Reliability Policy: Reliable
                 Value: /NX01/vel_text
-              Value: false
+              Value: true
             - Class: rviz_default_plugins/Marker
               Enabled: false
               Name: NX01 FOV
@@ -6916,25 +6950,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 66.87999725341797
+      Distance: 27.650718688964844
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 11.830215454101562
-        Y: 1.0692715644836426
-        Z: 0
+        X: 10.083536148071289
+        Y: -0.5113123059272766
+        Z: -4.021107196807861
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.3147966861724854
+      Pitch: 0.6197977662086487
       Target Frame: NX01/base_link
       Value: Orbit (rviz_default_plugins)
-      Yaw: 4.682387828826904
+      Yaw: 3.1523799896240234
     Saved: ~
 Window Geometry:
   Displays:

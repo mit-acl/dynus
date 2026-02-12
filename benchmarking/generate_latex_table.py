@@ -157,8 +157,70 @@ def format_value(val, best, worst, precision=1):
         return formatted
 
 
+def generate_dynus_rows_only(df):
+    """Generate only DYNUS rows (not full table) for manual insertion"""
+
+    columns_config = [
+        ("success_rate", "$R^{\\mathrm{opt}}_{\\mathrm{succ}}$ [\\%]", True, 1),
+        ("per_opt_ms", "$T^{\\mathrm{per}}_{\\mathrm{opt}}$ [ms]", False, 1),
+        ("total_opt_ms", "$T^{\\mathrm{total}}_{\\mathrm{opt}}$ [ms]", False, 1),
+        ("traj_time_s", "$T_{\\mathrm{trav}}$ [s]", False, 1),
+        ("path_length", "$L_{\\mathrm{path}}$ [m]", False, 1),
+        ("jerk_smooth", "$S_{\\mathrm{jerk}}$ [m/s$^{2}$]", False, 1),
+        ("sfc_viol", "$\\rho_{\\mathrm{sfc}}$ [\\%]", False, 1),
+        ("vel_viol", "$\\rho_{\\mathrm{vel}}$ [\\%]", False, 1),
+        ("acc_viol", "$\\rho_{\\mathrm{acc}}$ [\\%]", False, 1),
+        ("jerk_viol", "$\\rho_{\\mathrm{jerk}}$ [\\%]", False, 1),
+    ]
+
+    # Filter to DYNUS only
+    df_dynus = df[df["Algorithm"] == "DYNUS"].copy()
+
+    if df_dynus.empty:
+        return "% No DYNUS data found"
+
+    # Find best/worst across ALL data (not just DYNUS) for fair comparison
+    best_worst = {}
+    for col_name, _, higher_better, _ in columns_config:
+        best, worst = find_best_worst(df, col_name, higher_better)
+        best_worst[col_name] = (best, worst)
+
+    latex = []
+    latex.append("% ========== DYNUS ROWS ONLY (copy into main table) ==========")
+    latex.append("% Replace existing DYNUS rows with these updated values")
+    latex.append("")
+
+    # Group by N
+    for N_val in sorted(df_dynus["N"].unique()):
+        df_n = df_dynus[df_dynus["N"] == N_val].copy()
+
+        # Sort: multi-thread first, then single-thread
+        df_n = df_n.sort_values("Thread", ascending=False)  # multi before single
+
+        latex.append(f"% N = {int(N_val)}")
+
+        for idx, row in df_n.iterrows():
+            thread = row["Thread"]
+
+            # Build row (no N column - assume it's handled by multirow in main table)
+            row_str = f"      DYNUS & {thread} &"
+
+            for col_name, _, _, precision in columns_config:
+                val = row[col_name]
+                best, worst = best_worst[col_name]
+                formatted = format_value(val, best, worst, precision)
+                row_str += f" & {formatted}"
+
+            row_str += " \\\\"
+            latex.append(row_str)
+
+        latex.append("")
+
+    return "\n".join(latex)
+
+
 def generate_latex_table(df):
-    """Generate LaTeX table code"""
+    """Generate FULL LaTeX table code (use only if table doesn't exist yet)"""
 
     # Define columns and their properties
     # (column_name, latex_header, higher_is_better, precision)
@@ -537,16 +599,37 @@ def main():
         print("\nData summary:")
         print(df[["Algorithm", "Thread", "N"]].to_string(index=False))
 
-        # Generate LaTeX
-        print("\nGenerating LaTeX table...")
+        # Generate full LaTeX table
+        print("\nGenerating FULL LaTeX table...")
         latex_code = generate_latex_table(df)
 
-        # Save to file
+        # Save full table
         OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
         OUTPUT_FILE.write_text(latex_code)
 
-        print(f"\n✓ LaTeX table saved to: {OUTPUT_FILE}")
+        print(f"\n✓ Full LaTeX table saved to: {OUTPUT_FILE}")
         print(f"  Include in paper: \\input{{{OUTPUT_FILE.name}}}")
+
+        # Generate DYNUS-only rows
+        print("\nGenerating DYNUS-only rows...")
+        dynus_rows = generate_dynus_rows_only(df)
+
+        # Save DYNUS-only rows
+        dynus_only_file = OUTPUT_FILE.parent / "dynus_rows_only.tex"
+        dynus_only_file.write_text(dynus_rows)
+
+        print(f"\n✓ DYNUS-only rows saved to: {dynus_only_file}")
+        print(f"\n{'='*80}")
+        print("USAGE INSTRUCTIONS:")
+        print("="*80)
+        print("\nOption 1: Use full table (if starting fresh)")
+        print(f"  \\input{{{OUTPUT_FILE.name}}}")
+        print("\nOption 2: Update existing table (preserves other planners)")
+        print(f"  1. Open your existing table file")
+        print(f"  2. Find all lines containing 'DYNUS'")
+        print(f"  3. Replace them with contents from: {dynus_only_file.name}")
+        print(f"  4. Make sure multirow{{N}} values match your table structure")
+        print("="*80)
 
     # ========== Generate VE Benchmark Table ==========
     print("\n[2/2] Generating Variable Elimination Benchmark Table")

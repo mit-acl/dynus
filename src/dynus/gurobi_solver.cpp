@@ -191,6 +191,7 @@ void SolverGurobi::initializeSolver(const parameters &par)
     y_max_ = par.y_max;
     z_min_ = par.z_min;
     z_max_ = par.z_max;
+    dynamic_constraint_type_ = par.dynamic_constraint_type;
     v_max_ = par.v_max;
     a_max_ = par.a_max;
     j_max_ = par.j_max;
@@ -975,24 +976,39 @@ void SolverGurobi::setMapSizeConstraints()
         std::vector<GRBLinExpr> cp2 = getCP2(t);
         std::vector<GRBLinExpr> cp3 = getCP3(t);
 
-        // Set the constraints for the map size (especially for z_min_ and z_max_)
+        // Set the constraints for the map size (x, y, and z)
 
-        // cp0 <= z_max_
+        // X constraints
+        map_cons_.push_back(m_.addConstr(cp0[0] <= x_max_, "Map_size_cp0_x_max_t_" + std::to_string(t)));
+        map_cons_.push_back(m_.addConstr(cp1[0] <= x_max_, "Map_size_cp1_x_max_t_" + std::to_string(t)));
+        map_cons_.push_back(m_.addConstr(cp2[0] <= x_max_, "Map_size_cp2_x_max_t_" + std::to_string(t)));
+        map_cons_.push_back(m_.addConstr(cp3[0] <= x_max_, "Map_size_cp3_x_max_t_" + std::to_string(t)));
+
+        map_cons_.push_back(m_.addConstr(cp0[0] >= x_min_, "Map_size_cp0_x_min_t_" + std::to_string(t)));
+        map_cons_.push_back(m_.addConstr(cp1[0] >= x_min_, "Map_size_cp1_x_min_t_" + std::to_string(t)));
+        map_cons_.push_back(m_.addConstr(cp2[0] >= x_min_, "Map_size_cp2_x_min_t_" + std::to_string(t)));
+        map_cons_.push_back(m_.addConstr(cp3[0] >= x_min_, "Map_size_cp3_x_min_t_" + std::to_string(t)));
+
+        // Y constraints
+        map_cons_.push_back(m_.addConstr(cp0[1] <= y_max_, "Map_size_cp0_y_max_t_" + std::to_string(t)));
+        map_cons_.push_back(m_.addConstr(cp1[1] <= y_max_, "Map_size_cp1_y_max_t_" + std::to_string(t)));
+        map_cons_.push_back(m_.addConstr(cp2[1] <= y_max_, "Map_size_cp2_y_max_t_" + std::to_string(t)));
+        map_cons_.push_back(m_.addConstr(cp3[1] <= y_max_, "Map_size_cp3_y_max_t_" + std::to_string(t)));
+
+        map_cons_.push_back(m_.addConstr(cp0[1] >= y_min_, "Map_size_cp0_y_min_t_" + std::to_string(t)));
+        map_cons_.push_back(m_.addConstr(cp1[1] >= y_min_, "Map_size_cp1_y_min_t_" + std::to_string(t)));
+        map_cons_.push_back(m_.addConstr(cp2[1] >= y_min_, "Map_size_cp2_y_min_t_" + std::to_string(t)));
+        map_cons_.push_back(m_.addConstr(cp3[1] >= y_min_, "Map_size_cp3_y_min_t_" + std::to_string(t)));
+
+        // Z constraints
         map_cons_.push_back(m_.addConstr(cp0[2] <= z_max_, "Map_size_cp0_z_max_t_" + std::to_string(t)));
-        // cp1 <= z_max_
         map_cons_.push_back(m_.addConstr(cp1[2] <= z_max_, "Map_size_cp1_z_max_t_" + std::to_string(t)));
-        // cp2 <= z_max_
         map_cons_.push_back(m_.addConstr(cp2[2] <= z_max_, "Map_size_cp2_z_max_t_" + std::to_string(t)));
-        // cp3 <= z_max_
         map_cons_.push_back(m_.addConstr(cp3[2] <= z_max_, "Map_size_cp3_z_max_t_" + std::to_string(t)));
 
-        // cp0 >= z_min_
         map_cons_.push_back(m_.addConstr(cp0[2] >= z_min_, "Map_size_cp0_z_min_t_" + std::to_string(t)));
-        // cp1 >= z_min_
         map_cons_.push_back(m_.addConstr(cp1[2] >= z_min_, "Map_size_cp1_z_min_t_" + std::to_string(t)));
-        // cp2 >= z_min_
         map_cons_.push_back(m_.addConstr(cp2[2] >= z_min_, "Map_size_cp2_z_min_t_" + std::to_string(t)));
-        // cp3 >= z_min_
         map_cons_.push_back(m_.addConstr(cp3[2] >= z_min_, "Map_size_cp3_z_min_t_" + std::to_string(t)));
     }
 }
@@ -1258,58 +1274,208 @@ void SolverGurobi::setDynamicConstraints()
         dyn_cons_.clear();
     }
 
-    // Loop over all segments.
-    for (int segment = 0; segment < N_; segment++)
+    // Remove quadratic constraints (for L2 mode)
+    if (!dyn_qcons_.empty())
     {
-        // Loop over all dimensions (axes).
-        for (int axis = 0; axis < 3; axis++)
+        for (auto &qc : dyn_qcons_)
+            m_.remove(qc);
+        dyn_qcons_.clear();
+    }
+
+    // Choose constraint type based on parameter
+    if (dynamic_constraint_type_ == "Linf")
+    {
+        // L-infinity: per-axis constraints on control points
+        for (int segment = 0; segment < N_; segment++)
         {
+            for (int axis = 0; axis < 3; axis++)
+            {
+                // --- Velocity constraints ---
+                std::vector<GRBLinExpr> vel_cps = getVelCP(segment, axis);
+                for (int i = 0; i < vel_cps.size(); i++)
+                {
+                    if (controlPointDepends(VELOCITY, segment, i))
+                    {
+                        dyn_cons_.push_back(m_.addConstr(vel_cps[i] <= v_max_,
+                                            "max_vel_Linf_seg" + std::to_string(segment) + "_axis_" + std::to_string(axis) + "_cp" + std::to_string(i)));
+                        dyn_cons_.push_back(m_.addConstr(vel_cps[i] >= -v_max_,
+                                            "min_vel_Linf_seg" + std::to_string(segment) + "_axis_" + std::to_string(axis) + "_cp" + std::to_string(i)));
+                    }
+                }
 
-            // Get the d3 variable
-            GRBVar d3_var = d3_[axis];
+                // --- Acceleration constraints ---
+                std::vector<GRBLinExpr> accel_cps = getAccelCP(segment, axis);
+                for (int i = 0; i < accel_cps.size(); i++)
+                {
+                    if (controlPointDepends(ACCELERATION, segment, i))
+                    {
+                        dyn_cons_.push_back(m_.addConstr(accel_cps[i] <= a_max_,
+                                            "max_accel_Linf_seg" + std::to_string(segment) + "_axis_" + std::to_string(axis) + "_cp" + std::to_string(i)));
+                        dyn_cons_.push_back(m_.addConstr(accel_cps[i] >= -a_max_,
+                                            "min_accel_Linf_seg" + std::to_string(segment) + "_axis_" + std::to_string(axis) + "_cp" + std::to_string(i)));
+                    }
+                }
 
-            // --- Velocity constraints ---
-            std::vector<GRBLinExpr> vel_cps = getVelCP(segment, axis);
-            // For each velocity control point:
-            for (int i = 0; i < vel_cps.size(); i++)
+                // --- Jerk constraints ---
+                std::vector<GRBLinExpr> jerk_cps = getJerkCP(segment, axis);
+                for (int i = 0; i < jerk_cps.size(); i++)
+                {
+                    if (controlPointDepends(JERK, segment, i))
+                    {
+                        dyn_cons_.push_back(m_.addConstr(jerk_cps[i] <= j_max_,
+                                            "max_jerk_Linf_seg" + std::to_string(segment) + "_axis_" + std::to_string(axis) + "_cp" + std::to_string(i)));
+                        dyn_cons_.push_back(m_.addConstr(jerk_cps[i] >= -j_max_,
+                                            "min_jerk_Linf_seg" + std::to_string(segment) + "_axis_" + std::to_string(axis) + "_cp" + std::to_string(i)));
+                    }
+                }
+            } // end for axis
+        } // end for segment
+    }
+    else if (dynamic_constraint_type_ == "L1")
+    {
+        // L1 norm: |vx| + |vy| + |vz| ≤ v_max on control points
+        for (int segment = 0; segment < N_; segment++)
+        {
+            // Get control points for all three axes
+            std::vector<GRBLinExpr> vel_cps_x = getVelCP(segment, 0);
+            std::vector<GRBLinExpr> vel_cps_y = getVelCP(segment, 1);
+            std::vector<GRBLinExpr> vel_cps_z = getVelCP(segment, 2);
+
+            std::vector<GRBLinExpr> accel_cps_x = getAccelCP(segment, 0);
+            std::vector<GRBLinExpr> accel_cps_y = getAccelCP(segment, 1);
+            std::vector<GRBLinExpr> accel_cps_z = getAccelCP(segment, 2);
+
+            std::vector<GRBLinExpr> jerk_cps_x = getJerkCP(segment, 0);
+            std::vector<GRBLinExpr> jerk_cps_y = getJerkCP(segment, 1);
+            std::vector<GRBLinExpr> jerk_cps_z = getJerkCP(segment, 2);
+
+            // For each control point
+            for (int i = 0; i < vel_cps_x.size(); i++)
             {
                 if (controlPointDepends(VELOCITY, segment, i))
                 {
-                    dyn_cons_.push_back(m_.addConstr(vel_cps[i] <= v_max_, "max_vel_t" + std::to_string(segment) +
-                                                                               "_axis_" + std::to_string(axis) + "_cp" + std::to_string(i)));
-                    dyn_cons_.push_back(m_.addConstr(vel_cps[i] >= -v_max_, "min_vel_t" + std::to_string(segment) +
-                                                                                "_axis_" + std::to_string(axis) + "_cp" + std::to_string(i)));
+                    // L1 velocity norm: 8 linear constraints (octahedron faces)
+                    dyn_cons_.push_back(m_.addConstr(vel_cps_x[i] + vel_cps_y[i] + vel_cps_z[i] <= v_max_,
+                                        "vel_L1_seg" + std::to_string(segment) + "_cp" + std::to_string(i) + "_ppp"));
+                    dyn_cons_.push_back(m_.addConstr(vel_cps_x[i] + vel_cps_y[i] - vel_cps_z[i] <= v_max_,
+                                        "vel_L1_seg" + std::to_string(segment) + "_cp" + std::to_string(i) + "_ppn"));
+                    dyn_cons_.push_back(m_.addConstr(vel_cps_x[i] - vel_cps_y[i] + vel_cps_z[i] <= v_max_,
+                                        "vel_L1_seg" + std::to_string(segment) + "_cp" + std::to_string(i) + "_pnp"));
+                    dyn_cons_.push_back(m_.addConstr(vel_cps_x[i] - vel_cps_y[i] - vel_cps_z[i] <= v_max_,
+                                        "vel_L1_seg" + std::to_string(segment) + "_cp" + std::to_string(i) + "_pnn"));
+                    dyn_cons_.push_back(m_.addConstr(-vel_cps_x[i] + vel_cps_y[i] + vel_cps_z[i] <= v_max_,
+                                        "vel_L1_seg" + std::to_string(segment) + "_cp" + std::to_string(i) + "_npp"));
+                    dyn_cons_.push_back(m_.addConstr(-vel_cps_x[i] + vel_cps_y[i] - vel_cps_z[i] <= v_max_,
+                                        "vel_L1_seg" + std::to_string(segment) + "_cp" + std::to_string(i) + "_npn"));
+                    dyn_cons_.push_back(m_.addConstr(-vel_cps_x[i] - vel_cps_y[i] + vel_cps_z[i] <= v_max_,
+                                        "vel_L1_seg" + std::to_string(segment) + "_cp" + std::to_string(i) + "_nnp"));
+                    dyn_cons_.push_back(m_.addConstr(-vel_cps_x[i] - vel_cps_y[i] - vel_cps_z[i] <= v_max_,
+                                        "vel_L1_seg" + std::to_string(segment) + "_cp" + std::to_string(i) + "_nnn"));
                 }
             }
 
-            // --- Acceleration constraints ---
-            std::vector<GRBLinExpr> accel_cps = getAccelCP(segment, axis);
-            for (int i = 0; i < accel_cps.size(); i++)
+            for (int i = 0; i < accel_cps_x.size(); i++)
             {
                 if (controlPointDepends(ACCELERATION, segment, i))
                 {
-                    dyn_cons_.push_back(m_.addConstr(accel_cps[i] <= a_max_, "max_accel_t" + std::to_string(segment) +
-                                                                                 "_axis_" + std::to_string(axis) + "_cp" + std::to_string(i)));
-                    dyn_cons_.push_back(m_.addConstr(accel_cps[i] >= -a_max_, "min_accel_t" + std::to_string(segment) +
-                                                                                  "_axis_" + std::to_string(axis) + "_cp" + std::to_string(i)));
+                    // L1 acceleration norm: 8 linear constraints
+                    dyn_cons_.push_back(m_.addConstr(accel_cps_x[i] + accel_cps_y[i] + accel_cps_z[i] <= a_max_,
+                                        "acc_L1_seg" + std::to_string(segment) + "_cp" + std::to_string(i) + "_ppp"));
+                    dyn_cons_.push_back(m_.addConstr(accel_cps_x[i] + accel_cps_y[i] - accel_cps_z[i] <= a_max_,
+                                        "acc_L1_seg" + std::to_string(segment) + "_cp" + std::to_string(i) + "_ppn"));
+                    dyn_cons_.push_back(m_.addConstr(accel_cps_x[i] - accel_cps_y[i] + accel_cps_z[i] <= a_max_,
+                                        "acc_L1_seg" + std::to_string(segment) + "_cp" + std::to_string(i) + "_pnp"));
+                    dyn_cons_.push_back(m_.addConstr(accel_cps_x[i] - accel_cps_y[i] - accel_cps_z[i] <= a_max_,
+                                        "acc_L1_seg" + std::to_string(segment) + "_cp" + std::to_string(i) + "_pnn"));
+                    dyn_cons_.push_back(m_.addConstr(-accel_cps_x[i] + accel_cps_y[i] + accel_cps_z[i] <= a_max_,
+                                        "acc_L1_seg" + std::to_string(segment) + "_cp" + std::to_string(i) + "_npp"));
+                    dyn_cons_.push_back(m_.addConstr(-accel_cps_x[i] + accel_cps_y[i] - accel_cps_z[i] <= a_max_,
+                                        "acc_L1_seg" + std::to_string(segment) + "_cp" + std::to_string(i) + "_npn"));
+                    dyn_cons_.push_back(m_.addConstr(-accel_cps_x[i] - accel_cps_y[i] + accel_cps_z[i] <= a_max_,
+                                        "acc_L1_seg" + std::to_string(segment) + "_cp" + std::to_string(i) + "_nnp"));
+                    dyn_cons_.push_back(m_.addConstr(-accel_cps_x[i] - accel_cps_y[i] - accel_cps_z[i] <= a_max_,
+                                        "acc_L1_seg" + std::to_string(segment) + "_cp" + std::to_string(i) + "_nnn"));
                 }
             }
 
-            // --- Jerk constraints ---
-            std::vector<GRBLinExpr> jerk_cps = getJerkCP(segment, axis);
-            for (int i = 0; i < jerk_cps.size(); i++)
+            for (int i = 0; i < jerk_cps_x.size(); i++)
             {
                 if (controlPointDepends(JERK, segment, i))
                 {
-                    dyn_cons_.push_back(m_.addConstr(jerk_cps[i] <= j_max_, "max_jerk_t" + std::to_string(segment) +
-                                                                                "_axis_" + std::to_string(axis) + "_cp" + std::to_string(i)));
-                    dyn_cons_.push_back(m_.addConstr(jerk_cps[i] >= -j_max_, "min_jerk_t" + std::to_string(segment) +
-                                                                                 "_axis_" + std::to_string(axis) + "_cp" + std::to_string(i)));
+                    // L1 jerk norm: 8 linear constraints
+                    dyn_cons_.push_back(m_.addConstr(jerk_cps_x[i] + jerk_cps_y[i] + jerk_cps_z[i] <= j_max_,
+                                        "jerk_L1_seg" + std::to_string(segment) + "_cp" + std::to_string(i) + "_ppp"));
+                    dyn_cons_.push_back(m_.addConstr(jerk_cps_x[i] + jerk_cps_y[i] - jerk_cps_z[i] <= j_max_,
+                                        "jerk_L1_seg" + std::to_string(segment) + "_cp" + std::to_string(i) + "_ppn"));
+                    dyn_cons_.push_back(m_.addConstr(jerk_cps_x[i] - jerk_cps_y[i] + jerk_cps_z[i] <= j_max_,
+                                        "jerk_L1_seg" + std::to_string(segment) + "_cp" + std::to_string(i) + "_pnp"));
+                    dyn_cons_.push_back(m_.addConstr(jerk_cps_x[i] - jerk_cps_y[i] - jerk_cps_z[i] <= j_max_,
+                                        "jerk_L1_seg" + std::to_string(segment) + "_cp" + std::to_string(i) + "_pnn"));
+                    dyn_cons_.push_back(m_.addConstr(-jerk_cps_x[i] + jerk_cps_y[i] + jerk_cps_z[i] <= j_max_,
+                                        "jerk_L1_seg" + std::to_string(segment) + "_cp" + std::to_string(i) + "_npp"));
+                    dyn_cons_.push_back(m_.addConstr(-jerk_cps_x[i] + jerk_cps_y[i] - jerk_cps_z[i] <= j_max_,
+                                        "jerk_L1_seg" + std::to_string(segment) + "_cp" + std::to_string(i) + "_npn"));
+                    dyn_cons_.push_back(m_.addConstr(-jerk_cps_x[i] - jerk_cps_y[i] + jerk_cps_z[i] <= j_max_,
+                                        "jerk_L1_seg" + std::to_string(segment) + "_cp" + std::to_string(i) + "_nnp"));
+                    dyn_cons_.push_back(m_.addConstr(-jerk_cps_x[i] - jerk_cps_y[i] - jerk_cps_z[i] <= j_max_,
+                                        "jerk_L1_seg" + std::to_string(segment) + "_cp" + std::to_string(i) + "_nnn"));
+                }
+            }
+        } // end for segment
+    }
+    else if (dynamic_constraint_type_ == "L2")
+    {
+        // L2 norm: √(vx² + vy² + vz²) ≤ v_max on control points
+        for (int segment = 0; segment < N_; segment++)
+        {
+            // Get control points for all three axes
+            std::vector<GRBLinExpr> vel_cps_x = getVelCP(segment, 0);
+            std::vector<GRBLinExpr> vel_cps_y = getVelCP(segment, 1);
+            std::vector<GRBLinExpr> vel_cps_z = getVelCP(segment, 2);
+
+            std::vector<GRBLinExpr> accel_cps_x = getAccelCP(segment, 0);
+            std::vector<GRBLinExpr> accel_cps_y = getAccelCP(segment, 1);
+            std::vector<GRBLinExpr> accel_cps_z = getAccelCP(segment, 2);
+
+            std::vector<GRBLinExpr> jerk_cps_x = getJerkCP(segment, 0);
+            std::vector<GRBLinExpr> jerk_cps_y = getJerkCP(segment, 1);
+            std::vector<GRBLinExpr> jerk_cps_z = getJerkCP(segment, 2);
+
+            // For each control point
+            for (int i = 0; i < vel_cps_x.size(); i++)
+            {
+                if (controlPointDepends(VELOCITY, segment, i))
+                {
+                    // L2 velocity norm
+                    GRBQuadExpr vel_norm_sq = vel_cps_x[i]*vel_cps_x[i] + vel_cps_y[i]*vel_cps_y[i] + vel_cps_z[i]*vel_cps_z[i];
+                    dyn_qcons_.push_back(m_.addQConstr(vel_norm_sq <= v_max_*v_max_,
+                                         "vel_L2_seg" + std::to_string(segment) + "_cp" + std::to_string(i)));
                 }
             }
 
-        } // end for axis
-    } // end for segment
+            for (int i = 0; i < accel_cps_x.size(); i++)
+            {
+                if (controlPointDepends(ACCELERATION, segment, i))
+                {
+                    // L2 acceleration norm
+                    GRBQuadExpr acc_norm_sq = accel_cps_x[i]*accel_cps_x[i] + accel_cps_y[i]*accel_cps_y[i] + accel_cps_z[i]*accel_cps_z[i];
+                    dyn_qcons_.push_back(m_.addQConstr(acc_norm_sq <= a_max_*a_max_,
+                                         "acc_L2_seg" + std::to_string(segment) + "_cp" + std::to_string(i)));
+                }
+            }
+
+            for (int i = 0; i < jerk_cps_x.size(); i++)
+            {
+                if (controlPointDepends(JERK, segment, i))
+                {
+                    // L2 jerk norm
+                    GRBQuadExpr jerk_norm_sq = jerk_cps_x[i]*jerk_cps_x[i] + jerk_cps_y[i]*jerk_cps_y[i] + jerk_cps_z[i]*jerk_cps_z[i];
+                    dyn_qcons_.push_back(m_.addQConstr(jerk_norm_sq <= j_max_*j_max_,
+                                         "jerk_L2_seg" + std::to_string(segment) + "_cp" + std::to_string(i)));
+                }
+            }
+        } // end for segment
+    }
 }
 
 bool SolverGurobi::controlPointDepends(ConstraintType type, int seg, int cp)

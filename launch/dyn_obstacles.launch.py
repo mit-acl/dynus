@@ -15,6 +15,7 @@ from launch.actions import (
     TimerAction
 )
 from launch.substitutions import LaunchConfiguration
+from launch.conditions import IfCondition
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 from launch_ros.parameter_descriptions import ParameterValue
@@ -91,11 +92,14 @@ def trefoil_expr_with_vel(x0, y0, z0, sx, sy, sz, offset, slower):
 def _spawn_static_block(context):
     import random
 
+    # Check if we should skip Gazebo spawning (rviz-only mode)
+    skip_gazebo = _as_bool(context, 'skip_gazebo', False)
+
     num_obstacles   = _as(context, 'num_obstacles', int,   1)
     x_min           = _as(context, 'x_min', float, 5.0)
     x_max           = _as(context, 'x_max', float, 105.0)
-    y_min           = _as(context, 'y_min', float, -10.0)
-    y_max           = _as(context, 'y_max', float, 10.0)
+    y_min           = _as(context, 'y_min', float, -15.0)
+    y_max           = _as(context, 'y_max', float, 15.0)
     z_min           = _as(context, 'z_min', float, 0.0)
     z_max           = _as(context, 'z_max', float, 6.0)
     slower_min      = _as(context, 'slower_min', float, 10.0)
@@ -105,87 +109,129 @@ def _spawn_static_block(context):
     use_sim_time    = _as_bool(context, 'use_sim_time', False)
     urdf_xacro      = LaunchConfiguration('urdf_xacro').perform(context) or 'dyn_obstacle1.urdf.xacro'
 
-    scale_range = [[2.0, 2.0], [2.0, 2.0], [2.0, 2.0]]
+    scale_range = [[2.0, 4.0], [2.0, 4.0], [2.0, 4.0]]
 
     offset_range = [0.0, 3.0] # [offset_min, offset_max]
     slower_range = [slower_min, slower_max]
 
-    size = 1.0  # Default size for the obstacle
+    # Sizes for obstacles (like in MADER)
+    bbox_dynamic = [0.8, 0.8, 0.8]  # Small cubes
+    bbox_static_vert = [0.4, 0.4, 4.0]  # Narrow vertical pillars
+    bbox_static_horiz = [0.4, 4.0, 0.4]  # Narrow horizontal walls
+    percentage_vert = 0.35  # 35% of static obstacles are vertical
 
     # set seed
     random.seed(seed)
 
     if DEBUG_DYN_OBS:
+        mode_str = "RViz-only (no Gazebo)" if skip_gazebo else "Gazebo"
+        print(f"[dyn_obstacles][spawn] Mode: {mode_str}")
         print("[dyn_obstacles][spawn] num_obstacles:", num_obstacles,
               "seed:", seed, "spawn_interval:", spawn_interval)
 
     urdf_path = os.path.join(get_package_share_directory('dynus'), 'urdf', urdf_xacro)
 
+    # Get dynamic_ratio to determine which obstacles are static vs dynamic
+    dynamic_ratio = _as(context, 'dynamic_ratio', float, 0.5)
+    num_dynamic = int(num_obstacles * dynamic_ratio)
+    num_static = num_obstacles - num_dynamic
+
+    if DEBUG_DYN_OBS:
+        print(f"[dyn_obstacles][spawn] Creating {num_dynamic} dynamic + {num_static} static obstacles")
+
     actions = []
     obstacles_meta = []
     for i in range(num_obstacles):
         entity = f"obstacle_{i}"
+        is_dynamic = i < num_dynamic  # First N are dynamic, rest are static
 
         x = x_min + (x_max - x_min) * random.random()
         y = y_min + (y_max - y_min) * random.random()
         z = z_min + (z_max - z_min) * random.random()
 
-        sx = scale_range[0][0] + (scale_range[0][1] - scale_range[0][0]) * random.random()
-        sy = scale_range[1][0] + (scale_range[1][1] - scale_range[1][0]) * random.random()
-        sz = scale_range[2][0] + (scale_range[2][1] - scale_range[2][0]) * random.random()
-        offset = random.uniform(*offset_range)
-        slower = random.uniform(*slower_range)
+        if is_dynamic:
+            # Dynamic obstacle with trefoil trajectory
+            sx = scale_range[0][0] + (scale_range[0][1] - scale_range[0][0]) * random.random()
+            sy = scale_range[1][0] + (scale_range[1][1] - scale_range[1][0]) * random.random()
+            sz = scale_range[2][0] + (scale_range[2][1] - scale_range[2][0]) * random.random()
+            offset = random.uniform(*offset_range)
+            slower = random.uniform(*slower_range)
 
-        x_str, y_str, z_str, vx_str, vy_str, vz_str = trefoil_expr_with_vel(
-            x0=x, y0=y, z0=z, sx=sx, sy=sy, sz=sz,
-            offset=offset, slower=slower
-        )
-
-        # for Gazebo
-        robot_description = ParameterValue(
-            Command([
-                'xacro ', urdf_path,
-                ' traj_x:=', x_str,
-                ' traj_y:=', y_str,
-                ' traj_z:=', z_str,
-                ' size:=', str(size),
-                ' namespace:=', entity
-            ]),
-            value_type=str
-        )
-
-        rsp = Node(
-            package='robot_state_publisher',
-            executable='robot_state_publisher',
-            name=f'{entity}_rsp',
-            output='screen',
-            parameters=[{
-                'robot_description': robot_description,
-                'use_sim_time': use_sim_time,
-                'frame_prefix': entity + '/'
-            }],
-            remappings=[('/robot_description', f'/{entity}/robot_description')]
-        )
-
-        spawn = Node(
-            package='gazebo_ros',
-            executable='spawn_entity.py',
-            name=f'{entity}_spawn',
-            output='screen',
-            arguments=[
-                '-entity', entity,
-                '-topic', f'/{entity}/robot_description',
-                '-x', str(x), '-y', str(y), '-z', str(z)
-            ]
-        )
-
-        actions.append(
-            TimerAction(
-                period=i * spawn_interval,
-                actions=[rsp, 
-                         TimerAction(period=0.3, actions=[spawn])]
+            x_str, y_str, z_str, vx_str, vy_str, vz_str = trefoil_expr_with_vel(
+                x0=x, y0=y, z0=z, sx=sx, sy=sy, sz=sz,
+                offset=offset, slower=slower
             )
-        )
+            bbox = bbox_dynamic
+        else:
+            # Static obstacle - determine if vertical or horizontal
+            static_idx = i - num_dynamic  # Index within static obstacles
+            is_vertical = static_idx < (num_static * percentage_vert)
+
+            if is_vertical:
+                # Vertical pillar - adjust z position to be at ground level
+                z = bbox_static_vert[2] / 2.0
+                bbox = bbox_static_vert
+            else:
+                # Horizontal wall
+                bbox = bbox_static_horiz
+
+            # Static obstacle - truly constant position (no motion)
+            x_str = str(x)
+            y_str = str(y)
+            z_str = str(z)
+            vx_str = "0.0"
+            vy_str = "0.0"
+            vz_str = "0.0"
+            sx = sy = sz = 0.0  # No scale for static
+            offset = slower = 0.0
+
+        # Only spawn in Gazebo if not in skip_gazebo mode
+        if not skip_gazebo:
+            # for Gazebo
+            robot_description = ParameterValue(
+                Command([
+                    'xacro ', urdf_path,
+                    ' traj_x:=', x_str,
+                    ' traj_y:=', y_str,
+                    ' traj_z:=', z_str,
+                    ' size:=', str(max(bbox)),  # Use max dimension for Gazebo
+                    ' namespace:=', entity
+                ]),
+                value_type=str
+            )
+
+            rsp = Node(
+                package='robot_state_publisher',
+                executable='robot_state_publisher',
+                name=f'{entity}_rsp',
+                output='screen',
+                parameters=[{
+                    'robot_description': robot_description,
+                    'use_sim_time': use_sim_time,
+                    'frame_prefix': entity + '/'
+                }],
+                remappings=[('/robot_description', f'/{entity}/robot_description')]
+            )
+
+            spawn = Node(
+                package='gazebo_ros',
+                executable='spawn_entity.py',
+                name=f'{entity}_spawn',
+                output='screen',
+                arguments=[
+                    '-entity', entity,
+                    '-topic', f'/{entity}/robot_description',
+                    '-x', str(x), '-y', str(y), '-z', str(z)
+                ]
+            )
+
+            actions.append(
+                TimerAction(
+                    period=i * spawn_interval,
+                    actions=[rsp,
+                             TimerAction(period=0.3, actions=[spawn])]
+                )
+            )
 
         # Pass parameters to dynamic_forest_node (where we publish DynTraj)
         obstacles_meta.append({
@@ -195,7 +241,9 @@ def _spawn_static_block(context):
             "offset": offset, "slower": slower,
             "traj_x": x_str, "traj_y": y_str, "traj_z": z_str,
             "traj_vx": vx_str, "traj_vy": vy_str, "traj_vz": vz_str,
-            "size": size,
+            "size_x": bbox[0],
+            "size_y": bbox[1],
+            "size_z": bbox[2],
         })
 
 
@@ -269,14 +317,16 @@ def generate_launch_description():
         DeclareLaunchArgument('publish_markers', default_value='true'),
         DeclareLaunchArgument('publish_tf', default_value='true'),
         DeclareLaunchArgument('use_sim_time', default_value='false'),
+        DeclareLaunchArgument('skip_gazebo', default_value='false',
+                              description='Skip Gazebo spawning (RViz-only mode)'),
 
         # Spatial ranges
         DeclareLaunchArgument('x_min', default_value='5.0'),
         DeclareLaunchArgument('x_max', default_value='100.0'),
-        DeclareLaunchArgument('y_min', default_value='-7.0'),
-        DeclareLaunchArgument('y_max', default_value='7.0'),
-        DeclareLaunchArgument('z_min', default_value='3.0'),
-        DeclareLaunchArgument('z_max', default_value='3.0'),
+        DeclareLaunchArgument('y_min', default_value='-15.0'),
+        DeclareLaunchArgument('y_max', default_value='15.0'),
+        DeclareLaunchArgument('z_min', default_value='0.0'),
+        DeclareLaunchArgument('z_max', default_value='7.0'),
 
         # Trajectory params
         DeclareLaunchArgument('slower_min', default_value='4.0'),

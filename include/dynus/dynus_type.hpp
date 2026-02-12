@@ -62,6 +62,7 @@ struct parameters
   double z_max;
   double drone_radius;
   int dgp_timeout_duration_ms;
+  int max_num_expansion;
   bool use_free_start;
   double free_start_factor;
   bool use_free_goal;
@@ -114,10 +115,36 @@ struct parameters
   double decay_len_cells;   // e-folding distance from the start (cells)
   double w_side;            // side (handedness) tie-break strength (cells)
   double heat_weight;       // weight for heat in edge cost
+
+  // Heat map parameters
+  bool use_heat_map;
+
+  // Dynamic heat
+  bool dynamic_heat_enabled;
+  bool dynamic_as_occupied_current;
+  bool dynamic_as_occupied_future;
+  bool use_only_curr_pos_for_dynamic_obst;
+  double heat_alpha0, heat_alpha1;
+  int heat_p, heat_q;
+  double heat_tau_ratio, heat_gamma, heat_Hmax;
+  double dyn_base_inflation_m, dyn_heat_tube_radius_m;
+  int heat_num_samples;
+
+  // Static heat
+  bool static_heat_enabled;
+  double static_heat_alpha;
+  int static_heat_p;
+  double static_heat_Hmax, static_heat_rmax_m, static_heat_default_radius_m;
+  bool static_heat_boundary_only, static_heat_apply_on_unknown, static_heat_exclude_dynamic;
+
+  // Soft-cost
+  bool use_soft_cost_obstacles;
+  double obstacle_soft_cost;
   
   // Optimiztion parameters
   double horizon;
   double dc;
+  std::string dynamic_constraint_type;  // "Linf", "L1", or "L2"
   double v_max;
   double a_max;
   double j_max;
@@ -144,7 +171,6 @@ struct parameters
 
   // Dynamic obstacles parameters
   double traj_lifetime;
-  double dynamic_obstacle_base_inflation;
 
   // Dynamic k_value parameters
   int num_replanning_before_adapt;

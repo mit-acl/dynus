@@ -432,6 +432,9 @@ public:
         // Obstacles
         obst_pos_ = vec3ListFromFlat(get_parameter("dynamic_obstacles_flat").as_double_array(),
                                      "dynamic_obstacles_flat");
+        // Initialize bbox with default half-extents for each obstacle
+        obst_bbox_.clear();
+        obst_bbox_.resize(obst_pos_.size(), Vecf<3>(0.4, 0.4, 0.4));
         base_uo_ = vec3ListFromFlat(get_parameter("static_obstacles_flat").as_double_array(),
                                     "static_obstacles_flat");
 
@@ -506,9 +509,10 @@ private:
         // 3) Update map with *dynamic obstacles* (this is the key part)
         // Use planning horizon as traj_max_time for spatio-temporal occupancy.
         const double traj_max_time = (initial_dt_ * factor_final_) * static_cast<double>(N_local_);
-        
+
         pcl::PointCloud<pcl::PointXYZ>::Ptr empty_pclptr_unk(new pcl::PointCloud<pcl::PointXYZ>());
-        dgp_.updateMap(wdx_, wdy_, wdz_, map_center_, cloud, empty_pclptr_unk, obst_pos_, traj_max_time);
+        vec_Vecf<3> empty_obst_bbox;  // Empty bbox vector (no dynamic obstacles in this test)
+        dgp_.updateMap(wdx_, wdy_, wdz_, map_center_, cloud, empty_pclptr_unk, obst_pos_, empty_obst_bbox, traj_max_time);
 
         // 4) Setup planner snapshot
         dgp_.setupDGPPlanner(
@@ -519,6 +523,7 @@ private:
             par_.a_max,
             par_.j_max,
             dgp_timeout_ms_,
+            /*max_num_expansion*/ 10000,
             /*w_unknown*/ 0.0, /*w_align*/ 0.0, /*decay_len_cells*/ 100.0, /*w_side*/ 0.0,
             /*los_cells*/ 0, /*min_len*/ 0.5, /*min_turn*/ 0.0);
 
@@ -567,6 +572,7 @@ private:
             global_path_,
             base_uo_,
             obst_pos_,
+            obst_bbox_,
             time_end_times_,
             l_constraints_by_time_, // [N][P]
             poly_out_by_time_       // [N][P]
@@ -830,8 +836,9 @@ private:
     std::shared_ptr<SolverGurobi> solver_;
 
     // Inputs
-    vec_Vecf<3> obst_pos_; // dynamic obstacle centers
-    vec_Vec3f base_uo_;    // static obstacle points
+    vec_Vecf<3> obst_pos_;  // dynamic obstacle centers
+    vec_Vecf<3> obst_bbox_; // dynamic obstacle bbox half-extents
+    vec_Vec3f base_uo_;     // static obstacle points
 
     // Generated
     vec_Vecf<3> global_path_;            // P+1 points

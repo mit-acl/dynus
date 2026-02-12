@@ -154,7 +154,11 @@ bool DYNUS::needReplan(const state &local_state, const state &local_G_term, cons
   double dist_to_term_G = (local_state.pos - local_G_term.pos).norm();
   double dist_from_last_plan_state_to_term_G = (last_plan_state.pos - local_G_term.pos).norm();
 
-  if (dist_to_term_G < par_.goal_radius)
+  // Check velocity magnitude to ensure drone is moving slowly enough
+  double vel_magnitude = local_state.vel.norm();
+  const double max_goal_velocity = 0.1; // [m/s] Maximum velocity when reaching goal
+
+  if (dist_to_term_G < par_.goal_radius && vel_magnitude < max_goal_velocity)
   {
     changeDroneStatus(DroneStatus::GOAL_REACHED);
     return false;
@@ -728,7 +732,7 @@ bool DYNUS::generateGlobalPath(vec_Vecf<3> &global_path, double current_time, do
   }
 
   // Set up the DGP planner (since updateVmax() needs to be called after setupDGPPlanner, we use v_max_ from the last replan)
-  dgp_manager_.setupDGPPlanner(par_.global_planner, par_.global_planner_verbose, map_res_, v_max_, par_.a_max, par_.j_max, par_.dgp_timeout_duration_ms, par_.w_unknown, par_.w_align, par_.decay_len_cells, par_.w_side, par_.los_cells, par_.min_len, par_.min_turn);
+  dgp_manager_.setupDGPPlanner(par_.global_planner, par_.global_planner_verbose, map_res_, v_max_, par_.a_max, par_.j_max, par_.dgp_timeout_duration_ms, par_.max_num_expansion, par_.w_unknown, par_.w_align, par_.decay_len_cells, par_.w_side, par_.los_cells, par_.min_len, par_.min_turn);
 
   // Free start and goal if necessary
   if (par_.use_free_start)
@@ -872,11 +876,13 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
     dgp_manager_.getVecOccupied(base_map);
   }
 
-  // Get obst_pos
+  // Get obst_pos and obst_bbox
   vec_Vecf<3> obst_pos;
+  vec_Vecf<3> obst_bbox;
   {
     std::lock_guard<std::mutex> lk(mtx_obst_pos_);
     obst_pos = obst_pos_;
+    obst_bbox = obst_bbox_;
   }
 
   // Compute an initial dt for the local trajectory optimization
@@ -908,6 +914,7 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
             global_path,
             base_map,
             obst_pos,
+            obst_bbox,
             seg_end_times,
             shared_spatial_constraints,
             shared_spatial_poly_out))
@@ -926,7 +933,7 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
 
     futures.push_back(std::async(std::launch::async,
                                  [this, i, factor, &global_path, local_A, local_E, sub_goal, A_time,
-                                  initial_dt, &obst_pos, &base_map, use_precomputed_constraints,
+                                  initial_dt, &obst_pos, &obst_bbox, &base_map, use_precomputed_constraints,
                                   &shared_spatial_constraints, &shared_spatial_poly_out]()
                                      -> std::tuple<bool, double, double, double, vec_E<Polyhedron<3>>>
                                  {
@@ -949,6 +956,7 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
                                          factor,
                                          initial_dt,
                                          obst_pos,
+                                         obst_bbox,
                                          base_map, // base_uo snapshot
                                          thread_poly_out_safe,
                                          use_precomputed_constraints ? &shared_spatial_constraints : nullptr,
@@ -1192,6 +1200,7 @@ bool DYNUS::generateLocalTrajectory(
     double factor,
     double initial_dt,
     const vec_Vecf<3> &obst_pos,
+    const vec_Vecf<3> &obst_bbox,
     const vec_Vec3f &base_uo,
     vec_E<Polyhedron<3>> &poly_out_safe,
     const std::vector<LinearConstraint3D>* precomputed_spatial_constraints,
@@ -1245,6 +1254,7 @@ bool DYNUS::generateLocalTrajectory(
             global_path,
             base_uo,
             obst_pos,
+            obst_bbox,
             time_end_times,
             l_constraints_by_time,
             poly_out_by_time))
@@ -1866,10 +1876,34 @@ bool DYNUS::checkReadyToReplan()
                                  // && kdtree_unk_initialized_
                                  ));
 
-  // if (!is_ready) printf("\033[1;31mNot ready to replan: state_initialized_=%d, terminal_goal_initialized_=%d, map_initialized_=%d, kdtree_map_initialized_=%d\033[0m\n",
-  //                            state_initialized_, terminal_goal_initialized_,
-  //                            dgp_manager_.isMapInitialized(),
-  //                            kdtree_map_initialized_ /*, kdtree_unk_initialized_*/);
+  // // In rviz_only mode, we don't wait for point cloud or map (no sensor simulation)
+  // bool is_rviz_only = (par_.sim_env == "rviz_only");
+  // bool need_kdtree = par_.use_hardware && !is_rviz_only;
+  // bool need_map = !is_rviz_only;  // Skip map check in rviz_only mode
+
+  // bool is_ready = state_initialized_ &&
+  //                 terminal_goal_initialized_ &&
+  //                 (!need_map || dgp_manager_.isMapInitialized()) &&
+  //                 (!need_kdtree || kdtree_map_initialized_);
+
+  // if (!is_ready) {
+  //   printf("\033[1;31m[DEBUG] Not ready to replan:\033[0m\n");
+  //   printf("  state_initialized_=%d\n", state_initialized_);
+  //   printf("  terminal_goal_initialized_=%d\n", terminal_goal_initialized_);
+  //   printf("  sim_env='%s' (is_rviz_only=%d)\n", par_.sim_env.c_str(), is_rviz_only);
+  //   if (need_map) {
+  //     printf("  dgp_manager_.isMapInitialized()=%d\n", dgp_manager_.isMapInitialized());
+  //   } else {
+  //     printf("  dgp_manager_.isMapInitialized()=SKIPPED (rviz_only mode)\n");
+  //   }
+  //   printf("  need_kdtree=%d (use_hardware=%d)\n", need_kdtree, par_.use_hardware);
+  //   if (need_kdtree) {
+  //     printf("  kdtree_map_initialized_=%d\n", kdtree_map_initialized_);
+  //   }
+  // }
+
+  // return is_ready;
+
 }
 
 // ----------------------------------------------------------------------------
@@ -1904,13 +1938,14 @@ void DYNUS::updateMap(double current_time)
   getG(local_G);
   computeMapSize(local_state.pos, local_G.pos);
 
-  // Get dynamic obstacles' positions and traj_max_time
+  // Get dynamic obstacles' positions, bboxes, and traj_max_time
   vec_Vecf<3> obst_pos;
+  vec_Vecf<3> obst_bbox;
   std::vector<vec_Vecf<3>> pred_samples;
   std::vector<float> pred_times;
 
   traj_max_time_ = computeObstPosAndTrajMaxTimeForMapUpdate(
-      obst_pos, pred_samples, pred_times, current_time);
+      obst_pos, obst_bbox, pred_samples, pred_times, current_time);
 
   dgp_manager_.setDynamicPredictedSamples(pred_samples, pred_times);
 
@@ -1922,7 +1957,7 @@ void DYNUS::updateMap(double current_time)
     std::lock_guard<std::mutex> lk(mtx_pclptr_map_);
     std::lock_guard<std::mutex> lk2(mtx_pclptr_unk_);
 
-    dgp_manager_.updateMap(wdx_, wdy_, wdz_, map_center_, pclptr_map_, pclptr_unk_, obst_pos, traj_max_time_);
+    dgp_manager_.updateMap(wdx_, wdy_, wdz_, map_center_, pclptr_map_, pclptr_unk_, obst_pos, obst_bbox, traj_max_time_);
 
     if (par_.debug_verbose)
       std::cout << "Map update time: " << timer_map.getElapsedMicros() / 1000.0 << " ms" << std::endl;
@@ -1992,13 +2027,14 @@ void DYNUS::updateOccupancyMap(double current_time)
   getG(local_G);
   computeMapSize(local_state.pos, local_G.pos);
 
-  // Get dynamic obstacles' positions and traj_max_time
+  // Get dynamic obstacles' positions, bboxes, and traj_max_time
   vec_Vecf<3> obst_pos;
+  vec_Vecf<3> obst_bbox;
   std::vector<vec_Vecf<3>> pred_samples;
   std::vector<float> pred_times;
 
   traj_max_time_ = computeObstPosAndTrajMaxTimeForMapUpdate(
-      obst_pos, pred_samples, pred_times, current_time);
+      obst_pos, obst_bbox, pred_samples, pred_times, current_time);
 
   dgp_manager_.setDynamicPredictedSamples(pred_samples, pred_times);
 
@@ -2008,7 +2044,7 @@ void DYNUS::updateOccupancyMap(double current_time)
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr empty_pclptr_unk(new pcl::PointCloud<pcl::PointXYZ>());
 
-    dgp_manager_.updateMap(wdx_, wdy_, wdz_, map_center_, pclptr_map_, empty_pclptr_unk, obst_pos, traj_max_time_);
+    dgp_manager_.updateMap(wdx_, wdy_, wdz_, map_center_, pclptr_map_, empty_pclptr_unk, obst_pos, obst_bbox, traj_max_time_);
 
     // 3) Known‐space KD‐tree
     if (pclptr_map_ && !pclptr_map_->points.empty())
@@ -2031,18 +2067,20 @@ void DYNUS::updateOccupancyMap(double current_time)
 
 double DYNUS::computeObstPosAndTrajMaxTimeForMapUpdate(
     vec_Vecf<3> &obst_pos,
+    vec_Vecf<3> &obst_bbox,                // bbox of each obstacle
     std::vector<vec_Vecf<3>> &pred_samples, // [K][M]
     std::vector<float> &pred_times,         // [M], relative times from now
     double current_time)
 {
   obst_pos.clear();
+  obst_bbox.clear();
   pred_samples.clear();
   pred_times.clear();
 
   std::vector<std::shared_ptr<dynTraj>> local_trajs;
   getTrajs(local_trajs);
 
-  // 1) Filter obstacles and build obst_pos in a consistent order
+  // 1) Filter obstacles and build obst_pos and obst_bbox in a consistent order
   std::vector<std::shared_ptr<dynTraj>> selected_trajs;
   selected_trajs.reserve(local_trajs.size());
 
@@ -2053,13 +2091,15 @@ double DYNUS::computeObstPosAndTrajMaxTimeForMapUpdate(
       continue;
 
     obst_pos.push_back(p);
+    obst_bbox.push_back(traj->bbox);  // Extract bbox from dynTraj
     selected_trajs.push_back(traj);
   }
 
-  // Update obst_pos_ (kept as you already do)
+  // Update obst_pos_ and obst_bbox_
   {
     std::lock_guard<std::mutex> lock(mtx_obst_pos_);
     obst_pos_ = obst_pos;
+    obst_bbox_ = obst_bbox;
   }
 
   // 2) Horizon for map update (your existing “worst possible”)

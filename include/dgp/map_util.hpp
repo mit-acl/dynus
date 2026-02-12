@@ -20,7 +20,8 @@ namespace dynus
 {
 
   // The type of map data Tmap is defined as a 1D array
-  using Tmap = std::vector<int>;
+  // Using int8_t saves 75% memory compared to int (only need 3 values: -1, 0, 100)
+  using Tmap = std::vector<int8_t>;
   typedef timer::Timer MyTimer;
 
   /**
@@ -47,7 +48,8 @@ namespace dynus
       : map_(other.map_),
         heat_(other.heat_),
         dynamic_heat_enabled_(other.dynamic_heat_enabled_),
-        dynamic_as_occupied_(other.dynamic_as_occupied_),
+        dynamic_as_occupied_current_(other.dynamic_as_occupied_current_),
+        dynamic_as_occupied_future_(other.dynamic_as_occupied_future_),
         heat_w_(other.heat_w_),
         heat_alpha0_(other.heat_alpha0_),
         heat_alpha1_(other.heat_alpha1_),
@@ -57,6 +59,7 @@ namespace dynus
         heat_gamma_(other.heat_gamma_),
         heat_Hmax_(other.heat_Hmax_),
         dyn_base_inflation_m_(other.dyn_base_inflation_m_),
+        dyn_heat_tube_radius_m_(other.dyn_heat_tube_radius_m_),
         heat_num_samples_(other.heat_num_samples_),
         dyn_pred_samples_(other.dyn_pred_samples_),
         dyn_pred_times_(other.dyn_pred_times_),
@@ -75,6 +78,8 @@ namespace dynus
         static_heat_off_res_(other.static_heat_off_res_),
         static_heat_off_rmax_m_(other.static_heat_off_rmax_m_),
         // static_heat_mutex_ is default-constructed (mutexes cannot be copied)
+        use_soft_cost_obstacles_(other.use_soft_cost_obstacles_),
+        obstacle_soft_cost_(other.obstacle_soft_cost_),
         res_(other.res_),
         total_size_(other.total_size_),
         inflation_(other.inflation_),
@@ -82,6 +87,7 @@ namespace dynus
         center_map_(other.center_map_),
         dim_(other.dim_),
         prev_dim_(other.prev_dim_),
+        dim_xy_(other.dim_xy_),
         x_map_min_(other.x_map_min_),
         x_map_max_(other.x_map_max_),
         y_map_min_(other.y_map_min_),
@@ -125,6 +131,7 @@ namespace dynus
         double z_max,
         double inflation,
         const vec_Vecf<3> &obst_pos,
+        const vec_Vecf<3> &obst_bbox,
         double traj_max_time)
     {
       (void)unknown_cloud; // unknown-space soft costs removed
@@ -217,26 +224,41 @@ namespace dynus
       // Option A (legacy): mark reachable sphere as occupied (hard).
       // Option B (new): keep occupancy purely static/unknown and compute a soft heat map for global planning.
 
-      // 8a) Always hard-block the *current* dynamic obstacle footprint (hard constraint).
+      // 8a) Optionally hard-block the *current* dynamic obstacle footprint (hard constraint).
       //     This is complementary to heat-based planning:
-      //       - current pose is treated as occupied (planner must not go through it)
-      //       - future motion is represented via heat_ (soft cost) unless dynamic_as_occupied_ is true.
+      //       - current pose can be treated as occupied (planner must not go through it)
+      //       - future motion is represented via heat_ (soft cost) unless dynamic_as_occupied_future_ is true.
       //
-      //     Radius choice:
-      //       - dyn_base_inflation_m_ is already used as the base radius for the heat tube (R0).
-      //       - We also include the map inflation to ensure consistency with static obstacle inflation.
-      const double curr_r = std::max((double)dyn_base_inflation_m_, (double)inflation);
-      if (curr_r > 0.0 && !obst_pos.empty())
+      //     Now using bounding box dimensions instead of spherical radius.
+      if (dynamic_as_occupied_current_)
       {
-        const double r2 = curr_r * curr_r;
-        for (const auto &O : obst_pos)
+        const double base_inflation = std::max((double)dyn_base_inflation_m_, (double)inflation);
+        if (base_inflation >= 0.0 && !obst_pos.empty())
+      {
+        for (size_t k = 0; k < obst_pos.size(); ++k)
         {
-          int ix_min = int(std::floor((O.x() - curr_r - origin.x()) / res_));
-          int ix_max = int(std::floor((O.x() + curr_r - origin.x()) / res_));
-          int iy_min = int(std::floor((O.y() - curr_r - origin.y()) / res_));
-          int iy_max = int(std::floor((O.y() + curr_r - origin.y()) / res_));
-          int iz_min = int(std::floor((O.z() - curr_r - origin.z()) / res_));
-          int iz_max = int(std::floor((O.z() + curr_r - origin.z()) / res_));
+          const auto &O = obst_pos[k];
+
+          // Get bbox dimensions for this obstacle (default to small cube if not provided)
+          double bbox_x = 0.8, bbox_y = 0.8, bbox_z = 0.8;
+          if (k < obst_bbox.size())
+          {
+            bbox_x = obst_bbox[k].x();
+            bbox_y = obst_bbox[k].y();
+            bbox_z = obst_bbox[k].z();
+          }
+
+          // Half-extents plus inflation
+          const double hx = bbox_x + base_inflation;
+          const double hy = bbox_y + base_inflation;
+          const double hz = bbox_z + base_inflation;
+
+          int ix_min = int(std::floor((O.x() - hx - origin.x()) / res_));
+          int ix_max = int(std::floor((O.x() + hx - origin.x()) / res_));
+          int iy_min = int(std::floor((O.y() - hy - origin.y()) / res_));
+          int iy_max = int(std::floor((O.y() + hy - origin.y()) / res_));
+          int iz_min = int(std::floor((O.z() - hz - origin.z()) / res_));
+          int iz_max = int(std::floor((O.z() + hz - origin.z()) / res_));
 
           ix_min = std::clamp(ix_min, 0, dimX - 1);
           ix_max = std::clamp(ix_max, 0, dimX - 1);
@@ -248,16 +270,19 @@ namespace dynus
           for (int ix = ix_min; ix <= ix_max; ++ix)
           {
             const double xc = origin.x() + (ix + 0.5) * res_;
-            const double dx = xc - O.x();
+            const double dx = std::abs(xc - O.x());
             for (int iy = iy_min; iy <= iy_max; ++iy)
             {
               const double yc = origin.y() + (iy + 0.5) * res_;
-              const double dy = yc - O.y();
+              const double dy = std::abs(yc - O.y());
               for (int iz = iz_min; iz <= iz_max; ++iz)
               {
                 const double zc = origin.z() + (iz + 0.5) * res_;
-                const double dz = zc - O.z();
-                if (dx * dx + dy * dy + dz * dz <= r2)
+                const double dz = std::abs(zc - O.z());
+
+                // AABB-AABB intersection: check if cell volume intersects obstacle box
+                // Cell occupies [center - res/2, center + res/2] in each dimension
+                if (dx <= hx + res_ * 0.5 && dy <= hy + res_ * 0.5 && dz <= hz + res_ * 0.5)
                 {
                   const size_t lin = idx3(ix, iy, iz);
                   map_[lin] = val_occ_;
@@ -268,22 +293,37 @@ namespace dynus
           }
         }
       }
+      } // end if (dynamic_as_occupied_current_)
 
-      if (dynamic_as_occupied_)
+      if (dynamic_as_occupied_future_)
       {
-        const double obst_radius = (obst_max_vel_ * traj_max_time); // [m]
-        if (obst_radius > 0.0 && !obst_pos.empty())
+        const double motion_radius = (obst_max_vel_ * traj_max_time); // [m] reachable distance
+        if (motion_radius > 0.0 && !obst_pos.empty())
         {
-          const double r2 = obst_radius * obst_radius;
-
-          for (const auto &O : obst_pos)
+          for (size_t k = 0; k < obst_pos.size(); ++k)
           {
-            int ix_min = int(std::floor((O.x() - obst_radius - origin.x()) / res_));
-            int ix_max = int(std::floor((O.x() + obst_radius - origin.x()) / res_));
-            int iy_min = int(std::floor((O.y() - obst_radius - origin.y()) / res_));
-            int iy_max = int(std::floor((O.y() + obst_radius - origin.y()) / res_));
-            int iz_min = int(std::floor((O.z() - obst_radius - origin.z()) / res_));
-            int iz_max = int(std::floor((O.z() + obst_radius - origin.z()) / res_));
+            const auto &O = obst_pos[k];
+
+            // Get bbox dimensions for this obstacle (default to small cube if not provided)
+            double bbox_x = 0.8, bbox_y = 0.8, bbox_z = 0.8;
+            if (k < obst_bbox.size())
+            {
+              bbox_x = obst_bbox[k].x();
+              bbox_y = obst_bbox[k].y();
+              bbox_z = obst_bbox[k].z();
+            }
+
+            // Reachable region: bbox half-extents plus motion radius
+            const double hx = bbox_x + motion_radius;
+            const double hy = bbox_y + motion_radius;
+            const double hz = bbox_z + motion_radius;
+
+            int ix_min = int(std::floor((O.x() - hx - origin.x()) / res_));
+            int ix_max = int(std::floor((O.x() + hx - origin.x()) / res_));
+            int iy_min = int(std::floor((O.y() - hy - origin.y()) / res_));
+            int iy_max = int(std::floor((O.y() + hy - origin.y()) / res_));
+            int iz_min = int(std::floor((O.z() - hz - origin.z()) / res_));
+            int iz_max = int(std::floor((O.z() + hz - origin.z()) / res_));
 
             ix_min = std::clamp(ix_min, 0, dimX - 1);
             ix_max = std::clamp(ix_max, 0, dimX - 1);
@@ -295,19 +335,21 @@ namespace dynus
             for (int ix = ix_min; ix <= ix_max; ++ix)
             {
               const double xc = origin.x() + (ix + 0.5) * res_;
-              const double dx = xc - O.x();
+              const double dx = std::abs(xc - O.x());
 
               for (int iy = iy_min; iy <= iy_max; ++iy)
               {
                 const double yc = origin.y() + (iy + 0.5) * res_;
-                const double dy = yc - O.y();
+                const double dy = std::abs(yc - O.y());
 
                 for (int iz = iz_min; iz <= iz_max; ++iz)
                 {
                   const double zc = origin.z() + (iz + 0.5) * res_;
-                  const double dz = zc - O.z();
+                  const double dz = std::abs(zc - O.z());
 
-                  if (dx * dx + dy * dy + dz * dz <= r2)
+                  // AABB-AABB intersection: check if cell volume intersects reachable box
+                  // Cell occupies [center - res/2, center + res/2] in each dimension
+                  if (dx <= hx + res_ * 0.5 && dy <= hy + res_ * 0.5 && dz <= hz + res_ * 0.5)
                   {
                     const size_t lin = idx3(ix, iy, iz);
                     map_[lin] = val_occ_;
@@ -322,6 +364,7 @@ namespace dynus
 
       // 9) Update metadata
       dim_ = Veci<3>(dimX, dimY, dimZ);
+      dim_xy_ = dimX * dimY; // Cache the stride for fast indexing
       total_size_ = total;
       origin_d_ = origin;
       center_map_ = center_map;
@@ -384,18 +427,32 @@ namespace dynus
             }
           };
 
-          // Precompute obstacle centers (float) and reachable radii.
+          // Precompute obstacle centers (float), bbox half-extents, and reachable radii.
           std::vector<Eigen::Vector3f> ck_list(K);
+          std::vector<Eigen::Vector3f> hk_list(K); // bbox half-extents
           std::vector<float> Rreach_list(K);
 
-          const float R0 = std::max(0.0f, dyn_base_inflation_m_);
           for (size_t k = 0; k < K; ++k)
           {
             ck_list[k] = obst_pos[k].cast<float>();
-            Rreach_list[k] = R0 + (float)obst_max_vel_ * Th;
+
+            // Get bbox half-extents for this obstacle (default to small cube if not provided)
+            float hx = 0.4f, hy = 0.4f, hz = 0.4f; // default half-extents
+            if (k < obst_bbox.size())
+            {
+              hx = obst_bbox[k].x();
+              hy = obst_bbox[k].y();
+              hz = obst_bbox[k].z();
+            }
+            hk_list[k] = Eigen::Vector3f(hx, hy, hz);
+
+            // Reachable radius: bbox extent + motion
+            const float max_extent = std::max({hx, hy, hz});
+            Rreach_list[k] = max_extent + (float)obst_max_vel_ * Th;
           }
 
-          // Precompute per-time-sample tube radii and time-decay weights.
+          // Tube radius and time-decay weight per sample
+          const float R0 = std::max(0.0f, dyn_heat_tube_radius_m_);
           const size_t J = t_samples.size();
           std::vector<float> Rj(J), Wj(J);
           for (size_t j = 0; j < J; ++j)
@@ -425,8 +482,8 @@ namespace dynus
 #pragma omp parallel for schedule(static)
           for (int idx = 0; idx < total_size_; ++idx)
           {
-            // Heat is only relevant for traversable cells; skip hard obstacles early.
-            if (map_[idx] > val_free_)
+            // Heat is only relevant for traversable cells; skip hard obstacles unless soft-cost mode
+            if (map_[idx] > val_free_ && !use_soft_cost_obstacles_)
               continue;
 
             const int ix = idx % dim0;
@@ -447,10 +504,18 @@ namespace dynus
               if (Rreach > 1e-6f)
               {
                 const Eigen::Vector3f &ck = ck_list[k];
-                const float dx = xw - ck.x();
-                const float dy = yw - ck.y();
-                const float dz = zw - ck.z();
-                const float d2 = dx * dx + dy * dy + dz * dz;
+                const Eigen::Vector3f &hk = hk_list[k];
+
+                // Compute distance from point to box (0 if inside, positive if outside)
+                const float dx_abs = std::abs(xw - ck.x());
+                const float dy_abs = std::abs(yw - ck.y());
+                const float dz_abs = std::abs(zw - ck.z());
+
+                const float dx_box = std::max(0.0f, dx_abs - hk.x());
+                const float dy_box = std::max(0.0f, dy_abs - hk.y());
+                const float dz_box = std::max(0.0f, dz_abs - hk.z());
+
+                const float d2 = dx_box * dx_box + dy_box * dy_box + dz_box * dz_box;
                 const float R2 = Rreach * Rreach;
 
                 if (d2 <= R2)
@@ -461,9 +526,10 @@ namespace dynus
                 }
               }
 
-              // Tube bonus (max over time), radius grows with time, time-decayed
+              // Tube bonus (max over time), bbox + growing margin with time, time-decayed
               float tube_max = 0.0f;
               const Eigen::Vector3f *cj_ptr = &cj_flat[k * J];
+              const Eigen::Vector3f &hk = hk_list[k];
 
               for (size_t j = 0; j < J; ++j)
               {
@@ -472,10 +538,17 @@ namespace dynus
                   continue;
 
                 const Eigen::Vector3f &cj = cj_ptr[j];
-                const float dx = xw - cj.x();
-                const float dy = yw - cj.y();
-                const float dz = zw - cj.z();
-                const float d2 = dx * dx + dy * dy + dz * dz;
+
+                // Distance from point to box at predicted position
+                const float dx_abs = std::abs(xw - cj.x());
+                const float dy_abs = std::abs(yw - cj.y());
+                const float dz_abs = std::abs(zw - cj.z());
+
+                const float dx_box = std::max(0.0f, dx_abs - hk.x());
+                const float dy_box = std::max(0.0f, dy_abs - hk.y());
+                const float dz_box = std::max(0.0f, dz_abs - hk.z());
+
+                const float d2 = dx_box * dx_box + dy_box * dy_box + dz_box * dz_box;
                 const float R2 = R * R;
 
                 if (d2 > R2)
@@ -600,28 +673,40 @@ namespace dynus
 
             const size_t idx = idx3_local(x, y, z);
 
-            // Never override hard obstacles
-            if (map_[idx] > val_free_)
+            const bool target_occupied = map_[idx] > val_free_;
+
+            // Skip occupied cells unless soft-cost mode is on
+            if (target_occupied && !use_soft_cost_obstacles_)
               continue;
 
             // By default apply halo only in FREE (not UNKNOWN).
             // if (!static_heat_apply_on_unknown_ && map_[idx] != val_free_)
             //   continue;
 
-            const float u = std::min(1.0f, std::max(0.0f, o.d_m / Rm));
-            const float base = 1.0f - u;
-            float power_result;
-            if (static_heat_p_ == 2) {
-              power_result = base * base;
-            } else if (static_heat_p_ == 3) {
-              power_result = base * base * base;
-            } else if (static_heat_p_ == 4) {
-              const float base2 = base * base;
-              power_result = base2 * base2;
-            } else {
-              power_result = std::pow(base, float(static_heat_p_));
+            float w;
+            if (target_occupied)
+            {
+              // Occupied cells get max heat (they ARE the obstacle)
+              w = static_heat_alpha_;
             }
-            float w = static_heat_alpha_ * power_result;
+            else
+            {
+              // Free cells get distance-decay
+              const float u = std::min(1.0f, std::max(0.0f, o.d_m / Rm));
+              const float base = 1.0f - u;
+              float power_result;
+              if (static_heat_p_ == 2) {
+                power_result = base * base;
+              } else if (static_heat_p_ == 3) {
+                power_result = base * base * base;
+              } else if (static_heat_p_ == 4) {
+                const float base2 = base * base;
+                power_result = base2 * base2;
+              } else {
+                power_result = std::pow(base, float(static_heat_p_));
+              }
+              w = static_heat_alpha_ * power_result;
+            }
 
             if (static_heat_Hmax_ > 0.0f)
               w = std::min(w, static_heat_Hmax_);
@@ -638,7 +723,8 @@ namespace dynus
     // ---------------- Dynamic heat-map API ----------------
 
     // Enable/disable dynamic obstacles as occupied (legacy behavior)
-    void setDynamicAsOccupied(bool enabled) { dynamic_as_occupied_ = enabled; }
+    void setDynamicAsOccupiedCurrentPos(bool enabled) { dynamic_as_occupied_current_ = enabled; }
+    void setDynamicAsOccupiedFuturePos(bool enabled) { dynamic_as_occupied_future_ = enabled; }
 
     // Enable/disable heat map computation
     void setDynamicHeatEnabled(bool enabled) { dynamic_heat_enabled_ = enabled; }
@@ -703,6 +789,15 @@ namespace dynus
       dyn_base_inflation_m_ = std::max(0.0f, base_inflation_m);
     }
 
+    void setDynHeatTubeRadius(float r) { dyn_heat_tube_radius_m_ = r; }
+
+    void setSoftCostObstacles(bool enable, float cost) {
+        use_soft_cost_obstacles_ = enable;
+        obstacle_soft_cost_ = cost;
+    }
+    bool useSoftCostObstacles() const { return use_soft_cost_obstacles_; }
+    float getObstacleSoftCost() const { return obstacle_soft_cost_; }
+
     // Optional: predicted mean samples per obstacle (tube centers).
     // pred_samples[k] is a vector of positions for obstacle k, aligned with pred_times.
     void setDynamicPredictedSamples(const std::vector<vec_Vecf<3>> &pred_samples,
@@ -723,6 +818,43 @@ namespace dynus
       if (idx < 0 || idx >= (int)heat_.size())
         return 0.0f;
       return heat_[(size_t)idx];
+    }
+
+    // Get heat cloud for visualization (only voxels with heat > threshold)
+    vec_Vecf<3> getHeatCloud(float threshold = 0.01f) const
+    {
+      vec_Vecf<3> cloud;
+      if (heat_.empty())
+        return cloud;
+
+      for (int x = 0; x < dim_(0); ++x)
+      {
+        for (int y = 0; y < dim_(1); ++y)
+        {
+          for (int z = 0; z < dim_(2); ++z)
+          {
+            const int idx = x + y * dim_(0) + z * dim_xy_;
+            if (idx >= 0 && idx < (int)heat_.size() && heat_[idx] > threshold)
+            {
+              Vecf<3> pt;
+              pt(0) = origin_d_(0) + (x + 0.5f) * res_;
+              pt(1) = origin_d_(1) + (y + 0.5f) * res_;
+              pt(2) = origin_d_(2) + (z + 0.5f) * res_;
+              cloud.push_back(pt);
+            }
+          }
+        }
+      }
+      return cloud;
+    }
+
+    std::vector<float> getHeatValues() const { return heat_; }
+
+    float getMaxHeat() const
+    {
+      if (heat_.empty())
+        return 0.0f;
+      return *std::max_element(heat_.begin(), heat_.end());
     }
 
     // Pre-compute inflation
@@ -1418,8 +1550,9 @@ namespace dynus
     // ---------------- Dynamic heat-map state ----------------
     std::vector<float> heat_;
     bool dynamic_heat_enabled_{false};
-    bool dynamic_as_occupied_{true}; // legacy default; DGPManager will set false for heat-based planning
-    float heat_w_{0.0f};             // global planner weight
+    bool dynamic_as_occupied_current_{true};  // Mark current obstacle position as occupied (hard constraint)
+    bool dynamic_as_occupied_future_{true};   // Mark future reachable positions as occupied (hard constraint)
+    float heat_w_{0.0f};                      // global planner weight
 
     // Heat shaping parameters
     float heat_alpha0_{1.0f};
@@ -1430,6 +1563,7 @@ namespace dynus
     float heat_gamma_{0.0f};     // tube radius growth rate [m/s]
     float heat_Hmax_{10.0f};
     float dyn_base_inflation_m_{0.5f}; // R0 in meters
+    float dyn_heat_tube_radius_m_{2.0f}; // Radius of heat corridor [m]
     int heat_num_samples_{15};         // fallback if no prediction samples
     std::vector<vec_Vecf<3>> dyn_pred_samples_;
     std::vector<float> dyn_pred_times_;
@@ -1502,6 +1636,10 @@ namespace dynus
       }
     }
 
+    // Soft-cost obstacle mode
+    bool use_soft_cost_obstacles_{false};
+    float obstacle_soft_cost_{100.0f};
+
   protected:
     // Resolution
     decimal_t res_;
@@ -1515,6 +1653,8 @@ namespace dynus
     Vecf<Dim> center_map_;
     // Dimension, int type
     Veci<Dim> dim_, prev_dim_;
+    // Cached stride for 3D indexing (dim[0] * dim[1])
+    int dim_xy_ = 0;
     // Map values
     float x_map_min_, x_map_max_, y_map_min_, y_map_max_, z_map_min_, z_map_max_;
     float x_min_, x_max_, y_min_, y_max_, z_min_, z_max_;

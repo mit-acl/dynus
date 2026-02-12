@@ -343,12 +343,13 @@ private:
         // Update DGP voxel map with a fixed window for fairness
         // Dynamic obstacles: pass empty here unless you explicitly want inflation-in-map-update.
         vec_Vecf<3> obst_pos_empty;
+        vec_Vecf<3> obst_bbox_empty;  // Empty bbox vector (no dynamic obstacles)
         const double traj_max_time = 0.0;
 
         // Create an empty point cloud for unknowns
         pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_unk(new pcl::PointCloud<pcl::PointXYZ>());
 
-        dgp_.updateMap(wdx_, wdy_, wdz_, map_center_, cloud, cloud_unk, obst_pos_empty, traj_max_time);
+        dgp_.updateMap(wdx_, wdy_, wdz_, map_center_, cloud, cloud_unk, obst_pos_empty, obst_bbox_empty, traj_max_time);
 
         // Also store occupied vector for decomp obstacle set
         dgp_.updateVecOccupied(pclToVec3f(*cloud));
@@ -404,6 +405,7 @@ private:
             a_max_,
             j_max_,
             dgp_timeout_ms_,
+            /*max_num_expansion*/ 10000,
             /*w_unknown*/ 0.0, /*w_align*/ 0.0, /*decay_len_cells*/ 100.0, /*w_side*/ 0.0,
             /*los_cells*/ 0, /*min_len*/ 0.5, /*min_turn*/ 0.0);
 
@@ -447,8 +449,9 @@ private:
             vec_E<Polyhedron<3>> poly_out;
 
             vec_Vecf<3> obst_pos_empty; // set this if you want dynamic obstacle inflation in corridor
+            vec_Vecf<3> obst_bbox_empty;
             const bool decomp_ok = dgp_.cvxEllipsoidDecomp(
-                ellip, path, base_uo, obst_pos_empty, seg_end_times, l_constraints, poly_out);
+                ellip, path, base_uo, obst_pos_empty, obst_bbox_empty, seg_end_times, l_constraints, poly_out);
 
             if (!decomp_ok)
             {

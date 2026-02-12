@@ -58,6 +58,7 @@ public:
   double getDynamicAstarTime();
   double getRecoverPathTime();
   void updateVmax(double v_max);
+  void setMaxExpand(int max_expand) { max_expand_ = max_expand; }
   vec_Vecf<3> shortCutByLoS(const vec_Vecf<3> &in, int inflate_radius_cells) const;
   bool lineOfSightCapsule(const Vecf<3> &a,
                           const Vecf<3> &b,
@@ -93,6 +94,9 @@ protected:
 
   // time out duration
   int dgp_timeout_duration_ms_ = 1000;
+
+  // max node expansion
+  int max_expand_ = 10000;
 
   // max values
   double v_max_;

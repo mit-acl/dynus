@@ -2,9 +2,10 @@
 """
 DYNUS Simulation Launcher
 
-This script provides a unified interface to launch DYNUS simulations in two modes:
-1. Multi-agent simulation with fake sensing (fake_sim)
+This script provides a unified interface to launch DYNUS simulations in three modes:
+1. Multi-agent simulation with fake sensing (multiagent)
 2. Single-agent simulation with Gazebo and ACL mapper (gazebo)
+3. Single-agent RViz-only simulation with dynamic obstacles (rviz-only) - LIGHTWEIGHT!
 
 Usage:
     # Multi-agent fake simulation (10 agents in a circle)
@@ -21,6 +22,12 @@ Usage:
 
     # Custom environment for Gazebo mode
     python3 scripts/run_sim.py --mode gazebo --setup-bash install/setup.bash --env easy_forest
+
+    # RViz-only mode (lightweight, no Gazebo) with 50 obstacles
+    python3 scripts/run_sim.py --mode rviz-only --setup-bash install/setup.bash
+
+    # RViz-only with custom obstacles
+    python3 scripts/run_sim.py --mode rviz-only --setup-bash install/setup.bash --num-obstacles 100 --dynamic-ratio 0.7
 """
 
 import argparse
@@ -70,7 +77,7 @@ def generate_multiagent_positions(num_agents: int, radius: float = 10.0, z: floa
     return agents
 
 
-def generate_multiagent_yaml(setup_bash: Path, agents: list, ros_domain_id: int = 7) -> str:
+def generate_multiagent_yaml(setup_bash: Path, agents: list, ros_domain_id: int = 20) -> str:
     """Generate YAML for multi-agent fake simulation."""
     panes = []
 
@@ -87,7 +94,8 @@ def generate_multiagent_yaml(setup_bash: Path, agents: list, ros_domain_id: int 
             'shell_command': [
                 'sleep 10',
                 f"ros2 launch dynus onboard_dynus.launch.py namespace:={agent['namespace']} "
-                f"x:={agent['x']} y:={agent['y']} z:={agent['z']} yaw:={agent['yaw']}"
+                f"x:={agent['x']} y:={agent['y']} z:={agent['z']} yaw:={agent['yaw']} "
+                f"publish_odom:=true odom_topic:=odom"
             ]
         })
 
@@ -119,10 +127,84 @@ fi
     return yaml.dump(yaml_content, default_flow_style=False, sort_keys=False)
 
 
+def generate_rviz_only_yaml(setup_bash: Path, goal: tuple,
+                           start_pos: tuple = (0, 0, 3.0), start_yaw: float = 0.0,
+                           ros_domain_id: int = 20, num_obstacles: int = 50,
+                           dynamic_ratio: float = 0.65,
+                           x_min: float = 5.0, x_max: float = 100.0,
+                           y_min: float = -7.0, y_max: float = 7.0,
+                           z_min: float = 0.5, z_max: float = 4.5,
+                           seed: int = 0,
+                           data_file: str = None,
+                           use_benchmark: bool = False,
+                           global_planner: str = 'astar_heat',
+                           send_goal: bool = True) -> str:
+    """Generate YAML for RViz-only simulation (no Gazebo, lightweight)."""
+    goal_x, goal_y, goal_z = goal
+    start_x, start_y, start_z = start_pos
+
+    panes = [
+        # RViz + obstacles visualization
+        {
+            'shell_command': [
+                f'ros2 launch dynus rviz_only.launch.py '
+                f'num_obstacles:={num_obstacles} '
+                f'dynamic_ratio:={dynamic_ratio} '
+                f'x_min:={x_min} x_max:={x_max} '
+                f'y_min:={y_min} y_max:={y_max} '
+                f'z_min:={z_min} z_max:={z_max} '
+                f'publish_rate_hz:=100.0 '
+                f'seed:={seed} '
+                f'use_rviz:=true'
+            ]
+        },
+        # Onboard agent NX01 (with rviz_only mode - no point cloud)
+        {
+            'shell_command': [
+                'sleep 3',
+                f'ros2 launch dynus onboard_dynus.launch.py namespace:=NX01 '
+                f'x:={start_x} y:={start_y} z:={start_z} yaw:={start_yaw} '
+                f'sim_env:=rviz_only '
+                f'publish_odom:=true '
+                f'odom_topic:=odom '
+                + (f'use_benchmark:=true data_file:={data_file} global_planner:={global_planner} ' if use_benchmark and data_file else '')
+            ]
+        }
+    ]
+
+    # Add goal sender pane only if send_goal is True
+    if send_goal:
+        panes.append({
+            'shell_command': [
+                'sleep 8',
+                f"ros2 launch dynus goal_sender.launch.py list_agents:=\"['NX01']\" list_goals:=\"['[{goal_x}, {goal_y}, {goal_z}]']\""
+            ]
+        })
+
+    yaml_content = {
+        'session_name': 'dynus_sim',
+        'windows': [{
+            'window_name': 'main',
+            'layout': 'tiled',
+            'shell_command_before': [
+                f'''if [ -z "$SETUP_BASH" ] || [ ! -f "$SETUP_BASH" ]; then
+  echo "[ERROR] SETUP_BASH is missing or invalid: $SETUP_BASH" >&2
+  exit 1
+fi
+. "$SETUP_BASH"''',
+                f'export ROS_DOMAIN_ID={ros_domain_id}'
+            ],
+            'panes': panes
+        }]
+    }
+
+    return yaml.dump(yaml_content, default_flow_style=False, sort_keys=False)
+
+
 def generate_gazebo_yaml(setup_bash: Path, goal: tuple,
                          env: str = 'hard_forest',
                          start_pos: tuple = (0, 0, 3.0), start_yaw: float = 0.0,
-                         ros_domain_id: int = 7, use_rviz: bool = True,
+                         ros_domain_id: int = 20, use_rviz: bool = True,
                          use_gazebo_gui: bool = True, use_dyn_obs: bool = False,
                          use_mapper: bool = True) -> str:
     """Generate YAML for single-agent Gazebo simulation."""
@@ -193,9 +275,9 @@ def main():
 
     parser.add_argument(
         '--mode', '-m',
-        choices=['multiagent', 'gazebo'],
+        choices=['multiagent', 'gazebo', 'rviz-only'],
         default='gazebo',
-        help='Simulation mode: multiagent (fake sensing) or gazebo (single agent with ACL mapper) [default: gazebo]'
+        help='Simulation mode: multiagent (fake sensing), gazebo (with ACL mapper), or rviz-only (lightweight, no Gazebo) [default: gazebo]'
     )
 
     parser.add_argument(
@@ -210,8 +292,8 @@ def main():
         type=float,
         nargs=3,
         metavar=('X', 'Y', 'Z'),
-        default=[50.0, 0.0, 3.0],
-        help='Goal position for gazebo mode (default: 50.0 0.0 3.0)'
+        default=[100.0, 0.0, 2.0],
+        help='Goal position for gazebo mode (default: 100.0 0.0 2.0)'
     )
 
     parser.add_argument(
@@ -219,8 +301,8 @@ def main():
         type=float,
         nargs=3,
         metavar=('X', 'Y', 'Z'),
-        default=[0.0, 0.0, 3.0],
-        help='Start position for gazebo mode (default: 0.0 0.0 3.0)'
+        default=[0.0, 0.0, 2.0],
+        help='Start position for gazebo mode (default: 0.0 0.0 2.0)'
     )
 
     parser.add_argument(
@@ -254,8 +336,8 @@ def main():
     parser.add_argument(
         '--ros-domain-id',
         type=int,
-        default=7,
-        help='ROS_DOMAIN_ID (default: 7)'
+        default=20,
+        help='ROS_DOMAIN_ID (default: 20)'
     )
 
     parser.add_argument(
@@ -297,6 +379,80 @@ def main():
     )
 
     parser.add_argument(
+        '--num-obstacles',
+        type=int,
+        default=100,
+        help='Number of obstacles for rviz-only mode (default: 50)'
+    )
+
+    parser.add_argument(
+        '--dynamic-ratio',
+        type=float,
+        default=0.65,
+        help='Ratio of dynamic obstacles (0.0-1.0) for rviz-only mode (default: 0.65)'
+    )
+
+    parser.add_argument(
+        '--obs-x-range',
+        type=float,
+        nargs=2,
+        metavar=('MIN', 'MAX'),
+        default=[5.0, 100.0],
+        help='X range for obstacles in rviz-only mode (default: 5.0 100.0)'
+    )
+
+    parser.add_argument(
+        '--obs-y-range',
+        type=float,
+        nargs=2,
+        metavar=('MIN', 'MAX'),
+        default=[-6.0, 6.0],
+        help='Y range for obstacles in rviz-only mode (default: -8.0 8.0)'
+    )
+
+    parser.add_argument(
+        '--obs-z-range',
+        type=float,
+        nargs=2,
+        metavar=('MIN', 'MAX'),
+        default=[0.5, 4.5],
+        help='Z range for obstacles in rviz-only mode (default: 0.5 4.5)'
+    )
+
+    parser.add_argument(
+        '--seed',
+        type=int,
+        default=0,
+        help='Random seed for obstacle generation (default: 0)'
+    )
+
+    parser.add_argument(
+        '--data-file',
+        type=str,
+        default=None,
+        help='Path to save benchmark data CSV (enables use_benchmark)'
+    )
+
+    parser.add_argument(
+        '--use-benchmark',
+        action='store_true',
+        help='Enable benchmark mode (computation time logging)'
+    )
+
+    parser.add_argument(
+        '--global-planner',
+        type=str,
+        default='astar_heat',
+        help='Global planner algorithm (default: astar_heat)'
+    )
+
+    parser.add_argument(
+        '--no-goal-sender',
+        action='store_true',
+        help='Disable automatic goal sender (for benchmark mode with manual goal sending)'
+    )
+
+    parser.add_argument(
         '--dry-run',
         action='store_true',
         help='Print the generated YAML without launching'
@@ -313,6 +469,34 @@ def main():
         agents = generate_multiagent_positions(args.num_agents, args.radius)
         yaml_content = generate_multiagent_yaml(setup_bash, agents, args.ros_domain_id)
         print(f"[INFO] Mode: Multi-agent simulation with {args.num_agents} agents (fake_sim)")
+    elif args.mode == 'rviz-only':
+        yaml_content = generate_rviz_only_yaml(
+            setup_bash,
+            goal=tuple(args.goal),
+            start_pos=tuple(args.start),
+            start_yaw=args.start_yaw,
+            ros_domain_id=args.ros_domain_id,
+            num_obstacles=args.num_obstacles,
+            dynamic_ratio=args.dynamic_ratio,
+            x_min=args.obs_x_range[0],
+            x_max=args.obs_x_range[1],
+            y_min=args.obs_y_range[0],
+            y_max=args.obs_y_range[1],
+            z_min=args.obs_z_range[0],
+            z_max=args.obs_z_range[1],
+            seed=args.seed,
+            data_file=args.data_file,
+            use_benchmark=args.use_benchmark or (args.data_file is not None),
+            global_planner=args.global_planner,
+            send_goal=not args.no_goal_sender
+        )
+        num_dyn = int(args.num_obstacles * args.dynamic_ratio)
+        num_stat = args.num_obstacles - num_dyn
+        print(f"[INFO] Mode: RViz-only simulation (no Gazebo)")
+        print(f"[INFO] Obstacles: {args.num_obstacles} total ({num_dyn} dynamic, {num_stat} static)")
+        print(f"[INFO] Start: ({args.start[0]}, {args.start[1]}, {args.start[2]}) yaw={args.start_yaw}")
+        print(f"[INFO] Goal: ({args.goal[0]}, {args.goal[1]}, {args.goal[2]})")
+        print(f"[INFO] Seed: {args.seed}")
     else:  # gazebo
         use_rviz = args.rviz and not args.no_rviz
         use_gazebo_gui = args.gazebo_gui and not args.no_gazebo_gui
@@ -349,10 +533,34 @@ def main():
 
     try:
         print(f"[INFO] Launching simulation with tmuxp...")
-        print(f"[INFO] Attach to session: tmux attach -t dynus_sim")
         env = os.environ.copy()
         env['SETUP_BASH'] = str(setup_bash)
-        subprocess.run(['tmuxp', 'load', temp_yaml_path], env=env, check=True)
+
+        # Use detached mode if not in a terminal (e.g., running from benchmark script)
+        # or if --use-benchmark flag is set
+        tmuxp_cmd = ['tmuxp', 'load', temp_yaml_path]
+        if not sys.stdout.isatty() or args.use_benchmark:
+            tmuxp_cmd.insert(2, '-d')  # Add detach flag
+            print(f"[INFO] Running in detached mode (no terminal or benchmark mode)")
+        else:
+            print(f"[INFO] Attach to session: tmux attach -t dynus_sim")
+
+        subprocess.run(tmuxp_cmd, env=env, check=True)
+
+        # In benchmark mode with detached session, keep the script running
+        # so the parent benchmark process can monitor ROS topics
+        if not sys.stdout.isatty() or args.use_benchmark:
+            print(f"[INFO] Simulation launched. Monitoring will be done by parent process...")
+            print(f"[INFO] Keeping script alive for monitoring...")
+            # Keep the script running - the benchmark will monitor via ROS topics
+            # and will kill this process when done
+            import time
+            try:
+                while True:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                print(f"[INFO] Monitoring interrupted")
+
     except subprocess.CalledProcessError as e:
         print(f"[ERROR] Failed to launch simulation: {e}", file=sys.stderr)
         sys.exit(1)
@@ -361,7 +569,8 @@ def main():
         sys.exit(1)
     finally:
         # Clean up temp file
-        os.unlink(temp_yaml_path)
+        if os.path.exists(temp_yaml_path):
+            os.unlink(temp_yaml_path)
 
 
 if __name__ == '__main__':

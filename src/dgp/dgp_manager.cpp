@@ -36,59 +36,49 @@ void DGPManager::setParameters(const parameters &par)
     // shared pointer to the map util for actual planning
     map_util_ = std::make_shared<dynus::VoxelMapUtil>(par.factor_dgp * par.res, par.x_min, par.x_max, par.y_min, par.y_max, par.z_min, par.z_max, par.inflation_dgp, par.obst_max_vel);
 
-    bool dynamic_obstacle_sphere_as_hard = par_.global_planner == "astar_heat" ? false : true;
-    bool dynamic_obstacle_sphere_as_soft = !dynamic_obstacle_sphere_as_hard;
+    // ---------------- Global-planner configuration: YAML-driven heat map parameters ----------------
 
-    // ---------------- Global-planner configuration: static hard, dynamic soft ----------------
-    // Do NOT write dynamic obstacles into occupancy as hard occupied spheres.
-    map_util_->setDynamicAsOccupied(dynamic_obstacle_sphere_as_hard);
+    // Control hard vs soft dynamic obstacle representation
+    map_util_->setDynamicAsOccupiedCurrentPos(par.dynamic_as_occupied_current);
+    map_util_->setDynamicAsOccupiedFuturePos(par.dynamic_as_occupied_future);
 
-    // Enable dynamic heat map used by A* (global planner)
-    map_util_->setDynamicHeatEnabled(dynamic_obstacle_sphere_as_soft);
-
-    // Heat parameters (start with sane defaults; tune later from YAML if desired)
-    const float TUBE_GAMMA = (float)par_.obst_max_vel;                   // [m/s], tube radius growth
-    const float BASE_INFL = (float)par_.dynamic_obstacle_base_inflation; // [m] from YAML
-    const float HEAT_WEGIHT = (float)par_.heat_weight;                   // weight for heat in edge cost
+    // Dynamic heat configuration
+    map_util_->setDynamicHeatEnabled(par.dynamic_heat_enabled);
     map_util_->setDynamicHeatParams(
-        /*alpha0*/ 1.0f,
-        /*alpha1*/ 2.0f,
-        /*p*/ 2,
-        /*q*/ 2,
-        /*tau_w_ratio*/ 0.5f,
-        /*gamma*/ TUBE_GAMMA,
-        /*Hmax*/ 50.0f,
-        /*base_inflation_m*/ BASE_INFL);
+        par.heat_alpha0, par.heat_alpha1, par.heat_p, par.heat_q,
+        par.heat_tau_ratio, par.heat_gamma, par.heat_Hmax, par.dyn_base_inflation_m
+    );
+    map_util_->setDynHeatTubeRadius(par.dyn_heat_tube_radius_m);
+    map_util_->setHeatWeight(par.heat_weight);
 
-    // Weight in the planner edge cost: edge += w_heat * heat.
-    // This is in the same units as your A* grid step cost (cells). Tune as needed.
-    map_util_->setHeatWeight(HEAT_WEGIHT);
+    // Print heat parameters for verification
+    std::cout << "=== DGP Heat Parameters Applied ===" << std::endl;
+    std::cout << "  heat_weight: " << par.heat_weight << std::endl;
+    std::cout << "  heat_alpha0: " << par.heat_alpha0 << ", heat_alpha1: " << par.heat_alpha1 << std::endl;
+    std::cout << "  heat_Hmax: " << par.heat_Hmax << ", static_heat_Hmax: " << par.static_heat_Hmax << std::endl;
+    std::cout << "  dyn_heat_tube_radius_m: " << par.dyn_heat_tube_radius_m << std::endl;
+    std::cout << "  static_heat_alpha: " << par.static_heat_alpha << ", static_heat_rmax_m: " << par.static_heat_rmax_m << std::endl;
+    std::cout << "  dynamic_heat_enabled: " << par.dynamic_heat_enabled << ", static_heat_enabled: " << par.static_heat_enabled << std::endl;
+    std::cout << "===================================" << std::endl;
 
-    // ---------------- Global-planner configuration: static obstacle soft cost ----------------
-    // Enable static obstacle heat (halo) around occupied cells.
-    // NOTE: This uses the same heat_ array and the same heat weight (heat_weight) as dynamic/unknown.
-    map_util_->setStaticHeatEnabled(true);
+    // Static heat configuration
+    map_util_->setStaticHeatEnabled(par.static_heat_enabled);
+    map_util_->setStaticHeatParams(
+        par.static_heat_alpha, par.static_heat_p, par.static_heat_Hmax,
+        par.static_heat_rmax_m, par.static_heat_boundary_only,
+        par.static_heat_apply_on_unknown, par.static_heat_exclude_dynamic
+    );
 
-    // Static heat shape:
-    // - alpha: peak heat at obstacle boundary
-    // - p: falloff power
-    // - Hmax: cap
-    // - rmax_m: maximum radius to consider (also clamps your radius function output)
-    // - boundary_only=true keeps it fast
-    // - apply_on_unknown=false means halo is applied only on FREE space (recommended; unknown handled separately)
-    // - exclude_dynamic=true avoids double-counting the dynamic hard-blocked voxels
-    const float STATIC_RMAX = std::max(0.5f, 3.0f * float(par_.drone_radius)); // tune
-    map_util_->setStaticHeatParams(/*alpha=*/5.0f,
-                                   /*p=*/2,
-                                   /*Hmax=*/50.0f,
-                                   /*rmax_m=*/STATIC_RMAX,
-                                   /*boundary_only=*/true,
-                                   /*apply_on_unknown=*/false,
-                                   /*exclude_dynamic=*/true);
-
+    // Static heat radius function
     map_util_->setStaticHeatRadiusFunction(
-        [STATIC_RMAX](const Eigen::Vector3f&) { return STATIC_RMAX; },
-        STATIC_RMAX);
+        [default_r = par.static_heat_default_radius_m](const Eigen::Vector3f&) {
+            return default_r;
+        },
+        par.static_heat_default_radius_m
+    );
+
+    // Soft-cost obstacle mode
+    map_util_->setSoftCostObstacles(par.use_soft_cost_obstacles, par.obstacle_soft_cost);
 }
 
 // ----------------------------------------------------------------------------
@@ -112,7 +102,7 @@ void DGPManager::cleanUpPath(vec_Vecf<3> &path)
     planner_ptr_->cleanUpPath(path);
 }
 
-void DGPManager::setupDGPPlanner(const std::string &global_planner, bool global_planner_verbose, double res, double v_max, double a_max, double j_max, int dgp_timeout_duration_ms, double w_unknown, double w_align, double decay_len_cells, double w_side, int los_cells, double min_len, double min_turn)
+void DGPManager::setupDGPPlanner(const std::string &global_planner, bool global_planner_verbose, double res, double v_max, double a_max, double j_max, int dgp_timeout_duration_ms, int max_num_expansion, double w_unknown, double w_align, double decay_len_cells, double w_side, int los_cells, double min_len, double min_turn)
 {
 
     // Get the parameters
@@ -125,6 +115,9 @@ void DGPManager::setupDGPPlanner(const std::string &global_planner, bool global_
 
     // Create the DGP planner
     planner_ptr_ = std::unique_ptr<DGPPlanner>(new DGPPlanner(global_planner, global_planner_verbose, v_max, a_max, j_max, dgp_timeout_duration_ms, w_unknown, w_align, decay_len_cells, w_side, los_cells, min_len, min_turn));
+
+    // Set max node expansion
+    planner_ptr_->setMaxExpand(max_num_expansion);
 
     // Create the map_util_for_planning
     // This is the beginning of the planning, so we fetch the map_util_ and don't update it for the entire planning process (updating while planning makes the planner slower)
@@ -402,6 +395,7 @@ bool DGPManager::cvxEllipsoidDecomp(
     const vec_Vecf<3> &path,
     const vec_Vec3f &base_uo,
     const vec_Vecf<3> &obst_pos,
+    const vec_Vecf<3> &obst_bbox,
     const std::vector<double> &seg_end_times,
     std::vector<LinearConstraint3D> &l_constraints,
     vec_E<Polyhedron<3>> &poly_out)
@@ -445,7 +439,7 @@ bool DGPManager::cvxEllipsoidDecomp(
 
         // Build per-segment obstacle set = base_uo + inflated dynamic obstacle points
         vec_Vec3f vec_uo = base_uo; // copy snapshot
-        obstacle_to_vec(vec_uo, obst_pos, traj_max_time);
+        obstacle_to_vec(vec_uo, obst_pos, obst_bbox, traj_max_time);
 
         ellip.set_obs(vec_uo);
 
@@ -496,6 +490,7 @@ bool DGPManager::cvxEllipsoidDecompTimeLayered(
     const vec_Vecf<3> &path,                                             // global path (size = P+1)
     const vec_Vec3f &base_uo,                                            // static+unknown occupied snapshot
     const vec_Vecf<3> &obst_pos,                                         // dynamic obstacle positions
+    const vec_Vecf<3> &obst_bbox,                                        // dynamic obstacle bbox half-extents
     const std::vector<double> &time_end_times,                           // size = N (local segment time layers)
     std::vector<std::vector<LinearConstraint3D>> &l_constraints_by_time, // [N][P]
     std::vector<vec_E<Polyhedron<3>>> &poly_out_by_time                  // [N][P]
@@ -543,7 +538,7 @@ bool DGPManager::cvxEllipsoidDecompTimeLayered(
 
         uo_by_time[n] = base_uo; // copy snapshot
         // MyTimer timer(true);
-        obstacle_to_vec(uo_by_time[n], obst_pos, tmax);
+        obstacle_to_vec(uo_by_time[n], obst_pos, obst_bbox, tmax);
         // std::cout << "obstacle_to_vec: " << timer.getElapsedMicros() / 1000.0 << " ms" << std::endl;
     }
 
@@ -742,6 +737,7 @@ namespace
 void DGPManager::obstacle_to_vec(
     vec_Vec3f &pts,
     const vec_Vecf<3> &obst_pos,
+    const vec_Vecf<3> &obst_bbox,
     double traj_max_time)
 {
     // Inflate radius around unknown boundary and dynamic obstacles.
@@ -1127,39 +1123,76 @@ void DGPManager::obstacle_to_vec(
     }
 
     // ------------------------------------------------------------------------
-    // (B) Inflate dynamic obstacles (branch-free, using offs_r)
+    // (B) Inflate dynamic obstacles (bbox-aware)
     // ------------------------------------------------------------------------
     if (obst_pos.empty())
         return;
 
-    // Reserve to reduce reallocations
-    pts.reserve(pts.size() + offs_r.size() * obst_pos.size());
-
-    for (const auto &O : obst_pos)
+    for (size_t k = 0; k < obst_pos.size(); ++k)
     {
+        const auto &O = obst_pos[k];
         const double ox = O.x();
         const double oy = O.y();
         const double oz = O.z();
 
-        for (const auto &o : offs_r)
+        // Get bbox half-extents for this obstacle
+        double hx = 0.4, hy = 0.4, hz = 0.4;  // default half-extents
+        if (k < obst_bbox.size())
         {
-            Vec3f p;
-            p << static_cast<float>(ox + o.ix * res),
-                static_cast<float>(oy + o.iy * res),
-                static_cast<float>(oz + o.iz * res);
-            pts.emplace_back(p);
+            hx = obst_bbox[k].x();
+            hy = obst_bbox[k].y();
+            hz = obst_bbox[k].z();
+        }
+
+        // Inflated bbox half-extents (inflate by motion radius r)
+        const double hx_inf = hx + r;
+        const double hy_inf = hy + r;
+        const double hz_inf = hz + r;
+
+        // Grid bounds in cells
+        const int mx = static_cast<int>(std::ceil(hx_inf / res));
+        const int my = static_cast<int>(std::ceil(hy_inf / res));
+        const int mz = static_cast<int>(std::ceil(hz_inf / res));
+
+        // Reserve space for this obstacle (rough estimate)
+        pts.reserve(pts.size() + (2*mx+1) * (2*my+1) * (2*mz+1));
+
+        // Generate grid points within the inflated bbox
+        for (int ix = -mx; ix <= mx; ++ix)
+        {
+            const double dx = ix * res;
+
+            for (int iy = -my; iy <= my; ++iy)
+            {
+                const double dy = iy * res;
+
+                for (int iz = -mz; iz <= mz; ++iz)
+                {
+                    const double dz = iz * res;
+
+                    // Check if point is within inflated bbox
+                    if (std::abs(dx) > hx_inf || std::abs(dy) > hy_inf || std::abs(dz) > hz_inf)
+                        continue;
+
+                    Vec3f p;
+                    p << static_cast<float>(ox + dx),
+                        static_cast<float>(oy + dy),
+                        static_cast<float>(oz + dz);
+                    pts.emplace_back(p);
+                }
+            }
         }
     }
 }
 
-void DGPManager::updateMap(double wdx, double wdy, double wdz, const Vec3f &center_map, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_unk, const vec_Vecf<3> &obst_pos, double traj_max_time)
+void DGPManager::updateMap(double wdx, double wdy, double wdz, const Vec3f &center_map, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &pclptr_unk, const vec_Vecf<3> &obst_pos, const vec_Vecf<3> &obst_bbox, double traj_max_time)
 {
 
     // Get the current time to see the computation time for readmap
     auto start_time = std::chrono::high_resolution_clock::now();
 
     mtx_map_util_.lock();
-    map_util_->readMap(pclptr, pclptr_unk, (int)wdx / res_, (int)wdy / res_, (int)wdz / res_, center_map, par_.z_min, par_.z_max, par_.inflation_dgp, obst_pos, traj_max_time);
+    map_util_->readMap(pclptr, pclptr_unk, (int)wdx / res_, (int)wdy / res_, (int)wdz / res_, center_map, par_.z_min, par_.z_max, par_.inflation_dgp, obst_pos, obst_bbox, traj_max_time);
     mtx_map_util_.unlock();
 
     // Get the elapsed time for reading the map

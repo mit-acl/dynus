@@ -107,7 +107,7 @@ source ~/.bashrc
 
 echo >> ~/.bashrc
 echo '# ROS2 RTPS network' >> ~/.bashrc
-echo 'export ROS_DOMAIN_ID=10' >> ~/.bashrc
+echo 'export ROS_DOMAIN_ID=20' >> ~/.bashrc
 echo >> ~/.bashrc
 echo 'export LD_LIBRARY_PATH=/opt/ros/humble/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH' >> ~/.bashrc
 echo >> ~/.bashrc
