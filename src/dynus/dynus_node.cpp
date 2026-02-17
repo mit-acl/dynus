@@ -460,6 +460,15 @@ void DYNUS_NODE::setParameters()
 
   // Decomposition parameters
   par_.environment_assumption = this->get_parameter("environment_assumption").as_string();
+  if (par_.environment_assumption != "static" &&
+      par_.environment_assumption != "dynamic" &&
+      par_.environment_assumption != "dynamic_worst_case")
+  {
+    RCLCPP_ERROR(this->get_logger(), "Invalid environment_assumption: '%s'. Must be 'static', 'dynamic', or 'dynamic_worst_case'.",
+                 par_.environment_assumption.c_str());
+    rclcpp::shutdown();
+    return;
+  }
   par_.local_box_size = this->get_parameter("local_box_size").as_double_array();
   par_.min_dist_from_agent_to_traj = this->get_parameter("min_dist_from_agent_to_traj").as_double();
   par_.use_shrinked_box = this->get_parameter("use_shrinked_box").as_bool();

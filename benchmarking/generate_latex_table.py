@@ -21,10 +21,14 @@ VE_OUTPUT_FILE = Path("/home/kkondo/paper_writing/DYNUS_v3/tables/ve_benchmark.t
 # Data files to load
 DATA_FILES = {
     # (mode, planner, N) -> filename
-    # FASTER original
+    # FASTER original (only first control point constrained)
     ("single", "faster_orig", 4): "single_thread/original_faster_4_benchmark.csv",
     ("single", "faster_orig", 5): "single_thread/original_faster_5_benchmark.csv",
     ("single", "faster_orig", 6): "single_thread/original_faster_6_benchmark.csv",
+    # FASTER safe (all control points constrained)
+    ("single", "faster_safe", 4): "single_thread/faster_4_benchmark.csv",
+    ("single", "faster_safe", 5): "single_thread/faster_5_benchmark.csv",
+    ("single", "faster_safe", 6): "single_thread/faster_6_benchmark.csv",
     # DYNUS single
     ("single", "dynus", 4): "single_thread/dynus_4_benchmark.csv",
     ("single", "dynus", 5): "single_thread/dynus_5_benchmark.csv",
@@ -35,14 +39,16 @@ DATA_FILES = {
     ("multi", "dynus", 6): "multi_thread/dynus_6_benchmark.csv",
 }
 
-# SUPER data (hardcoded from paper)
-SUPER_DATA = {
+# SUPER data: loaded from CSV if available, otherwise fall back to hardcoded values
+SUPER_CSV_PATH = ROOT_PATH / "default" / "super_benchmark.csv"
+
+SUPER_DATA_FALLBACK = {
     "Algorithm": "SUPER",
     "Thread": "multi",
     "N": "--",
     "success_rate": 95.1,
-    "per_opt_ms": 1.7,  # Combined per/total in table
-    "total_opt_ms": 1.7,  # Same value
+    "per_opt_ms": 1.7,
+    "total_opt_ms": 1.7,
     "traj_time_s": 16.8,
     "path_length": 8.8,
     "jerk_smooth": 1.4,
@@ -57,6 +63,62 @@ def safe_mean(series):
     """Compute mean, handling NaN"""
     s = series.dropna()
     return float(s.mean()) if not s.empty else np.nan
+
+
+def load_super_data():
+    """Load SUPER benchmark data from CSV, falling back to hardcoded values."""
+    if not SUPER_CSV_PATH.exists():
+        print(f"  SUPER CSV not found at {SUPER_CSV_PATH}, using hardcoded fallback values")
+        return SUPER_DATA_FALLBACK
+
+    print(f"  Loading SUPER data from {SUPER_CSV_PATH}")
+    df = pd.read_csv(SUPER_CSV_PATH)
+
+    df["success"] = pd.to_numeric(df["success"], errors="coerce").fillna(0).astype(int)
+
+    success_rate = safe_mean(df["success"]) * 100
+    succ_df = df[df["success"] == 1]
+
+    per_opt_ms = safe_mean(succ_df["per_opt_runtime_ms"])
+    total_opt_ms = safe_mean(succ_df["total_opt_runtime_ms"])
+    traj_time_s = safe_mean(succ_df["total_traj_time_sec"])
+    path_length = safe_mean(succ_df["traj_length_m"])
+    jerk_smooth = safe_mean(succ_df["jerk_smoothness_l1"])
+
+    # Violation rates: count / total * 100 (consistent with dynamic/static benchmarks)
+    if "violation_total_samples" in succ_df.columns and "v_violation_count" in succ_df.columns:
+        total_samples = succ_df["violation_total_samples"].sum()
+        if total_samples > 0:
+            sfc_viol = succ_df["corridor_violation_count"].sum() / total_samples * 100.0
+            vel_viol = succ_df["v_violation_count"].sum() / total_samples * 100.0
+            acc_viol = succ_df["a_violation_count"].sum() / total_samples * 100.0
+            jerk_viol = succ_df["j_violation_count"].sum() / total_samples * 100.0
+        else:
+            sfc_viol = vel_viol = acc_viol = jerk_viol = 0.0
+    else:
+        sfc_viol = safe_mean(succ_df["corridor_violated"]) * 100 if "corridor_violated" in succ_df.columns else 0.0
+        vel_viol = safe_mean(succ_df["v_violated"]) * 100 if "v_violated" in succ_df.columns else 0.0
+        acc_viol = safe_mean(succ_df["a_violated"]) * 100 if "a_violated" in succ_df.columns else 0.0
+        jerk_viol = safe_mean(succ_df["j_violated"]) * 100 if "j_violated" in succ_df.columns else 0.0
+
+    return {
+        "Algorithm": "SUPER",
+        "Thread": "multi",
+        "N": "--",
+        "success_rate": success_rate,
+        "per_opt_ms": per_opt_ms,
+        "total_opt_ms": total_opt_ms,
+        "traj_time_s": traj_time_s,
+        "path_length": path_length,
+        "jerk_smooth": jerk_smooth,
+        "sfc_viol": sfc_viol,
+        "vel_viol": vel_viol,
+        "acc_viol": acc_viol,
+        "jerk_viol": jerk_viol,
+    }
+
+
+SUPER_DATA = load_super_data()
 
 
 def load_and_process_data():
@@ -87,15 +149,29 @@ def load_and_process_data():
         path_length = safe_mean(succ_df["traj_length_m"])
         jerk_smooth = safe_mean(succ_df["jerk_smoothness_l1"])
 
-        # Violation rates (among successful optimizations)
-        sfc_viol = safe_mean(succ_df["corridor_violated"]) * 100 if "corridor_violated" in succ_df.columns else 0.0
-        vel_viol = safe_mean(succ_df["v_violated"]) * 100 if "v_violated" in succ_df.columns else 0.0
-        acc_viol = safe_mean(succ_df["a_violated"]) * 100 if "a_violated" in succ_df.columns else 0.0
-        jerk_viol = safe_mean(succ_df["j_violated"]) * 100 if "j_violated" in succ_df.columns else 0.0
+        # Violation rates: count / total * 100 (consistent with dynamic/static benchmarks)
+        # New CSVs have per-sample counts; fall back to binary flags for old CSVs
+        if "violation_total_samples" in succ_df.columns and "v_violation_count" in succ_df.columns:
+            total_samples = succ_df["violation_total_samples"].sum()
+            if total_samples > 0:
+                sfc_viol = succ_df["corridor_violation_count"].sum() / total_samples * 100.0
+                vel_viol = succ_df["v_violation_count"].sum() / total_samples * 100.0
+                acc_viol = succ_df["a_violation_count"].sum() / total_samples * 100.0
+                jerk_viol = succ_df["j_violation_count"].sum() / total_samples * 100.0
+            else:
+                sfc_viol = vel_viol = acc_viol = jerk_viol = 0.0
+        else:
+            # Legacy fallback: binary per-case flags
+            sfc_viol = safe_mean(succ_df["corridor_violated"]) * 100 if "corridor_violated" in succ_df.columns else 0.0
+            vel_viol = safe_mean(succ_df["v_violated"]) * 100 if "v_violated" in succ_df.columns else 0.0
+            acc_viol = safe_mean(succ_df["a_violated"]) * 100 if "a_violated" in succ_df.columns else 0.0
+            jerk_viol = safe_mean(succ_df["j_violated"]) * 100 if "j_violated" in succ_df.columns else 0.0
 
         # Determine algorithm name
         if planner == "faster_orig":
             alg_name = "FASTER"
+        elif planner == "faster_safe":
+            alg_name = "FASTER (safe)"
         else:  # dynus
             alg_name = "DYNUS"
 
@@ -327,13 +403,15 @@ def generate_latex_table(df):
     for N_val in sorted(df_rest["N"].unique()):
         df_n = df_rest[df_rest["N"] == N_val].copy()
 
-        # Sort by: FASTER, DYNUS multi, DYNUS single
+        # Sort by: FASTER, FASTER (safe), DYNUS single, DYNUS multi
         def sort_key(row):
             if row["Algorithm"] == "FASTER":
                 return (0, 0)
-            elif row["Algorithm"] == "DYNUS" and row["Thread"] == "multi":
+            elif row["Algorithm"] == "FASTER (safe)":
+                return (0, 1)
+            elif row["Algorithm"] == "DYNUS" and row["Thread"] == "single":
                 return (1, 0)
-            else:  # DYNUS single
+            else:  # DYNUS multi
                 return (1, 1)
 
         df_n["sort_key"] = df_n.apply(sort_key, axis=1)
@@ -383,29 +461,47 @@ def generate_latex_table(df):
 
 
 def load_ve_data():
-    """Load variable elimination benchmark data"""
-    import re
+    """Load variable elimination benchmark data.
 
-    ve_folder = ROOT_PATH / "ve_benchmark"
+    VE=yes rows come from the standardized benchmark (multi_thread/dynus_N_benchmark.csv)
+    so that both tables share the same data.  VE=no rows come from ve_benchmark/.
+    """
+    # VE=yes: reuse DYNUS multi-threaded data from standardized benchmark
+    ve_yes_files = {
+        N: ROOT_PATH / f"multi_thread/dynus_{N}_benchmark.csv"
+        for N in [4, 5, 6]
+    }
+    # VE=no: dedicated without-VE runs
+    ve_no_files = {
+        N: ROOT_PATH / f"ve_benchmark/dynus_{N}_without_ve_benchmark.csv"
+        for N in [4, 5, 6]
+    }
 
-    if not ve_folder.exists():
-        print(f"WARNING: VE benchmark folder not found: {ve_folder}")
+    # Build combined file list: (N, ve_flag, filepath)
+    file_list = []
+    for N, fp in ve_yes_files.items():
+        if fp.exists():
+            file_list.append((N, "yes", fp))
+        else:
+            # Fall back to ve_benchmark with_ve file if multi_thread doesn't exist
+            fallback = ROOT_PATH / f"ve_benchmark/dynus_{N}_with_ve_benchmark.csv"
+            if fallback.exists():
+                file_list.append((N, "yes", fallback))
+            else:
+                print(f"WARNING: Missing VE=yes data for N={N}")
+    for N, fp in ve_no_files.items():
+        if fp.exists():
+            file_list.append((N, "no", fp))
+        else:
+            print(f"WARNING: Missing VE=no data for N={N}")
+
+    if not file_list:
+        print("WARNING: No VE benchmark data found")
         return pd.DataFrame()
-
-    # Pattern: dynus_N_with_ve_benchmark.csv or dynus_N_without_ve_benchmark.csv
-    pat = re.compile(r"^dynus_(\d+)_(with_ve|without_ve)_benchmark\.csv$")
 
     rows = []
 
-    for csv_file in ve_folder.glob("*.csv"):
-        m = pat.match(csv_file.name)
-        if not m:
-            continue
-
-        N = int(m.group(1))
-        ve_status = m.group(2)  # "with_ve" or "without_ve"
-        ve_flag = "yes" if ve_status == "with_ve" else "no"
-
+    for N, ve_flag, csv_file in file_list:
         df = pd.read_csv(csv_file)
 
         # Parse success column
@@ -432,11 +528,21 @@ def load_ve_data():
             path_length = safe_mean(succ_df["traj_length_m"])
             jerk_smooth = safe_mean(succ_df["jerk_smoothness_l1"])
 
-            # Combined violation rate (any violation)
-            sfc_viol = safe_mean(succ_df["corridor_violated"]) * 100 if "corridor_violated" in succ_df.columns else 0.0
-            vel_viol = safe_mean(succ_df["v_violated"]) * 100 if "v_violated" in succ_df.columns else 0.0
-            acc_viol = safe_mean(succ_df["a_violated"]) * 100 if "a_violated" in succ_df.columns else 0.0
-            jerk_viol = safe_mean(succ_df["j_violated"]) * 100 if "j_violated" in succ_df.columns else 0.0
+            # Combined violation rate: count / total * 100 (consistent with dynamic/static benchmarks)
+            if "violation_total_samples" in succ_df.columns and "v_violation_count" in succ_df.columns:
+                total_samples = succ_df["violation_total_samples"].sum()
+                if total_samples > 0:
+                    sfc_viol = succ_df["corridor_violation_count"].sum() / total_samples * 100.0
+                    vel_viol = succ_df["v_violation_count"].sum() / total_samples * 100.0
+                    acc_viol = succ_df["a_violation_count"].sum() / total_samples * 100.0
+                    jerk_viol = succ_df["j_violation_count"].sum() / total_samples * 100.0
+                else:
+                    sfc_viol = vel_viol = acc_viol = jerk_viol = 0.0
+            else:
+                sfc_viol = safe_mean(succ_df["corridor_violated"]) * 100 if "corridor_violated" in succ_df.columns else 0.0
+                vel_viol = safe_mean(succ_df["v_violated"]) * 100 if "v_violated" in succ_df.columns else 0.0
+                acc_viol = safe_mean(succ_df["a_violated"]) * 100 if "a_violated" in succ_df.columns else 0.0
+                jerk_viol = safe_mean(succ_df["j_violated"]) * 100 if "j_violated" in succ_df.columns else 0.0
 
             # Max of all violations
             any_viol = max(sfc_viol, vel_viol, acc_viol, jerk_viol)
@@ -580,6 +686,9 @@ def generate_ve_latex_table(df):
 
 def main():
     """Main function"""
+    import sys
+    skip_ve = "--no-ve" in sys.argv
+
     print("="*80)
     print("DYNUS LaTeX Table Generator")
     print("="*80)
@@ -632,31 +741,35 @@ def main():
         print("="*80)
 
     # ========== Generate VE Benchmark Table ==========
-    print("\n[2/2] Generating Variable Elimination Benchmark Table")
-    print("-" * 80)
-
-    # Load VE data
-    print("Loading VE benchmark data...")
-    ve_df = load_ve_data()
-
-    if ve_df.empty:
-        print("WARNING: No VE benchmark data found.")
-        print("  Run: python3 run_benchmark_suite.py --ve-comparison")
+    ve_df = pd.DataFrame()
+    if skip_ve:
+        print("\n[2/2] Skipping VE Benchmark Table (--no-ve)")
     else:
-        print(f"Loaded {len(ve_df)} VE data rows")
-        print("\nVE data summary:")
-        print(ve_df[["N", "VE"]].to_string(index=False))
+        print("\n[2/2] Generating Variable Elimination Benchmark Table")
+        print("-" * 80)
 
-        # Generate LaTeX
-        print("\nGenerating VE LaTeX table...")
-        ve_latex_code = generate_ve_latex_table(ve_df)
+        # Load VE data
+        print("Loading VE benchmark data...")
+        ve_df = load_ve_data()
 
-        # Save to file
-        VE_OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-        VE_OUTPUT_FILE.write_text(ve_latex_code)
+        if ve_df.empty:
+            print("WARNING: No VE benchmark data found.")
+            print("  Run: python3 run_benchmark_suite.py --ve-comparison")
+        else:
+            print(f"Loaded {len(ve_df)} VE data rows")
+            print("\nVE data summary:")
+            print(ve_df[["N", "VE"]].to_string(index=False))
 
-        print(f"\n✓ VE LaTeX table saved to: {VE_OUTPUT_FILE}")
-        print(f"  Include in paper: \\input{{{VE_OUTPUT_FILE.name}}}")
+            # Generate LaTeX
+            print("\nGenerating VE LaTeX table...")
+            ve_latex_code = generate_ve_latex_table(ve_df)
+
+            # Save to file
+            VE_OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+            VE_OUTPUT_FILE.write_text(ve_latex_code)
+
+            print(f"\n✓ VE LaTeX table saved to: {VE_OUTPUT_FILE}")
+            print(f"  Include in paper: \\input{{{VE_OUTPUT_FILE.name}}}")
 
     # ========== Summary ==========
     print("\n" + "="*80)

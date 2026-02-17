@@ -206,7 +206,11 @@ def generate_gazebo_yaml(setup_bash: Path, goal: tuple,
                          start_pos: tuple = (0, 0, 3.0), start_yaw: float = 0.0,
                          ros_domain_id: int = 20, use_rviz: bool = True,
                          use_gazebo_gui: bool = True, use_dyn_obs: bool = False,
-                         use_mapper: bool = True) -> str:
+                         use_mapper: bool = True,
+                         data_file: str = None,
+                         use_benchmark: bool = False,
+                         global_planner: str = 'astar_heat',
+                         send_goal: bool = True) -> str:
     """Generate YAML for single-agent Gazebo simulation."""
     goal_x, goal_y, goal_z = goal
     start_x, start_y, start_z = start_pos
@@ -234,17 +238,19 @@ def generate_gazebo_yaml(setup_bash: Path, goal: tuple,
     panes.append({
         'shell_command': [
             'sleep 5',
-            f'ros2 launch dynus onboard_dynus.launch.py namespace:=NX01 x:={start_x} y:={start_y} z:={start_z} yaw:={start_yaw}'
+            f'ros2 launch dynus onboard_dynus.launch.py namespace:=NX01 x:={start_x} y:={start_y} z:={start_z} yaw:={start_yaw} '
+            + (f'use_benchmark:=true data_file:={data_file} global_planner:={global_planner} ' if use_benchmark and data_file else '')
         ]
     })
 
-    # Goal sender
-    panes.append({
-        'shell_command': [
-            'sleep 20',
-            f"ros2 launch dynus goal_sender.launch.py list_agents:=\"['NX01']\" list_goals:=\"['[{goal_x}, {goal_y}, {goal_z}]']\""
-        ]
-    })
+    # Goal sender (conditional on send_goal)
+    if send_goal:
+        panes.append({
+            'shell_command': [
+                'sleep 20',
+                f"ros2 launch dynus goal_sender.launch.py list_agents:=\"['NX01']\" list_goals:=\"['[{goal_x}, {goal_y}, {goal_z}]']\""
+            ]
+        })
 
     yaml_content = {
         'session_name': 'dynus_sim',
@@ -511,7 +517,11 @@ def main():
             use_rviz=use_rviz,
             use_gazebo_gui=use_gazebo_gui,
             use_dyn_obs=args.dyn_obs,
-            use_mapper=use_mapper
+            use_mapper=use_mapper,
+            data_file=args.data_file,
+            use_benchmark=args.use_benchmark or (args.data_file is not None),
+            global_planner=args.global_planner,
+            send_goal=not args.no_goal_sender
         )
         print(f"[INFO] Mode: Single-agent Gazebo simulation")
         print(f"[INFO] Environment: {args.env}")

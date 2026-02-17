@@ -1,2 +1,4 @@
 data
 benchmark_data
+__pycache__/
+*.pyc

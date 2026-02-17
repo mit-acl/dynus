@@ -140,7 +140,8 @@ def kill_all_dynus_processes():
                   stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
     # Kill specific ROS node executables by exact name
-    for process_name in ["rviz2", "fake_sim", "dynamic_forest_node", "dynus_node", "goal_sender"]:
+    for process_name in ["rviz2", "fake_sim", "dynamic_forest_node", "dynus_node", "goal_sender",
+                         "gzserver", "gzclient", "ruby"]:
         subprocess.run(["pkill", "-9", "-x", process_name],
                       stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
@@ -291,6 +292,7 @@ class BenchmarkMonitor(Node):
 
         # State tracking
         self.goal_reached = False
+        self.goal_reached_signal = False  # True when /goal_reached msg received but conditions not yet met
         self.start_time = None
         self.end_time = None
         self.start_pos = None
@@ -318,12 +320,20 @@ class BenchmarkMonitor(Node):
             depth=10
         )
 
+        # QoS profile with large depth to avoid dropping messages during startup
+        goal_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1000
+        )
+
         # Subscribers
         self.sub_goal = self.create_subscription(
             Goal,
             f'/{namespace}/goal',
             self.goal_callback,
-            10
+            goal_qos
         )
         self.get_logger().info(f"Subscribed to /{namespace}/goal")
 
@@ -353,12 +363,14 @@ class BenchmarkMonitor(Node):
 
     def goal_callback(self, msg: Goal):
         """Track goal (commanded trajectory with p, v, a, j) for all metrics"""
-        current_time = self.get_clock().now().nanoseconds / 1e9
+        # Use message header timestamp for accurate timing (avoids callback scheduling delays)
+        msg_time = msg.header.stamp.sec + msg.header.stamp.nanosec / 1e9
 
+        # Start the clock on the first Goal message received (first command sent)
         if self.start_time is None:
-            self.start_time = current_time
+            self.start_time = msg_time
             self.start_pos = [msg.p.x, msg.p.y, msg.p.z]
-            self.get_logger().info(f"Started tracking goal at position: {self.start_pos}")
+            self.get_logger().info(f"First Goal command received at position: {self.start_pos}")
 
         # Always collect data (don't stop when goal is reached - we need data for metrics!)
         # Collect position, velocity, acceleration, and jerk directly from Goal message
@@ -366,15 +378,44 @@ class BenchmarkMonitor(Node):
         self.velocities.append([msg.v.x, msg.v.y, msg.v.z])
         self.accelerations.append([msg.a.x, msg.a.y, msg.a.z])
         self.jerks.append([msg.j.x, msg.j.y, msg.j.z])
-        self.timestamps.append(current_time)
+        self.timestamps.append(msg_time)
 
     def goal_reached_callback(self, msg: Empty):
-        """Mark goal as reached"""
+        """Mark goal_reached signal received (actual end_time determined by proximity + velocity check)"""
         self.get_logger().info(f"goal_reached_callback triggered! Current state: {self.goal_reached}")
         if not self.goal_reached:
-            self.goal_reached = True
-            self.end_time = self.get_clock().now().nanoseconds / 1e9
-            self.get_logger().info("✓ Goal reached!")
+            # Check proximity (< 0.5m) and velocity (< 0.1 m/s) conditions
+            if self._check_arrival_conditions():
+                self.goal_reached = True
+                if self.timestamps:
+                    self.end_time = self.timestamps[-1]
+                else:
+                    self.end_time = self.get_clock().now().nanoseconds / 1e9
+                self.get_logger().info("Goal reached (proximity < 0.5m AND speed < 0.1 m/s)!")
+            else:
+                # Signal received but conditions not met yet; mark signal received
+                # The monitoring loop will keep checking
+                self.goal_reached_signal = True
+                self.get_logger().info("goal_reached signal received, waiting for proximity + velocity conditions...")
+
+    def _check_arrival_conditions(self) -> bool:
+        """Check if drone is within 0.5m of goal AND velocity < 0.1 m/s"""
+        goal = self.commanded_goal if self.commanded_goal else self.goal_pos
+        if goal is None or len(self.positions) == 0 or len(self.velocities) == 0:
+            return False
+
+        # Check distance to goal
+        pos = self.positions[-1]
+        dx = pos[0] - goal[0]
+        dy = pos[1] - goal[1]
+        dz = pos[2] - goal[2]
+        dist = math.sqrt(dx*dx + dy*dy + dz*dz)
+
+        # Check velocity magnitude
+        vel = self.velocities[-1]
+        speed = math.sqrt(vel[0]**2 + vel[1]**2 + vel[2]**2)
+
+        return dist < 0.5 and speed < 0.1
 
     def point_g_callback(self, msg: PointStamped):
         """Store goal position"""
@@ -530,12 +571,14 @@ class BenchmarkMonitor(Node):
 
 def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio: float,
                      start: Tuple[float, float, float], goal: Tuple[float, float, float],
-                     setup_bash: str, timeout: float = 120.0,
+                     setup_bash: str, timeout: float = 100.0,
                      obs_x_range: Tuple[float, float] = (5.0, 100.0),
                      obs_y_range: Tuple[float, float] = (-6.0, 6.0),
                      obs_z_range: Tuple[float, float] = (0.5, 4.5),
                      visualize: bool = False,
-                     data_file: Optional[str] = None) -> BenchmarkMetrics:
+                     data_file: Optional[str] = None,
+                     mode: str = 'rviz-only',
+                     env: Optional[str] = None) -> BenchmarkMetrics:
     """Run a single simulation trial and collect metrics"""
 
     print(f"\nTrial {trial_id}: seed={seed}, obstacles={num_obstacles}, dynamic_ratio={dynamic_ratio}")
@@ -588,30 +631,56 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
 
     # Build run_sim.py command
     run_sim_path = Path(__file__).parent / "run_sim.py"
-    cmd = [
-        "python3", str(run_sim_path),
-        "--mode", "rviz-only",
-        "--setup-bash", setup_bash,
-        "--start", str(start[0]), str(start[1]), str(start[2]),
-        "--goal", str(goal[0]), str(goal[1]), str(goal[2]),
-        "--num-obstacles", str(num_obstacles),
-        "--dynamic-ratio", str(dynamic_ratio),
-        "--obs-x-range", str(obs_x_range[0]), str(obs_x_range[1]),
-        "--obs-y-range", str(obs_y_range[0]), str(obs_y_range[1]),
-        "--obs-z-range", str(obs_z_range[0]), str(obs_z_range[1]),
-        "--seed", str(seed),
-        "--no-goal-sender",  # Disable automatic goal sending - we'll send manually after rosbag starts
-    ]
 
-    # Add benchmark data file if specified
-    if data_file:
-        cmd.extend(["--data-file", data_file])
-        cmd.append("--use-benchmark")
-        cmd.extend(["--global-planner", global_planner])
+    if mode == 'gazebo':
+        cmd = [
+            "python3", str(run_sim_path),
+            "--mode", "gazebo",
+            "--setup-bash", setup_bash,
+            "--start", str(start[0]), str(start[1]), str(start[2]),
+            "--goal", str(goal[0]), str(goal[1]), str(goal[2]),
+            "--no-goal-sender",  # Disable automatic goal sending - we'll send manually after rosbag starts
+        ]
 
-    # Add --no-rviz unless visualize is True
-    if not visualize:
-        cmd.append("--no-rviz")
+        if env:
+            cmd.extend(["--env", env])
+
+        # Add benchmark data file if specified
+        if data_file:
+            cmd.extend(["--data-file", data_file])
+            cmd.append("--use-benchmark")
+            cmd.extend(["--global-planner", global_planner])
+
+        # Headless for benchmarking
+        if not visualize:
+            cmd.append("--no-gazebo-gui")
+            cmd.append("--no-rviz")
+
+    else:  # rviz-only (default)
+        cmd = [
+            "python3", str(run_sim_path),
+            "--mode", "rviz-only",
+            "--setup-bash", setup_bash,
+            "--start", str(start[0]), str(start[1]), str(start[2]),
+            "--goal", str(goal[0]), str(goal[1]), str(goal[2]),
+            "--num-obstacles", str(num_obstacles),
+            "--dynamic-ratio", str(dynamic_ratio),
+            "--obs-x-range", str(obs_x_range[0]), str(obs_x_range[1]),
+            "--obs-y-range", str(obs_y_range[0]), str(obs_y_range[1]),
+            "--obs-z-range", str(obs_z_range[0]), str(obs_z_range[1]),
+            "--seed", str(seed),
+            "--no-goal-sender",  # Disable automatic goal sending - we'll send manually after rosbag starts
+        ]
+
+        # Add benchmark data file if specified
+        if data_file:
+            cmd.extend(["--data-file", data_file])
+            cmd.append("--use-benchmark")
+            cmd.extend(["--global-planner", global_planner])
+
+        # Add --no-rviz unless visualize is True
+        if not visualize:
+            cmd.append("--no-rviz")
 
     print(f"Launching simulation: {' '.join(cmd)}")
 
@@ -624,8 +693,12 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
     )
 
     # Wait for simulation to initialize (nodes to start up)
-    print("  Waiting for simulation to initialize (5s)...")
-    time.sleep(5)
+    if mode == 'gazebo':
+        print("  Waiting for simulation to initialize (20s for Gazebo)...")
+        time.sleep(20)
+    else:
+        print("  Waiting for simulation to initialize (5s)...")
+        time.sleep(5)
 
     # Start rosbag recording BEFORE sending goal
     bag_dir = Path(data_file).parent.parent / "bags" if data_file else None
@@ -658,7 +731,7 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
             stderr=subprocess.DEVNULL,
             env=bag_env
         )
-        time.sleep(1)  # Give bag time to initialize
+        time.sleep(10)  # Wait for the bag recorder to be fully ready before sending the goal
 
     # NOW send the goal immediately after rosbag is ready
     # The planner will start immediately and we'll capture everything
@@ -710,6 +783,16 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
         while time.time() - start_monitor_time < timeout:
             # Spin the monitor node to process callbacks
             rclpy.spin_once(monitor, timeout_sec=0.05)
+
+            # If goal_reached signal was received but conditions not yet met, keep checking
+            if monitor.goal_reached_signal and not monitor.goal_reached:
+                if monitor._check_arrival_conditions():
+                    monitor.goal_reached = True
+                    if monitor.timestamps:
+                        monitor.end_time = monitor.timestamps[-1]
+                    else:
+                        monitor.end_time = time.time()
+                    monitor.get_logger().info("Goal reached (proximity < 0.5m AND speed < 0.1 m/s)!")
 
             # Check if goal reached
             if monitor.goal_reached:
@@ -770,26 +853,19 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
         # Perform collision checking if we collected obstacle data
         if monitor.obstacle_trajectories and len(monitor.positions) > 0:
             try:
-                from check_collisions import BoundingBox, CollisionEvent
+                from check_collisions import CollisionEvent
                 import pandas as pd
 
-                # Use already-loaded parameters from dynus.yaml
-                drone_hx, drone_hy, drone_hz = dynus_params['drone_bbox']
-
                 # Perform collision checking with time-varying obstacle positions
+                # (point mass - no drone bounding box)
                 collisions = []
                 collision_free_segments = 0
                 total_segments = 0
                 min_distance = float('inf')  # Track minimum distance to any obstacle
 
-                # Check each trajectory point
+                # Check each trajectory point (point mass - no drone bounding box)
                 for i, t_abs in enumerate(monitor.timestamps):
                     px, py, pz = monitor.positions[i]
-
-                    # Create drone bounding box
-                    drone_bbox = BoundingBox.from_center_and_half_extents(
-                        px, py, pz, drone_hx, drone_hy, drone_hz
-                    )
 
                     # Check against all obstacles at this time
                     segment_collision_free = True
@@ -801,20 +877,27 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
                             t_abs
                         )
 
-                        # Create obstacle bounding box
+                        # Obstacle bounding box extents
                         hx, hy, hz = obs_traj['half_extents']
-                        obs_bbox = BoundingBox.from_center_and_half_extents(
-                            obs_pos[0], obs_pos[1], obs_pos[2], hx, hy, hz
-                        )
 
-                        # Compute distance to this obstacle
-                        distance = drone_bbox.distance_to(obs_bbox)
+                        # Point-to-AABB distance from drone point to obstacle surface
+                        closest_x = max(obs_pos[0] - hx, min(px, obs_pos[0] + hx))
+                        closest_y = max(obs_pos[1] - hy, min(py, obs_pos[1] + hy))
+                        closest_z = max(obs_pos[2] - hz, min(pz, obs_pos[2] + hz))
+                        distance = math.sqrt((px - closest_x)**2 + (py - closest_y)**2 + (pz - closest_z)**2)
                         min_distance = min(min_distance, distance)
 
-                        # Check intersection
-                        if drone_bbox.intersects(obs_bbox):
+                        # Check collision: point inside obstacle AABB
+                        if (obs_pos[0] - hx <= px <= obs_pos[0] + hx and
+                            obs_pos[1] - hy <= py <= obs_pos[1] + hy and
+                            obs_pos[2] - hz <= pz <= obs_pos[2] + hz):
                             segment_collision_free = False
-                            penetration = drone_bbox.penetration_depth(obs_bbox)
+
+                            # Compute penetration depth as distance from point to nearest face
+                            pen_x = min(px - (obs_pos[0] - hx), (obs_pos[0] + hx) - px)
+                            pen_y = min(py - (obs_pos[1] - hy), (obs_pos[1] + hy) - py)
+                            pen_z = min(pz - (obs_pos[2] - hz), (obs_pos[2] + hz) - pz)
+                            penetration = min(pen_x, pen_y, pen_z)
 
                             collision = CollisionEvent(
                                 time=t_abs - monitor.timestamps[0],  # Relative time
@@ -863,7 +946,7 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
                         print(f"        Obs pos:   ({coll.obstacle_position[0]:.2f}, {coll.obstacle_position[1]:.2f}, {coll.obstacle_position[2]:.2f})")
                         print(f"        Obs ID: {coll.obstacle_id}")
                         print(f"        Penetration: {coll.penetration_depth:.4f}m")
-                        print(f"        Drone bbox: ±({drone_hx:.2f}, {drone_hy:.2f}, {drone_hz:.2f})")
+                        print(f"        Drone: point mass (no bbox)")
                         print(f"        Obs bbox:   ±({coll.obstacle_half_extents[0]:.2f}, {coll.obstacle_half_extents[1]:.2f}, {coll.obstacle_half_extents[2]:.2f})")
                     print()
 
@@ -1006,8 +1089,8 @@ def main():
     parser.add_argument(
         '--timeout',
         type=float,
-        default=120.0,
-        help='Timeout per trial in seconds (default: 120)'
+        default=50.0,
+        help='Timeout per trial in seconds (default: 50)'
     )
 
     parser.add_argument(
@@ -1058,6 +1141,21 @@ def main():
         help='Show RViz visualization during benchmark (default: headless)'
     )
 
+    parser.add_argument(
+        '--mode',
+        type=str,
+        choices=['rviz-only', 'gazebo'],
+        default='rviz-only',
+        help='Simulation mode: rviz-only (procedural obstacles) or gazebo (static world files) [default: rviz-only]'
+    )
+
+    parser.add_argument(
+        '--env',
+        type=str,
+        default=None,
+        help='Environment name override for gazebo mode (default: auto-mapped from case)'
+    )
+
     args = parser.parse_args()
 
     # Map cases to obstacle counts
@@ -1065,6 +1163,13 @@ def main():
         'easy': 50,
         'medium': 100,
         'hard': 200
+    }
+
+    # Map cases to gazebo environment names (for --mode gazebo)
+    case_environments = {
+        'easy': 'easy_forest',
+        'medium': 'medium_forest',
+        'hard': 'hard_forest'
     }
 
     # Determine which cases to run
@@ -1077,15 +1182,23 @@ def main():
     print("DYNUS BENCHMARK")
     print(f"{'='*80}")
     print(f"Configuration: {args.config_name}")
+    print(f"Mode: {args.mode}")
     print(f"Cases to run: {', '.join(cases_to_run)}")
     print(f"Number of trials per case: {args.num_trials}")
-    print(f"Dynamic ratio: {args.dynamic_ratio}")
+    if args.mode == 'rviz-only':
+        print(f"Dynamic ratio: {args.dynamic_ratio}")
     print(f"Timeout: {args.timeout}s")
     print(f"{'='*80}\n")
 
     # Run benchmarks for each case
     for case in cases_to_run:
-        num_obstacles = case_obstacles[case]
+        # Determine obstacle count and environment for this case
+        if args.mode == 'gazebo':
+            num_obstacles = 0  # Static world, no procedural obstacles
+            env_name = args.env if args.env else case_environments[case]
+        else:
+            num_obstacles = case_obstacles[case]
+            env_name = None
 
         # Determine output directory for this case
         if args.output_dir:
@@ -1096,9 +1209,14 @@ def main():
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             output_dir = base_dir / f"{case}_{timestamp}"
 
-        print(f"\n{'='*80}")
-        print(f"RUNNING {case.upper()} CASE ({num_obstacles} obstacles)")
-        print(f"{'='*80}")
+        if args.mode == 'gazebo':
+            print(f"\n{'='*80}")
+            print(f"RUNNING {case.upper()} CASE (gazebo: {env_name})")
+            print(f"{'='*80}")
+        else:
+            print(f"\n{'='*80}")
+            print(f"RUNNING {case.upper()} CASE ({num_obstacles} obstacles)")
+            print(f"{'='*80}")
         print(f"Output directory: {output_dir}")
         print(f"{'='*80}\n")
 
@@ -1124,13 +1242,15 @@ def main():
                     seed=seed,
                     num_obstacles=num_obstacles,
                     dynamic_ratio=args.dynamic_ratio,
-                start=tuple(args.start),
-                goal=tuple(args.goal),
-                setup_bash=args.setup_bash,
-                timeout=args.timeout,
-                visualize=args.visualize,
-                data_file=data_file
-            )
+                    start=tuple(args.start),
+                    goal=tuple(args.goal),
+                    setup_bash=args.setup_bash,
+                    timeout=args.timeout,
+                    visualize=args.visualize,
+                    data_file=data_file,
+                    mode=args.mode,
+                    env=env_name
+                )
                 metrics_list.append(metrics)
 
                 # Print trial summary

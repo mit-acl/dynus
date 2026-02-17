@@ -330,3 +330,202 @@ dynus/
 - **Run overnight**: Full benchmark suite takes several hours
 - **Check results**: Use notebook to verify data quality before generating tables
 - **VE comparison**: Run after standardized benchmarks to demonstrate algorithmic contribution
+
+## Simulation Benchmarking (Dynamic & Static Environments)
+
+This section describes how to run full end-to-end simulation benchmarks — launching the planner, flying through environments, and collecting metrics (success rate, computation time, travel time, path length, smoothness, constraint violations, collisions).
+
+There are two modes:
+- **Dynamic** (`rviz-only`): Procedurally generated obstacles (static + moving). Lightweight, no Gazebo.
+- **Static** (`gazebo`): Pre-defined forest worlds (`easy_forest.world`, `medium_forest.world`, `hard_forest.world`). Requires Gazebo.
+
+### Prerequisites
+
+**Docker (recommended):**
+
+```bash
+# Build the Docker image
+cd ~/code/ws/src/dynus/docker
+make build
+
+# Run the container (GPU + display forwarding)
+make run
+
+# Inside the container, everything is already built. Rebuild if needed:
+cd /home/kkondo/code/dynus_ws
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select dynus
+source install/setup.bash
+```
+
+**Native installation:**
+
+```bash
+cd ~/code/dynus_ws
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select dynus
+source install/setup.bash
+```
+
+### Dynamic Obstacle Benchmark
+
+Runs in `rviz-only` mode with procedurally generated obstacles. Three difficulty cases:
+- **Easy**: 50 obstacles
+- **Medium**: 100 obstacles
+- **Hard**: 200 obstacles
+
+#### 1. Configure `dynus.yaml`
+
+Make sure `environment_assumption` is set to `"dynamic"`:
+
+```bash
+# In src/dynus/config/dynus.yaml, verify:
+#   environment_assumption: "dynamic"
+```
+
+#### 2. Build
+
+```bash
+cd ~/code/dynus_ws
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select dynus
+```
+
+#### 3. Run benchmark
+
+```bash
+python3 src/dynus/scripts/run_benchmark.py \
+  --setup-bash install/setup.bash \
+  --mode rviz-only \
+  --cases easy medium hard \
+  --config-name dynamic \
+  --num-trials 10 \
+  --start 0.0 0.0 2.0 \
+  --goal 105.0 0.0 2.0 \
+  --timeout 50
+```
+
+#### 4. Analyze and generate LaTeX table
+
+```bash
+python3 src/dynus/scripts/analyze_dynamic_benchmark.py \
+  --data-dir src/dynus/benchmark_data/dynamic \
+  --all-cases \
+  --table-type dynamic \
+  --latex-name dynamic_benchmark.tex
+```
+
+### Static Forest Benchmark
+
+Runs in `gazebo` mode with pre-defined `.world` files. Three difficulty cases:
+- **Easy**: `easy_forest.world`
+- **Medium**: `medium_forest.world`
+- **Hard**: `hard_forest.world`
+
+#### 1. Configure `dynus.yaml`
+
+Set `environment_assumption` to `"static"`:
+
+```bash
+# In src/dynus/config/dynus.yaml, set:
+#   environment_assumption: "static"
+```
+
+#### 2. Build
+
+```bash
+cd ~/code/dynus_ws
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select dynus
+```
+
+#### 3. Run benchmark
+
+```bash
+python3 src/dynus/scripts/run_benchmark.py \
+  --setup-bash install/setup.bash \
+  --mode gazebo \
+  --cases easy medium hard \
+  --config-name static \
+  --num-trials 10 \
+  --start 0.0 0.0 2.0 \
+  --goal 105.0 0.0 2.0 \
+  --timeout 50
+```
+
+#### 4. Analyze and generate LaTeX table
+
+```bash
+python3 src/dynus/scripts/analyze_dynamic_benchmark.py \
+  --data-dir src/dynus/benchmark_data/static \
+  --all-cases \
+  --table-type static \
+  --latex-name static_benchmark.tex
+```
+
+### Where Data Goes
+
+```
+src/dynus/
+├── benchmark_data/
+│   ├── dynamic/                          # Dynamic obstacle benchmark results
+│   │   ├── easy_YYYYMMDD_HHMMSS/
+│   │   │   ├── benchmark_dynamic_*.csv   # Trial metrics (success, time, collisions, etc.)
+│   │   │   ├── benchmark_dynamic_*.json  # Same data in JSON format
+│   │   │   ├── csv/
+│   │   │   │   ├── num_0.csv             # Per-trial computation time breakdown
+│   │   │   │   ├── num_1.csv
+│   │   │   │   └── ...
+│   │   │   └── bags/                     # ROS2 bag recordings per trial
+│   │   │       ├── trial_0/
+│   │   │       └── ...
+│   │   ├── medium_YYYYMMDD_HHMMSS/
+│   │   └── hard_YYYYMMDD_HHMMSS/
+│   └── static/                           # Static forest benchmark results
+│       ├── easy_YYYYMMDD_HHMMSS/
+│       ├── medium_YYYYMMDD_HHMMSS/
+│       └── hard_YYYYMMDD_HHMMSS/
+```
+
+**LaTeX tables** are written to: `/home/kkondo/paper_writing/DYNUS_v3/tables/`
+- `dynamic_benchmark.tex` — Dynamic obstacle results
+- `static_benchmark.tex` — Static forest results
+
+### Benchmark CLI Reference
+
+**`run_benchmark.py`** options:
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--setup-bash` | Path to `install/setup.bash` (required) | — |
+| `--mode` | `rviz-only` or `gazebo` | `rviz-only` |
+| `--cases` | `easy`, `medium`, `hard`, or `all` | `all` |
+| `--config-name` | Name for output directory | `default` |
+| `--num-trials` | Trials per case | `5` |
+| `--start` | Start position (x y z) | `0 0 2` |
+| `--goal` | Goal position (x y z) | `105 0 2` |
+| `--timeout` | Seconds per trial | `120` |
+| `--env` | Override gazebo environment name | auto from case |
+| `--visualize` | Show RViz during benchmark | off |
+
+**`analyze_dynamic_benchmark.py`** options:
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--data-dir` | Path to benchmark data directory | — |
+| `--all-cases` | Analyze all cases in directory | off |
+| `--table-type` | `dynamic` or `static` | `dynamic` |
+| `--latex-name` | Output `.tex` filename | `dynamic_benchmark.tex` |
+| `--config-name` | Config name for table caption | `default` |
+
+### Quick Reference
+
+```bash
+# ── Dynamic benchmark (full pipeline) ──
+# 1. Set dynus.yaml: environment_assumption: "dynamic"
+# 2. colcon build --packages-select dynus
+# 3. python3 src/dynus/scripts/run_benchmark.py --setup-bash install/setup.bash --mode rviz-only --cases easy medium hard --config-name dynamic --num-trials 10
+# 4. python3 src/dynus/scripts/analyze_dynamic_benchmark.py --data-dir src/dynus/benchmark_data/dynamic --all-cases --table-type dynamic --latex-name dynamic_benchmark.tex
+
+# ── Static benchmark (full pipeline) ──
+# 1. Set dynus.yaml: environment_assumption: "static"
+# 2. colcon build --packages-select dynus
+# 3. python3 src/dynus/scripts/run_benchmark.py --setup-bash install/setup.bash --mode gazebo --cases easy medium hard --config-name static --num-trials 10
+# 4. python3 src/dynus/scripts/analyze_dynamic_benchmark.py --data-dir src/dynus/benchmark_data/static --all-cases --table-type static --latex-name static_benchmark.tex
+```

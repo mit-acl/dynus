@@ -30,6 +30,7 @@
 #include <math.h>
 #include <chrono>
 #include <thread>
+#include <mutex>
 #include <Eigen/StdVector>
 
 using namespace std::chrono_literals;
@@ -212,6 +213,17 @@ private:
     std::string base_frame_id_param_{""};
     std::string base_frame_id_{""};
 
+    // Interpolation state: last goal data for extrapolation between planner updates
+    std::mutex goal_mtx_;
+    bool goal_received_{false};
+    rclcpp::Time goal_stamp_;
+    // Position, velocity, acceleration at time of last goal
+    Eigen::Vector3d goal_pos_{0, 0, 0};
+    Eigen::Vector3d goal_vel_{0, 0, 0};
+    Eigen::Vector3d goal_acc_{0, 0, 0};
+    // Orientation at time of last goal
+    tf2::Quaternion goal_quat_{0, 0, 0, 1};
+
     // This is for ground robot
     void updateStateFromTF()
     {
@@ -268,7 +280,18 @@ private:
 
         tf2::Quaternion w_q_b = qabc * qpsi;
 
-        // Update state (even if you later choose to publish state from TF for ground robot)
+        // Store goal data for interpolation
+        {
+            std::lock_guard<std::mutex> lk(goal_mtx_);
+            goal_stamp_ = this->get_clock()->now();
+            goal_pos_ = Eigen::Vector3d(data->p.x, data->p.y, data->p.z);
+            goal_vel_ = Eigen::Vector3d(data->v.x, data->v.y, data->v.z);
+            goal_acc_ = Eigen::Vector3d(data->a.x, data->a.y, data->a.z);
+            goal_quat_ = w_q_b;
+            goal_received_ = true;
+        }
+
+        // Also update state_ directly (keeps state_.vel current for odom, etc.)
         state_.header.stamp = this->get_clock()->now();
         state_.pos = data->p;
         state_.vel = data->v;
@@ -303,18 +326,47 @@ private:
         }
     }
 
-    void getTransformStamped()
+    /**
+     * @brief Compute interpolated position and orientation for the current time.
+     *
+     * Extrapolates from the last goal using velocity and acceleration:
+     *   p(t) = p0 + v0 * dt + 0.5 * a0 * dt^2
+     * Orientation is held constant (changes are small between updates).
+     * dt is clamped to avoid runaway extrapolation if goals stop arriving.
+     */
+    void getInterpolatedTransform()
     {
         t_.header.stamp = this->get_clock()->now();
 
-        t_.transform.translation.x = state_.pos.x;
-        t_.transform.translation.y = state_.pos.y;
-        t_.transform.translation.z = state_.pos.z;
+        std::lock_guard<std::mutex> lk(goal_mtx_);
+        if (!goal_received_)
+        {
+            // No goal yet, use current state_ as-is
+            t_.transform.translation.x = state_.pos.x;
+            t_.transform.translation.y = state_.pos.y;
+            t_.transform.translation.z = state_.pos.z;
+            t_.transform.rotation.x = state_.quat.x;
+            t_.transform.rotation.y = state_.quat.y;
+            t_.transform.rotation.z = state_.quat.z;
+            t_.transform.rotation.w = state_.quat.w;
+            return;
+        }
 
-        t_.transform.rotation.x = state_.quat.x;
-        t_.transform.rotation.y = state_.quat.y;
-        t_.transform.rotation.z = state_.quat.z;
-        t_.transform.rotation.w = state_.quat.w;
+        // Compute elapsed time since last goal, clamped to avoid runaway extrapolation
+        double dt = (this->get_clock()->now() - goal_stamp_).seconds();
+        dt = std::clamp(dt, 0.0, 0.1);  // cap at 100ms (safe extrapolation window)
+
+        // Extrapolate position: p = p0 + v*dt + 0.5*a*dt^2
+        Eigen::Vector3d p_interp = goal_pos_ + goal_vel_ * dt + 0.5 * goal_acc_ * dt * dt;
+
+        t_.transform.translation.x = p_interp.x();
+        t_.transform.translation.y = p_interp.y();
+        t_.transform.translation.z = p_interp.z();
+
+        t_.transform.rotation.x = goal_quat_.x();
+        t_.transform.rotation.y = goal_quat_.y();
+        t_.transform.rotation.z = goal_quat_.z();
+        t_.transform.rotation.w = goal_quat_.w();
     }
 
     void publishOdometry()
@@ -353,8 +405,8 @@ private:
 
     void pubCallback()
     {
-        // Publish the transform
-        getTransformStamped();
+        // Compute interpolated transform (extrapolates between planner updates)
+        getInterpolatedTransform();
         br_.sendTransform(t_);
 
         // Publish odometry (optional)
@@ -363,7 +415,7 @@ private:
             publishOdometry();
         }
 
-        // Publish drone marker
+        // Publish drone marker using interpolated position
         if (publish_marker_drone_)
         {
             pub_marker_drone_->publish(getDroneMarker());
@@ -390,13 +442,14 @@ private:
         marker.type = marker.MESH_RESOURCE;
         marker.action = marker.ADD;
 
-        marker.pose.position.x = state_.pos.x;
-        marker.pose.position.y = state_.pos.y;
-        marker.pose.position.z = state_.pos.z;
-        marker.pose.orientation.x = state_.quat.x;
-        marker.pose.orientation.y = state_.quat.y;
-        marker.pose.orientation.z = state_.quat.z;
-        marker.pose.orientation.w = state_.quat.w;
+        // Use the interpolated position from the TF transform
+        marker.pose.position.x = t_.transform.translation.x;
+        marker.pose.position.y = t_.transform.translation.y;
+        marker.pose.position.z = t_.transform.translation.z;
+        marker.pose.orientation.x = t_.transform.rotation.x;
+        marker.pose.orientation.y = t_.transform.rotation.y;
+        marker.pose.orientation.z = t_.transform.rotation.z;
+        marker.pose.orientation.w = t_.transform.rotation.w;
 
         marker.mesh_use_embedded_materials = true;
         marker.mesh_resource = "package://dynus/meshes/quadrotor/quadrotor.dae";

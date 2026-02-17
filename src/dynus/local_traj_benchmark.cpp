@@ -85,6 +85,13 @@ struct BenchResult
     bool a_violated{false};
     bool j_violated{false};
 
+    // Per-sample violation counts (for rate = count / total * 100)
+    int corridor_violation_count{0};
+    int v_violation_count{0};
+    int a_violation_count{0};
+    int j_violation_count{0};
+    int violation_total_samples{0};
+
     // -------- Smoothness metrics (sampled at dt=dc; jerk via finite-diff of accel) --------
     // S_jerk    = ∫_0^T ||j(t)|| dt
     // Sbar_jerk = sqrt( (1/T) ∫_0^T ||j(t)||^2 dt )   (RMS jerk; time-normalized)
@@ -375,6 +382,13 @@ struct ConstraintReport
     bool a_violated{false};
     bool j_violated{false};
 
+    // Per-sample violation counts (for rate = count / total * 100)
+    int corridor_violation_count{0};
+    int v_violation_count{0};
+    int a_violation_count{0};
+    int j_violation_count{0};
+    int violation_total_samples{0};
+
     // -------- Smoothness metrics (sampled at dt=dc; jerk via finite-diff of accel) --------
     // S_jerk    = ∫_0^T ||j(t)|| dt
     // Sbar_jerk = sqrt( (1/T) ∫_0^T ||j(t)||^2 dt )   (RMS jerk; time-normalized)
@@ -431,6 +445,9 @@ static ConstraintReport analyzeConstraintsSampled(
                     best_idx = i;
                 }
             }
+
+            if (best > corridor_tol)
+                ++rep.corridor_violation_count;
 
             if (best > worst)
             {
@@ -527,6 +544,8 @@ static ConstraintReport analyzeConstraintsSampled(
         const double vcomp_max = maxAbsComponent(vel[k]);
         vmax_obs = std::max(vmax_obs, vcomp_max);
         const double vex = vcomp_max - (v_max + buf);
+        if (vex > dyn_tol)
+            ++rep.v_violation_count;
         if (vex > vmax_ex)
         {
             vmax_ex = vex;
@@ -536,6 +555,8 @@ static ConstraintReport analyzeConstraintsSampled(
         const double acomp_max = maxAbsComponent(acc[k]);
         amax_obs = std::max(amax_obs, acomp_max);
         const double aex = acomp_max - (a_max + buf);
+        if (aex > dyn_tol)
+            ++rep.a_violation_count;
         if (aex > amax_ex)
         {
             amax_ex = aex;
@@ -545,12 +566,16 @@ static ConstraintReport analyzeConstraintsSampled(
         const double jcomp_max = maxAbsComponent(jerk[k]);
         jmax_obs = std::max(jmax_obs, jcomp_max);
         const double jex = jcomp_max - (j_max + buf);
+        if (jex > dyn_tol)
+            ++rep.j_violation_count;
         if (jex > jmax_ex)
         {
             jmax_ex = jex;
             jmax_t = t;
         }
     }
+
+    rep.violation_total_samples = static_cast<int>(samples.size());
 
     rep.v_max_observed = vmax_obs;
     rep.v_max_excess = std::max(0.0, vmax_ex);
@@ -1083,6 +1108,12 @@ private:
             out.a_violated = rep.a_violated;
             out.j_violated = rep.j_violated;
 
+            out.corridor_violation_count = rep.corridor_violation_count;
+            out.v_violation_count = rep.v_violation_count;
+            out.a_violation_count = rep.a_violation_count;
+            out.j_violation_count = rep.j_violation_count;
+            out.violation_total_samples = rep.violation_total_samples;
+
             out.jerk_smoothness_l1 = rep.jerk_smoothness_l1;
             out.jerk_rms = rep.jerk_rms;
 
@@ -1584,6 +1615,7 @@ private:
                "v_max_observed,v_max_excess,v_t_at_max,v_violated,"
                "a_max_observed,a_max_excess,a_t_at_max,a_violated,"
                "j_max_observed,j_max_excess,j_t_at_max,j_violated,"
+               "corridor_violation_count,v_violation_count,a_violation_count,j_violation_count,violation_total_samples,"
                "jerk_smoothness_l1,jerk_rms,"
                "traj_length_m,"
                "start_x,start_y,start_z,goal_x,goal_y,goal_z\n";
@@ -1619,6 +1651,11 @@ private:
                 << r.j_max_excess << ","
                 << r.j_t_at_max << ","
                 << (r.j_violated ? 1 : 0) << ","
+                << r.corridor_violation_count << ","
+                << r.v_violation_count << ","
+                << r.a_violation_count << ","
+                << r.j_violation_count << ","
+                << r.violation_total_samples << ","
                 << r.jerk_smoothness_l1 << ","
                 << r.jerk_rms << ","
                 << r.traj_length_m << ","

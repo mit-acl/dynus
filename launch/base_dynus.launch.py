@@ -61,7 +61,6 @@ def generate_launch_description():
             'empty': 'empty.world',
             'hospital': 'hospital.world',
             'easy_forest': 'easy_forest.world',
-            'easy_high_forest': 'easy_high_forest.world',
             'medium_forest': 'medium_forest.world',
             'hard_forest': 'hard_forest.world',
             'dynamic_forest': 'dynamic_forest.world',

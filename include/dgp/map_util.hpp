@@ -189,24 +189,28 @@ namespace dynus
           for (int dz = -m; dz <= m; ++dz)
             offsets.emplace_back(dx, dy, dz);
 
-      // 6) Helpers for clamping & indexing
-      auto clamp_idx = [&](int v, int M)
-      { return std::clamp(v, 0, M - 1); };
+      // 6) Helpers for indexing
       auto idx3 = [&](int x, int y, int z)
       {
         return size_t(x) + size_t(dimX) * y + size_t(dimX) * size_t(dimY) * z;
       };
 
-// 7) Rasterize & inflate, skipping points outside z-bounds
+// 7) Rasterize & inflate, skipping points outside grid bounds
 #pragma omp parallel for schedule(dynamic)
       for (size_t i = 0; i < cloud->points.size(); ++i)
       {
         const auto &P = cloud->points[i];
         if (P.z < z_ground || P.z > z_max)
           continue;
-        int xi = clamp_idx(int(std::floor((P.x - origin.x()) / res_)), dimX);
-        int yi = clamp_idx(int(std::floor((P.y - origin.y()) / res_)), dimY);
-        int zi = clamp_idx(int(std::floor((P.z - origin.z()) / res_)), dimZ);
+
+        // Compute grid indices and SKIP (not clamp) points outside the grid.
+        // Clamping would project distant obstacles onto grid boundaries,
+        // creating false occupied voxels that move with the sliding window.
+        int xi = int(std::floor((P.x - origin.x()) / res_));
+        int yi = int(std::floor((P.y - origin.y()) / res_));
+        int zi = int(std::floor((P.z - origin.z()) / res_));
+        if (xi < 0 || xi >= dimX || yi < 0 || yi >= dimY || zi < 0 || zi >= dimZ)
+          continue;
 
         // mark occupied
         map_[idx3(xi, yi, zi)] = val_occ_;
@@ -356,6 +360,29 @@ namespace dynus
                     mark_dyn_occ(lin);
                   }
                 }
+              }
+            }
+          }
+        }
+      }
+
+      // 8b) Mark boundary walls — keep planner away from global y/z limits
+      //     so SFC corridors have room to expand.
+      {
+        const float buf = inflation;  // reuse the inflation radius as boundary buffer
+        for (int ix = 0; ix < dimX; ++ix)
+        {
+          const float wx = origin.x() + (ix + 0.5f) * res_;
+          for (int iy = 0; iy < dimY; ++iy)
+          {
+            const float wy = origin.y() + (iy + 0.5f) * res_;
+            for (int iz = 0; iz < dimZ; ++iz)
+            {
+              const float wz = origin.z() + (iz + 0.5f) * res_;
+              if (wy <= y_map_min_ + buf || wy >= y_map_max_ - buf ||
+                  wz <= z_map_min_ + buf || wz >= z_map_max_ - buf)
+              {
+                map_[idx3(ix, iy, iz)] = val_occ_;
               }
             }
           }

@@ -896,17 +896,30 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
   sub_goal.push_back(local_G.pos[1]);
   sub_goal.push_back(local_G.pos[2]);
 
-  // Pre-compute convex decomposition if environment is static
+  // Pre-compute convex decomposition if environment is static or dynamic_worst_case
   std::vector<LinearConstraint3D> shared_spatial_constraints;
   vec_E<Polyhedron<3>> shared_spatial_poly_out;
-  bool use_precomputed_constraints = (par_.environment_assumption == "static");
+  bool use_precomputed_constraints = (par_.environment_assumption == "static" ||
+                                       par_.environment_assumption == "dynamic_worst_case");
 
   if (use_precomputed_constraints)
   {
-    // For static environment, use spatial-only decomposition (not time-layered)
-    // Compute seg_end_times based on worst-case trajectory time per spatial segment
     const size_t P = (global_path.size() >= 2) ? (global_path.size() - 1) : 0;
-    std::vector<double> seg_end_times = computeWorstSegEndTimesPoly(initial_dt, factors_[0], P);
+
+    std::vector<double> seg_end_times;
+    if (par_.environment_assumption == "dynamic_worst_case")
+    {
+      // Worst-case inflation: set ALL segment end times to the maximum possible time horizon
+      // across all factor threads. This inflates every obstacle by obst_max_vel * max_time,
+      // producing the most conservative corridors (ablation baseline).
+      const double max_time_horizon = static_cast<double>(par_.num_N) * initial_dt * factors_.back();
+      seg_end_times.assign(P, max_time_horizon);
+    }
+    else
+    {
+      // Static environment: compute seg_end_times based on worst-case trajectory time per spatial segment
+      seg_end_times = computeWorstSegEndTimesPoly(initial_dt, factors_[0], P);
+    }
 
     // Run spatial convex decomposition once before threading
     if (!dgp_manager_.cvxEllipsoidDecomp(

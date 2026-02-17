@@ -22,6 +22,7 @@ Usage:
 
 import argparse
 import glob
+import re
 import sys
 from pathlib import Path
 from typing import List, Dict, Tuple
@@ -105,16 +106,19 @@ def load_benchmark_data(data_pattern: str) -> pd.DataFrame:
     # Handle directory input
     data_path = Path(data_pattern)
     if data_path.is_dir():
-        # Look for benchmark_default_*.csv files in directory (exclude benchmark_summary.csv)
-        pattern = str(data_path / "benchmark_default_*.csv")
+        # Look for benchmark_*.csv files in directory (any config name prefix)
+        pattern = str(data_path / "benchmark_*.csv")
     else:
         pattern = data_pattern
 
     csv_files = glob.glob(pattern)
 
+    # Filter out summary files
+    csv_files = [f for f in csv_files if 'summary' not in Path(f).name.lower()]
+
     if not csv_files:
         print(f"ERROR: No CSV files found matching: {pattern}")
-        print(f"       Make sure you're pointing to a directory with benchmark_default_*.csv files")
+        print(f"       Make sure you're pointing to a directory with benchmark_*.csv files")
         sys.exit(1)
 
     # Filter out any summary files that might match
@@ -217,6 +221,205 @@ def load_computation_data(data_dir: Path) -> dict:
     return computation_stats
 
 
+def recompute_metrics_from_bag(bag_path: Path, goal_pos: Tuple[float, float, float],
+                               start_pos: Tuple[float, float, float] = (0.0, 0.0, 2.0),
+                               dist_threshold: float = 0.5,
+                               speed_threshold: float = 0.1) -> Dict:
+    """Recompute travel time and path length from rosbag /NX01/goal messages.
+
+    Travel time: from first Goal command to first timestamp where
+    distance to goal < dist_threshold AND speed < speed_threshold.
+
+    Path length: sum of Euclidean distances between consecutive positions,
+    computed only up to goal arrival. If the bag recording started late
+    (first position far from known start), the gap distance is prepended.
+
+    Args:
+        bag_path: Path to rosbag directory
+        goal_pos: Goal position (x, y, z)
+        start_pos: Known start position (x, y, z) for gap detection
+        dist_threshold: Distance to goal to consider reached (m)
+        speed_threshold: Speed threshold to consider stopped (m/s)
+
+    Returns:
+        Dict with 'travel_time' and 'path_length' (None values if goal not reached)
+    """
+    default_result = {'travel_time': None, 'path_length': None}
+
+    if not HAS_ROSBAG:
+        print(f"    Warning: Cannot read bag {bag_path}, rosbag2_py not available")
+        return default_result
+
+    if not bag_path.exists():
+        print(f"    Warning: Bag not found at {bag_path}")
+        return default_result
+
+    # Setup bag reader
+    storage_options = StorageOptions(uri=str(bag_path), storage_id='sqlite3')
+    converter_options = ConverterOptions(input_serialization_format='cdr', output_serialization_format='cdr')
+
+    reader = SequentialReader()
+    reader.open(storage_options, converter_options)
+
+    goal_msg_type = get_message('dynus_interfaces/msg/Goal')
+
+    timestamps = []
+    positions = []
+    velocities = []
+
+    while reader.has_next():
+        (topic, data, t) = reader.read_next()
+        if topic == '/NX01/goal':
+            msg = deserialize_message(data, goal_msg_type)
+            timestamps.append(t / 1e9)  # Convert to seconds
+            positions.append((msg.p.x, msg.p.y, msg.p.z))
+            velocities.append((msg.v.x, msg.v.y, msg.v.z))
+
+    del reader
+
+    if len(timestamps) == 0:
+        print(f"    Warning: No /NX01/goal messages found in bag")
+        return default_result
+
+    # Detect incomplete bag: check if first recorded position is far from known start
+    sx, sy, sz = start_pos
+    first_pos = positions[0]
+    gap_dist = math.sqrt((first_pos[0] - sx)**2 + (first_pos[1] - sy)**2 + (first_pos[2] - sz)**2)
+
+    has_gap = gap_dist > 0.5
+    if has_gap:
+        print(f"    Note: Bag starts {gap_dist:.1f}m from start (gap detected)")
+
+    # Find first movement index (vel > 0.01 m/s)
+    move_start_idx = 0
+    for i in range(len(velocities)):
+        vx, vy, vz = velocities[i]
+        speed = math.sqrt(vx*vx + vy*vy + vz*vz)
+        if speed > 0.01:
+            move_start_idx = i
+            break
+
+    # Find goal arrival index
+    gx, gy, gz = goal_pos
+    goal_idx = None
+    for i in range(len(timestamps)):
+        px, py, pz = positions[i]
+        vx, vy, vz = velocities[i]
+        dist_to_goal = math.sqrt((px - gx)**2 + (py - gy)**2 + (pz - gz)**2)
+        speed = math.sqrt(vx*vx + vy*vy + vz*vz)
+        if dist_to_goal < dist_threshold and speed < speed_threshold:
+            goal_idx = i
+            break
+
+    # Compute path length up to goal arrival (or end of bag if goal not reached)
+    end_idx = goal_idx if goal_idx is not None else len(positions) - 1
+    path_length = gap_dist  # prepend gap from start to first recorded position
+    for i in range(1, end_idx + 1):
+        dx = positions[i][0] - positions[i-1][0]
+        dy = positions[i][1] - positions[i-1][1]
+        dz = positions[i][2] - positions[i-1][2]
+        path_length += math.sqrt(dx*dx + dy*dy + dz*dz)
+
+    # Compute travel time from first movement to goal arrival
+    # For gap bags, travel_time is unreliable (gap time estimation is inaccurate
+    # due to acceleration), so return None to keep the original CSV value
+    if has_gap:
+        travel_time = None  # keep original CSV value for gap bags
+        if goal_idx is None:
+            print(f"    Warning: Goal not reached in bag (dist_threshold={dist_threshold}m, speed_threshold={speed_threshold}m/s)")
+    elif goal_idx is not None:
+        travel_time = timestamps[goal_idx] - timestamps[move_start_idx]
+    else:
+        travel_time = None
+        print(f"    Warning: Goal not reached in bag (dist_threshold={dist_threshold}m, speed_threshold={speed_threshold}m/s)")
+
+    return {'travel_time': travel_time, 'path_length': path_length}
+
+
+def recompute_violations_from_bag(bag_path: Path, vel_limit: float = 5.0,
+                                   acc_limit: float = 20.0, jerk_limit: float = 100.0,
+                                   tolerance: float = 1e-3) -> Dict:
+    """Recompute constraint violation counts from rosbag /NX01/goal messages.
+
+    Uses Linf norm: a violation at a single timestep occurs when ANY axis
+    component exceeds the limit + tolerance.
+
+    Args:
+        bag_path: Path to rosbag directory
+        vel_limit: Velocity limit (m/s)
+        acc_limit: Acceleration limit (m/s^2)
+        jerk_limit: Jerk limit (m/s^3)
+        tolerance: Tolerance added to limits before flagging violation
+
+    Returns:
+        Dict with vel_violation_count, vel_total, acc_violation_count, acc_total,
+        jerk_violation_count, jerk_total
+    """
+    default_result = {
+        'vel_violation_count': 0, 'vel_total': 0,
+        'acc_violation_count': 0, 'acc_total': 0,
+        'jerk_violation_count': 0, 'jerk_total': 0,
+    }
+
+    if not HAS_ROSBAG:
+        print(f"    Warning: Cannot read bag {bag_path}, rosbag2_py not available")
+        return default_result
+
+    if not bag_path.exists():
+        print(f"    Warning: Bag not found at {bag_path}")
+        return default_result
+
+    # Setup bag reader
+    storage_options = StorageOptions(uri=str(bag_path), storage_id='sqlite3')
+    converter_options = ConverterOptions(input_serialization_format='cdr', output_serialization_format='cdr')
+
+    reader = SequentialReader()
+    reader.open(storage_options, converter_options)
+
+    goal_msg_type = get_message('dynus_interfaces/msg/Goal')
+
+    vel_violation_count = 0
+    acc_violation_count = 0
+    jerk_violation_count = 0
+    total_samples = 0
+
+    while reader.has_next():
+        (topic, data, t) = reader.read_next()
+        if topic == '/NX01/goal':
+            msg = deserialize_message(data, goal_msg_type)
+            total_samples += 1
+
+            # Velocity: Linf check
+            vx, vy, vz = abs(msg.v.x), abs(msg.v.y), abs(msg.v.z)
+            if max(vx, vy, vz) > vel_limit + tolerance:
+                vel_violation_count += 1
+
+            # Acceleration: Linf check
+            ax, ay, az = abs(msg.a.x), abs(msg.a.y), abs(msg.a.z)
+            if max(ax, ay, az) > acc_limit + tolerance:
+                acc_violation_count += 1
+
+            # Jerk: Linf check
+            jx, jy, jz = abs(msg.j.x), abs(msg.j.y), abs(msg.j.z)
+            if max(jx, jy, jz) > jerk_limit + tolerance:
+                jerk_violation_count += 1
+
+    del reader
+
+    if total_samples == 0:
+        print(f"    Warning: No /NX01/goal messages found in bag for violation analysis")
+        return default_result
+
+    return {
+        'vel_violation_count': vel_violation_count,
+        'vel_total': total_samples,
+        'acc_violation_count': acc_violation_count,
+        'acc_total': total_samples,
+        'jerk_violation_count': jerk_violation_count,
+        'jerk_total': total_samples,
+    }
+
+
 def analyze_collision_from_bag(bag_path: Path, drone_bbox: Tuple[float, float, float]) -> Dict:
     """Analyze collisions from rosbag data
 
@@ -290,8 +493,7 @@ def analyze_collision_from_bag(bag_path: Path, drone_bbox: Tuple[float, float, f
 
     print(f"    Loaded {len(agent_positions)} agent positions, {len(obstacle_data)} obstacles")
 
-    # Collision checking
-    drone_hx, drone_hy, drone_hz = drone_bbox
+    # Collision checking (point mass - no drone bounding box)
     # NOTE: URDF has collision box at 1.0m but visual mesh scaled to 0.8m
     # The /tf frames come from the visual center, so we use visual size (0.8m)
     # This matches what's published in /tf and what the user sees
@@ -304,8 +506,6 @@ def analyze_collision_from_bag(bag_path: Path, drone_bbox: Tuple[float, float, f
 
     for i, (t, px, py, pz) in enumerate(zip(agent_times, agent_positions[:, 0],
                                               agent_positions[:, 1], agent_positions[:, 2])):
-        drone_bbox_obj = BoundingBox.from_center_and_half_extents(px, py, pz, drone_hx, drone_hy, drone_hz)
-
         segment_collision_free = True
         for obs_id, obs_data in obstacle_data.items():
             # Interpolate obstacle position at this time
@@ -342,12 +542,10 @@ def analyze_collision_from_bag(bag_path: Path, drone_bbox: Tuple[float, float, f
                     'axis_distances': (dist_x, dist_y, dist_z)
                 }
 
-            # Check for collision using bounding boxes
-            obs_bbox = BoundingBox.from_center_and_half_extents(
-                obs_pos[0], obs_pos[1], obs_pos[2],
-                obs_half_extents[0], obs_half_extents[1], obs_half_extents[2]
-            )
-            if drone_bbox_obj.intersects(obs_bbox):
+            # Check for collision: point mass inside obstacle AABB
+            if (obs_pos[0] - obs_half_extents[0] <= px <= obs_pos[0] + obs_half_extents[0] and
+                obs_pos[1] - obs_half_extents[1] <= py <= obs_pos[1] + obs_half_extents[1] and
+                obs_pos[2] - obs_half_extents[2] <= pz <= obs_pos[2] + obs_half_extents[2]):
                 segment_collision_free = False
                 collisions += 1
 
@@ -377,7 +575,128 @@ def analyze_collision_from_bag(bag_path: Path, drone_bbox: Tuple[float, float, f
         print(f"      Closest point on obstacle: ({closest_pt[0]:.2f}, {closest_pt[1]:.2f}, {closest_pt[2]:.2f})")
         print(f"      Euclidean distance: {gap_cm:.1f}cm")
         print(f"      Distance per axis: X={dist_x*100:.1f}cm, Y={dist_y*100:.1f}cm, Z={dist_z*100:.1f}cm")
-        print(f"      Note: Point-to-AABB distance from drone center to {obs_size*100:.0f}cm obstacle surface.")
+        print(f"      Note: Point mass (no drone bbox) distance to {obs_size*100:.0f}cm obstacle surface.")
+    return result
+
+
+def analyze_collision_from_static_obstacles(bag_path: Path, drone_bbox: Tuple[float, float, float],
+                                             obstacle_csv_path: Path) -> Dict:
+    """Analyze collisions against static cylindrical obstacles from CSV
+
+    Args:
+        bag_path: Path to rosbag directory
+        drone_bbox: Drone half-extents (hx, hy, hz)
+        obstacle_csv_path: Path to obstacle parameters CSV file
+
+    Returns:
+        Dictionary with collision statistics
+    """
+    default_result = {'collision_count': 0, 'min_distance': float('inf'),
+                      'collision_free_ratio': 1.0, 'unique_obstacles': 0}
+
+    if not HAS_ROSBAG:
+        print(f"  Warning: Cannot analyze bag {bag_path}, rosbag2_py not available")
+        return default_result
+
+    if not bag_path.exists():
+        print(f"  Warning: Bag not found at {bag_path}")
+        return default_result
+
+    if not obstacle_csv_path.exists():
+        print(f"  Warning: Obstacle CSV not found at {obstacle_csv_path}")
+        return default_result
+
+    print(f"  Analyzing static collisions from bag: {bag_path.name}")
+
+    # Load obstacles from CSV
+    obs_df = pd.read_csv(obstacle_csv_path)
+    obstacles = []
+    for _, row in obs_df.iterrows():
+        obstacles.append({
+            'id': int(row['id']),
+            'x': float(row['x']),
+            'y': float(row['y']),
+            'z': float(row['z']),
+            'radius': float(row['radius']),
+            'height': float(row['height']),
+        })
+    print(f"    Loaded {len(obstacles)} static obstacles from {obstacle_csv_path.name}")
+
+    # Read drone trajectory from bag
+    storage_options = StorageOptions(uri=str(bag_path), storage_id='sqlite3')
+    converter_options = ConverterOptions(input_serialization_format='cdr', output_serialization_format='cdr')
+
+    reader = SequentialReader()
+    reader.open(storage_options, converter_options)
+
+    goal_msg_type = get_message('dynus_interfaces/msg/Goal')
+    agent_trajectory = []
+
+    while reader.has_next():
+        (topic, data, t) = reader.read_next()
+        if topic == '/NX01/goal':
+            msg = deserialize_message(data, goal_msg_type)
+            agent_trajectory.append((msg.p.x, msg.p.y, msg.p.z))
+
+    del reader
+
+    if len(agent_trajectory) == 0:
+        print(f"    Warning: No agent trajectory found in bag")
+        return default_result
+
+    print(f"    Loaded {len(agent_trajectory)} agent positions")
+
+    # Collision checking: drone as point mass vs cylinders
+    # drone_radius = 0 (point mass assumption)
+    collisions = 0
+    collision_free_segments = 0
+    min_distance = float('inf')
+    obstacles_hit = set()
+
+    for px, py, pz in agent_trajectory:
+        segment_collision_free = True
+
+        for obs in obstacles:
+            cx, cy, cz = obs['x'], obs['y'], obs['z']
+            radius = obs['radius']
+            height = obs['height']
+
+            # Horizontal distance from point to cylinder center
+            horiz_dist = math.sqrt((px - cx)**2 + (py - cy)**2)
+            horiz_clearance = horiz_dist - radius
+
+            # Vertical extent check (point vs cylinder)
+            obs_z_min = cz - height / 2.0
+            obs_z_max = cz + height / 2.0
+
+            vert_inside = pz > obs_z_min and pz < obs_z_max
+
+            # Track minimum horizontal clearance (clamped to 0)
+            dist = max(0.0, horiz_clearance)
+            if dist < min_distance:
+                min_distance = dist
+
+            # Collision: point inside cylinder (horizontal AND vertical)
+            if horiz_clearance < 0 and vert_inside:
+                segment_collision_free = False
+                collisions += 1
+                obstacles_hit.add(obs['id'])
+
+        if segment_collision_free:
+            collision_free_segments += 1
+
+    total_segments = len(agent_trajectory)
+    collision_free_ratio = collision_free_segments / total_segments if total_segments > 0 else 1.0
+
+    result = {
+        'collision_count': collisions,
+        'min_distance': min_distance if min_distance != float('inf') else 0.0,
+        'collision_free_ratio': collision_free_ratio,
+        'unique_obstacles': len(obstacles_hit),
+    }
+
+    print(f"    Collisions: {collisions}, Unique obstacles hit: {len(obstacles_hit)}, "
+          f"Min distance: {result['min_distance']:.3f}m, Collision-free ratio: {collision_free_ratio:.3f}")
     return result
 
 
@@ -402,20 +721,68 @@ def merge_computation_data(df: pd.DataFrame, computation_stats: dict) -> pd.Data
     return df
 
 
-def compute_statistics(df: pd.DataFrame) -> dict:
-    """Compute comprehensive statistics from benchmark data"""
+def compute_statistics(df: pd.DataFrame, require_collision_free: bool = True) -> dict:
+    """Compute comprehensive statistics from benchmark data
+
+    Args:
+        df: Benchmark dataframe
+        require_collision_free: Legacy parameter, no longer used.
+                                Success ALWAYS requires goal_reached AND collision_count==0.
+    """
 
     stats = {}
 
     # Total trials
     stats['total_trials'] = len(df)
 
-    # Success metrics - success = goal reached AND collision-free
-    stats['success_rate'] = ((df['goal_reached']) & (df['collision_count'] == 0)).mean() * 100  # percentage
+    # Treat trials with flight_travel_time > 50s as timeout/failure
+    TIMEOUT_THRESHOLD = 100.0
+    if 'flight_travel_time' in df.columns:
+        over_timeout = df['flight_travel_time'] > TIMEOUT_THRESHOLD
+        n_over = over_timeout.sum()
+        if n_over > 0:
+            print(f"  Marking {n_over} trial(s) with flight_travel_time > {TIMEOUT_THRESHOLD}s as timeout/failure")
+            df.loc[over_timeout, 'goal_reached'] = False
+            df.loc[over_timeout, 'timeout_reached'] = True
+
+    # Success metrics: always require goal_reached AND collision_free
+    stats['success_rate'] = ((df['goal_reached']) & (df['collision_count'] == 0)).mean() * 100
     stats['timeout_rate'] = df['timeout_reached'].mean() * 100
     stats['collision_rate'] = df['collision'].mean() * 100
 
-    # Filter successful trials for performance metrics (goal reached AND collision-free)
+    # Collision metrics (computed on ALL trials, before filtering for success)
+    if 'collision_count' in df.columns:
+        stats['collision_count_total'] = int(df['collision_count'].sum())
+        stats['collision_count_mean'] = df['collision_count'].mean()
+
+        # Collision-free ratio
+        stats['collision_free_rate'] = (df['collision_count'] == 0).mean() * 100
+
+        # Among trials with collisions
+        trials_with_coll = df[df['collision_count'] > 0]
+        if len(trials_with_coll) > 0:
+            if 'collision_penetration_max' in trials_with_coll.columns:
+                stats['collision_penetration_max_avg'] = trials_with_coll['collision_penetration_max'].mean()
+            if 'collision_unique_obstacles' in trials_with_coll.columns:
+                stats['collision_unique_obstacles_avg'] = trials_with_coll['collision_unique_obstacles'].mean()
+
+    # Minimum distance to obstacles (computed on ALL trials)
+    if 'min_distance_to_obstacles' in df.columns:
+        values = df['min_distance_to_obstacles'].dropna()
+        # Filter out inf values
+        values = values[values != float('inf')]
+        if len(values) > 0:
+            stats['min_distance_to_obstacles_min'] = values.min()
+            stats['min_distance_to_obstacles_max'] = values.max()
+            stats['min_distance_to_obstacles_mean'] = values.mean()
+            stats['min_distance_to_obstacles_std'] = values.std()
+        else:
+            stats['min_distance_to_obstacles_mean'] = 'N/A'
+    else:
+        stats['min_distance_to_obstacles_mean'] = 'N/A (not tracked)'
+
+    # Filter successful trials for performance metrics
+    # Always require goal_reached AND collision_free
     successful = df[(df['goal_reached'] == True) & (df['collision_count'] == 0)]
     n_success = len(successful)
 
@@ -477,52 +844,27 @@ def compute_statistics(df: pd.DataFrame) -> dict:
 
     # Constraint violations (rates among successful trials)
     for viol_type in ['sfc', 'vel', 'acc', 'jerk']:
-        col = f'{viol_type}_violation_count'
-        if col in successful.columns:
-            # Rate of trials with violations
-            viol_rate = (successful[col] > 0).mean() * 100
+        count_col = f'{viol_type}_violation_count'
+        total_col = f'{viol_type}_violation_total'
+        if count_col in successful.columns and total_col in successful.columns:
+            total_violations = successful[count_col].sum()
+            total_samples = successful[total_col].sum()
+            if total_samples > 0:
+                viol_rate = total_violations / total_samples * 100.0
+            else:
+                viol_rate = 0.0
             stats[f'{viol_type}_violation_rate'] = viol_rate
 
             # Average count when violations occur
-            trials_with_viol = successful[successful[col] > 0]
+            trials_with_viol = successful[successful[count_col] > 0]
             if len(trials_with_viol) > 0:
-                stats[f'{viol_type}_violation_avg_count'] = trials_with_viol[col].mean()
-
-    # Collision metrics
-    if 'collision_count' in df.columns:
-        stats['collision_count_total'] = df['collision_count'].sum()
-        stats['collision_count_mean'] = df['collision_count'].mean()
-
-        # Collision-free ratio
-        stats['collision_free_rate'] = (df['collision_count'] == 0).mean() * 100
-
-        # Among trials with collisions
-        trials_with_coll = df[df['collision_count'] > 0]
-        if len(trials_with_coll) > 0:
-            stats['collision_penetration_max_avg'] = trials_with_coll['collision_penetration_max'].mean()
-            stats['collision_unique_obstacles_avg'] = trials_with_coll['collision_unique_obstacles'].mean()
+                stats[f'{viol_type}_violation_avg_count'] = trials_with_viol[count_col].mean()
 
     # Number of replans
     if 'num_replans' in successful.columns:
         values = successful['num_replans'].dropna()
         if len(values) > 0:
             stats['num_replans_mean'] = values.mean()
-
-    # Minimum distance to obstacles
-    if 'min_distance_to_obstacles' in df.columns:
-        # Use all trials (not just successful) for minimum distance
-        values = df['min_distance_to_obstacles'].dropna()
-        # Filter out inf values
-        values = values[values != float('inf')]
-        if len(values) > 0:
-            stats['min_distance_to_obstacles_min'] = values.min()
-            stats['min_distance_to_obstacles_max'] = values.max()
-            stats['min_distance_to_obstacles_mean'] = values.mean()
-            stats['min_distance_to_obstacles_std'] = values.std()
-        else:
-            stats['min_distance_to_obstacles_mean'] = 'N/A'
-    else:
-        stats['min_distance_to_obstacles_mean'] = 'N/A (not tracked)'
 
     return stats
 
@@ -640,65 +982,91 @@ def save_statistics_csv(stats: dict, output_path: Path):
     print(f"✓ Statistics saved to CSV: {output_path}")
 
 
-def generate_latex_table(stats: dict, config_name: str = "default", case_name: str = "Unknown", existing_file: Path = None) -> str:
-    """Generate LaTeX table with benchmark results, updating only matching case+DYNUS row if table exists"""
+def generate_latex_table(stats: dict, config_name: str = "default", case_name: str = "Unknown",
+                         existing_file: Path = None, table_type: str = 'dynamic') -> str:
+    """Generate LaTeX table with benchmark results, updating only matching case+DYNUS row if table exists.
 
-    # Compute DYNUS row data
+    Args:
+        stats: Dictionary of computed statistics
+        config_name: Configuration name for caption
+        case_name: Case name (Easy, Medium, Hard)
+        existing_file: Path to existing .tex file to update in-place
+        table_type: 'dynamic' for dynamic obstacle table, 'static' for static forest table
+    """
+
+    # Common stats
     success_rate = stats.get('success_rate', 0)
-    per_opt_time = stats.get('avg_local_traj_time_mean', 0)
     travel_time = stats.get('flight_travel_time_mean', 0)
     path_length = stats.get('path_length_mean', 0)
     jerk_integral = stats.get('jerk_integral_mean', 0)
-    min_distance = stats.get('min_distance_to_obstacles_mean', 0)
     vel_viol = stats.get('vel_violation_rate', 0)
     acc_viol = stats.get('acc_violation_rate', 0)
     jerk_viol = stats.get('jerk_violation_rate', 0)
 
-    # Format min_distance properly
-    if isinstance(min_distance, str):
-        min_dist_str = min_distance
+    if table_type == 'static':
+        # Static table columns: Env & Algorithm & Constr(2cols) & R_succ & T_opt_total & T_replan_total & T_trav & L_path & S_jerk & rho_vel & rho_acc & rho_jerk
+        total_opt_time = stats.get('avg_local_traj_time_mean', 0)
+        total_replan_time = stats.get('avg_replanning_time_mean', 0)
+
+        # Format 9 data values (after Constr. columns)
+        data_values = (f"{{{success_rate:.1f}}} & {{{total_opt_time:.1f}}} & {{{total_replan_time:.1f}}} & "
+                       f"\\best{{{travel_time:.1f}}} & {{{path_length:.1f}}} & \\best{{{jerk_integral:.1f}}} & "
+                       f"{{{vel_viol:.1f}}} & {{{acc_viol:.1f}}} & {{{jerk_viol:.1f}}} \\\\")
+
+        # DYNUS row (5th in block, no multirow): 2 constraint columns
+        dynus_row = f"       & DYNUS & Hard & $L_\\infty$ & {data_values}"
     else:
-        min_dist_str = f"{min_distance:.3f}"
+        # Dynamic table columns: Env & Algorithm(2cols) & R_succ & T_per_opt & T_trav & L_path & S_jerk & d_min & rho_vel & rho_acc & rho_jerk
+        per_opt_time = stats.get('avg_local_traj_time_mean', 0)
+        min_distance = stats.get('min_distance_to_obstacles_mean', 0)
+        min_dist_str = min_distance if isinstance(min_distance, str) else f"{min_distance:.2f}"
 
-    # Format data values (9 data columns)
-    data_values = f"{success_rate:.1f} & {per_opt_time:.1f} & " \
-                  f"{travel_time:.1f} & {path_length:.1f} & {jerk_integral:.1f} & {min_dist_str} & " \
-                  f"{vel_viol:.1f} & {acc_viol:.1f} & {jerk_viol:.1f} \\\\"
+        data_values = (f"{success_rate:.1f} & {per_opt_time:.1f} & "
+                       f"{travel_time:.1f} & {path_length:.1f} & {jerk_integral:.1f} & {min_dist_str} & "
+                       f"{vel_viol:.1f} & {acc_viol:.1f} & {jerk_viol:.1f} \\\\")
 
-    # Default row format for new tables (simple: case & algorithm & data)
-    # For first row in case block: \multirow{4}{*}{Case} & DYNUS & data
-    dynus_row = f"      \\multirow{{4}}{{*}}{{{case_name}}} & DYNUS & {data_values}"
+        dynus_row = f"      & \\multicolumn{{2}}{{c}}{{DYNUS}} & {data_values}"
 
-    # Try to update existing table
+    # --- Try to update existing table ---
     if existing_file and existing_file.exists():
         print(f"  Found existing table, updating {case_name} + DYNUS row...")
         try:
             content = existing_file.read_text()
             lines = content.split('\n')
 
-            # Find and replace matching case + DYNUS row
+            # Track which case block we're in by watching for \multirow{...}{...}{CaseName}
             updated_lines = []
             row_updated = False
+            current_case = None
+            valid_cases = {'Easy', 'Medium', 'Hard'}
+
             for line in lines:
                 stripped = line.strip()
 
-                # Skip comments and rules
-                if stripped.startswith('%') or stripped.startswith('\\midrule') or stripped.startswith('\\cmidrule'):
-                    updated_lines.append(line)
-                    continue
+                # Track current case from multirow markers (only environment names, not algorithms)
+                multirow_matches = re.findall(r'\\multirow\{[^}]*\}\{[^}]*\}\{(\w+)\}', line)
+                for match in multirow_matches:
+                    if match in valid_cases:
+                        current_case = match
 
-                # Match: \multirow{4}{*}{Case} & DYNUS & data...
-                # This is the first DYNUS row in a case block
-                if (case_name in line and 'DYNUS' in line and '&' in line and 'multirow' in line):
+                # Case 1: DYNUS row on same line as multirow (old broken dynamic table format)
+                if case_name in line and 'DYNUS' in line and '&' in line and 'multirow' in line:
+                    # Replace with correct format (no multirow, use multicolumn for DYNUS)
                     updated_lines.append(dynus_row)
-                    print(f"  Updated {case_name} + DYNUS row with new data")
+                    print(f"  Updated {case_name} + DYNUS row (fixed multirow→multicolumn format)")
                     row_updated = True
+
+                # Case 2: DYNUS row in a separate line (static table format)
+                elif current_case == case_name and 'DYNUS' in line and '&' in line and '\\\\' in line and 'multirow' not in line:
+                    updated_lines.append(dynus_row)
+                    print(f"  Updated {case_name} + DYNUS row (multi-algorithm format)")
+                    row_updated = True
+
                 else:
                     updated_lines.append(line)
 
             if not row_updated:
-                print(f"  Warning: No matching {case_name} + DYNUS row found, appending new row...")
-                # Find the last data row (before \bottomrule) and insert before it
+                print(f"  Warning: No matching {case_name} + DYNUS row found, appending before \\bottomrule...")
                 for i in range(len(updated_lines) - 1, -1, -1):
                     if '\\bottomrule' in updated_lines[i]:
                         updated_lines.insert(i, dynus_row)
@@ -708,7 +1076,86 @@ def generate_latex_table(stats: dict, config_name: str = "default", case_name: s
         except Exception as e:
             print(f"  Warning: Could not update existing table ({e}), generating new one...")
 
-    # Generate new table if file doesn't exist or update failed
+    # --- Generate new table ---
+    if table_type == 'static':
+        return _generate_new_static_table(case_name, dynus_row, data_values)
+    else:
+        return _generate_new_dynamic_table(case_name, dynus_row, data_values)
+
+
+def _generate_new_static_table(case_name: str, dynus_row: str, data_values: str) -> str:
+    """Generate a new static forest benchmark LaTeX table with competitor placeholders"""
+
+    dashes = "{-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} \\\\"
+
+    cases = ['Easy', 'Medium', 'Hard']
+    latex = []
+    latex.append("\\begin{table*}")
+    latex.append("  \\caption{Benchmark results against state-of-the-art methods in static environments. "
+                 "DYNUS outperforms the other methods in terms of travel time and achieves a 100\\% success rate. "
+                 "Since SUPER performs global path planning for both exploratory and safe trajectories, "
+                 "we list the corresponding computation times as {Exploratory | Safe} in the Global Path Planning Computation Time column.}")
+    latex.append("  \\label{tab:static_benchmark}")
+    latex.append("  \\centering")
+    latex.append("  \\renewcommand{\\arraystretch}{1.2}")
+    latex.append("  \\resizebox{\\textwidth}{!}{")
+    latex.append("    \\begin{tabular}{c c c c c c c c c c c c c}")
+    latex.append("      \\toprule")
+    latex.append("      \\multirow{2}{*}[-0.4ex]{\\textbf{Env}}")
+    latex.append("      & \\multirow{2}{*}[-0.4ex]{\\textbf{Algorithm}}")
+    latex.append("      & \\multicolumn{2}{c}{\\multirow{2}{*}[-0.4ex]{\\textbf{Constr.}}}")
+    latex.append("      & \\multicolumn{1}{c}{\\textbf{Success}}")
+    latex.append("      & \\multicolumn{2}{c}{\\textbf{Computation Time}}")
+    latex.append("      & \\multicolumn{3}{c}{\\textbf{Performance}}")
+    latex.append("      & \\multicolumn{3}{c}{\\textbf{Constraint Violation}}")
+    latex.append("      \\\\")
+    latex.append("      \\cmidrule(lr){5-5}")
+    latex.append("      \\cmidrule(lr){6-7}")
+    latex.append("      \\cmidrule(lr){8-10}")
+    latex.append("      \\cmidrule(lr){11-13}")
+    latex.append("      &&&&")
+    latex.append("      $R_{\\mathrm{succ}}$ [\\%]")
+    latex.append("      & $T^{\\mathrm{total}}_{\\mathrm{opt}}$ [ms]")
+    latex.append("      & $T^{\\mathrm{total}}_{\\mathrm{replan}}$ [ms]")
+    latex.append("      & $T_{\\mathrm{trav}}$ [s]")
+    latex.append("      & $L_{\\mathrm{path}}$ [m]")
+    latex.append("      & $S_{\\mathrm{jerk}}$ [m/s$^{2}$]")
+    latex.append("      & $\\rho_{\\mathrm{vel}}$ [\\%]")
+    latex.append("      & $\\rho_{\\mathrm{acc}}$ [\\%]")
+    latex.append("      & $\\rho_{\\mathrm{jerk}}$ [\\%]")
+    latex.append("      \\\\")
+    latex.append("      \\midrule")
+
+    for i, case in enumerate(cases):
+        if i > 0:
+            latex.append("")
+            latex.append("      \\midrule")
+            latex.append("")
+
+        # 5 rows per env: EGO-Swarm2, SUPER (L2), SUPER (Linf), FASTER, DYNUS
+        latex.append(f"      \\multirow{{5}}{{*}}{{{case}}} & EGO-Swarm2 & Soft & $L_\\infty$ & {dashes}")
+        latex.append(f"       & \\multirow{{2}}{{*}}{{SUPER}} & Soft & $L_2$ & {dashes}")
+        latex.append(f"       & & Soft & $L_\\infty$ & {dashes}")
+        latex.append(f"       & FASTER & Hard & $L_\\infty$ & {dashes}")
+
+        # DYNUS row — fill with data if this is the matching case, otherwise placeholder
+        if case == case_name:
+            latex.append(f"       & DYNUS & Hard & $L_\\infty$ & {data_values}")
+        else:
+            latex.append(f"       & DYNUS & Hard & $L_\\infty$ & {dashes}")
+
+    latex.append("      \\bottomrule")
+    latex.append("    \\end{tabular}")
+    latex.append("  }")
+    latex.append("  \\vspace{-1.0em}")
+    latex.append("\\end{table*}")
+
+    return "\n".join(latex)
+
+
+def _generate_new_dynamic_table(case_name: str, dynus_row: str, data_values: str) -> str:
+    """Generate a new dynamic obstacle benchmark LaTeX table"""
+
     latex = []
     latex.append("\\begin{table*}")
     latex.append("  \\caption{Dynamic obstacle benchmarking results: DYNUS performance with moving obstacles. "
@@ -717,12 +1164,11 @@ def generate_latex_table(stats: dict, config_name: str = "default", case_name: s
     latex.append("  \\centering")
     latex.append("  \\renewcommand{\\arraystretch}{1.2}")
     latex.append("  \\resizebox{\\textwidth}{!}{")
-    latex.append("    \\begin{tabular}{c c c c c c c c c c c}")
+    latex.append("    \\begin{tabular}{c c c c c c c c c c c c}")
     latex.append("      \\toprule")
 
-    # Simple header (Case + Algorithm + data columns)
-    latex.append("      \\multicolumn{1}{c}{\\textbf{Case}}")
-    latex.append("      & \\multicolumn{1}{c}{\\textbf{Algorithm}}")
+    latex.append("      \\multirow{2}{*}[-0.4em]{\\textbf{Env}}")
+    latex.append("      & \\multicolumn{2}{c}{\\multirow{2}{*}[-0.4em]{\\textbf{Algorithm}}}")
     latex.append("      & \\multicolumn{1}{c}{\\textbf{Success}}")
     latex.append("      & \\multicolumn{1}{c}{\\textbf{Comp. Time}}")
     latex.append("      & \\multicolumn{3}{c}{\\textbf{Performance}}")
@@ -730,15 +1176,13 @@ def generate_latex_table(stats: dict, config_name: str = "default", case_name: s
     latex.append("      & \\multicolumn{3}{c}{\\textbf{Constraint Violation}}")
     latex.append("      \\\\")
 
-    # Column rules (11 columns: 1 case + 1 algorithm + 9 data)
-    latex.append("      \\cmidrule(lr){3-3}")
     latex.append("      \\cmidrule(lr){4-4}")
-    latex.append("      \\cmidrule(lr){5-7}")
-    latex.append("      \\cmidrule(lr){8-8}")
-    latex.append("      \\cmidrule(lr){9-11}")
+    latex.append("      \\cmidrule(lr){5-5}")
+    latex.append("      \\cmidrule(lr){6-8}")
+    latex.append("      \\cmidrule(lr){9-9}")
+    latex.append("      \\cmidrule(lr){10-12}")
 
-    # Column headers
-    latex.append("      & &")
+    latex.append("      &&&")
     latex.append("      $R_{\\mathrm{succ}}$ [\\%] &")
     latex.append("      $T^{\\mathrm{per}}_{\\mathrm{opt}}$ [ms] &")
     latex.append("      $T_{\\mathrm{trav}}$ [s] &")
@@ -751,7 +1195,6 @@ def generate_latex_table(stats: dict, config_name: str = "default", case_name: s
     latex.append("      \\\\")
     latex.append("      \\midrule")
 
-    # Data row
     latex.append(dynus_row)
 
     latex.append("      \\bottomrule")
@@ -763,7 +1206,8 @@ def generate_latex_table(stats: dict, config_name: str = "default", case_name: s
     return "\n".join(latex)
 
 
-def analyze_single_case(data_dir: Path, output_name: str, config_name: str, latex_output: Path):
+def analyze_single_case(data_dir: Path, output_name: str, config_name: str, latex_output: Path,
+                        table_type: str = 'dynamic', goal_pos: Tuple[float, float, float] = (105.0, 0.0, 2.0)):
     """Analyze a single case directory and update LaTeX table"""
 
     # Extract case name from directory (easy_, medium_, hard_)
@@ -796,35 +1240,124 @@ def analyze_single_case(data_dir: Path, output_name: str, config_name: str, late
         else:
             print("  No computation data found (num_*.csv files)\n")
 
-    # Analyze collisions from rosbags
+    # Recompute path length from rosbags (with gap detection for late-start bags)
+    # Note: travel_time is NOT overwritten — the CSV value from the live monitor
+    # is more accurate because it measures actual drone state (via goal_reached callback),
+    # whereas bag-based timing measures the commanded trajectory which arrives earlier.
     if data_dir.is_dir():
         bags_dir = data_dir / "bags"
         if bags_dir.exists() and HAS_ROSBAG:
-            print("\nAnalyzing collisions from rosbags...")
-            # Default drone bbox (can be loaded from dynus.yaml if needed)
-            drone_bbox = (0.1, 0.1, 0.1)  # half-extents
+            print(f"Recomputing path length from rosbags (goal={goal_pos})...")
 
             for idx, row in df.iterrows():
                 trial_id = row['trial_id']
                 bag_path = bags_dir / f"trial_{trial_id}"
 
                 if bag_path.exists():
-                    collision_result = analyze_collision_from_bag(bag_path, drone_bbox)
-                    # Update dataframe with collision results
-                    df.at[idx, 'collision_count'] = collision_result['collision_count']
-                    df.at[idx, 'min_distance_to_obstacles'] = collision_result['min_distance']
-                    df.at[idx, 'collision_free_ratio'] = collision_result['collision_free_ratio']
-                    df.at[idx, 'collision'] = collision_result['collision_count'] > 0
+                    metrics = recompute_metrics_from_bag(bag_path, goal_pos)
+
+                    if metrics['path_length'] is not None:
+                        df.at[idx, 'path_length'] = metrics['path_length']
+
+                    csv_tt = row['flight_travel_time']
+                    pl = metrics['path_length']
+                    if pl is not None:
+                        print(f"  Trial {trial_id}: travel_time={csv_tt:.2f}s (CSV), path_length={pl:.2f}m (bag)")
+                    else:
+                        print(f"  Trial {trial_id}: no bag data")
                 else:
                     print(f"  Warning: Bag not found for trial {trial_id}")
 
-            print("  ✓ Collision analysis complete\n")
+            print()
+
+    # Analyze collisions from rosbags
+    if data_dir.is_dir():
+        bags_dir = data_dir / "bags"
+        if bags_dir.exists() and HAS_ROSBAG:
+            # Default drone bbox (can be loaded from dynus.yaml if needed)
+            drone_bbox = (0.1, 0.1, 0.1)  # half-extents
+
+            if table_type == 'static':
+                # Static obstacle collision analysis using CSV obstacle data
+                case_csv_map = {
+                    'Easy': 'easy_forest_obstacle_parameters.csv',
+                    'Medium': 'medium_forest_obstacle_parameters.csv',
+                    'Hard': 'hard_forest_obstacle_parameters.csv',
+                }
+                csv_filename = case_csv_map.get(case_name)
+                if csv_filename:
+                    dynus_pkg_dir = Path(__file__).parent.parent
+                    obstacle_csv_path = dynus_pkg_dir / "benchmark_data" / "static" / csv_filename
+                    print(f"\nAnalyzing static collisions from rosbags (obstacles: {obstacle_csv_path.name})...")
+
+                    for idx, row in df.iterrows():
+                        trial_id = row['trial_id']
+                        bag_path = bags_dir / f"trial_{trial_id}"
+
+                        if bag_path.exists():
+                            collision_result = analyze_collision_from_static_obstacles(
+                                bag_path, drone_bbox, obstacle_csv_path)
+                            df.at[idx, 'collision_count'] = collision_result['collision_count']
+                            df.at[idx, 'min_distance_to_obstacles'] = collision_result['min_distance']
+                            df.at[idx, 'collision_free_ratio'] = collision_result['collision_free_ratio']
+                            df.at[idx, 'collision_unique_obstacles'] = collision_result['unique_obstacles']
+                            df.at[idx, 'collision'] = collision_result['collision_count'] > 0
+                        else:
+                            print(f"  Warning: Bag not found for trial {trial_id}")
+
+                    print("  ✓ Static collision analysis complete\n")
+                else:
+                    print(f"\n  Warning: No obstacle CSV mapping for case '{case_name}', skipping collision analysis\n")
+            else:
+                # Dynamic obstacle collision analysis using /tf frames from bag
+                print("\nAnalyzing collisions from rosbags...")
+
+                for idx, row in df.iterrows():
+                    trial_id = row['trial_id']
+                    bag_path = bags_dir / f"trial_{trial_id}"
+
+                    if bag_path.exists():
+                        collision_result = analyze_collision_from_bag(bag_path, drone_bbox)
+                        df.at[idx, 'collision_count'] = collision_result['collision_count']
+                        df.at[idx, 'min_distance_to_obstacles'] = collision_result['min_distance']
+                        df.at[idx, 'collision_free_ratio'] = collision_result['collision_free_ratio']
+                        df.at[idx, 'collision'] = collision_result['collision_count'] > 0
+                    else:
+                        print(f"  Warning: Bag not found for trial {trial_id}")
+
+                print("  ✓ Collision analysis complete\n")
         elif bags_dir.exists() and not HAS_ROSBAG:
             print("\n  Warning: Bags found but rosbag2_py not available, skipping collision analysis\n")
 
+    # Recompute constraint violations from rosbags
+    if data_dir.is_dir():
+        bags_dir = data_dir / "bags"
+        if bags_dir.exists() and HAS_ROSBAG:
+            print("Recomputing constraint violations from rosbags...")
+
+            for idx, row in df.iterrows():
+                trial_id = row['trial_id']
+                bag_path = bags_dir / f"trial_{trial_id}"
+
+                if bag_path.exists():
+                    viol_result = recompute_violations_from_bag(bag_path)
+                    df.at[idx, 'vel_violation_count'] = viol_result['vel_violation_count']
+                    df.at[idx, 'vel_violation_total'] = viol_result['vel_total']
+                    df.at[idx, 'acc_violation_count'] = viol_result['acc_violation_count']
+                    df.at[idx, 'acc_violation_total'] = viol_result['acc_total']
+                    df.at[idx, 'jerk_violation_count'] = viol_result['jerk_violation_count']
+                    df.at[idx, 'jerk_violation_total'] = viol_result['jerk_total']
+                    print(f"  Trial {trial_id}: vel={viol_result['vel_violation_count']}/{viol_result['vel_total']}, "
+                          f"acc={viol_result['acc_violation_count']}/{viol_result['acc_total']}, "
+                          f"jerk={viol_result['jerk_violation_count']}/{viol_result['jerk_total']}")
+                else:
+                    print(f"  Warning: Bag not found for trial {trial_id}")
+
+            print("  Constraint violation recomputation complete\n")
+
     # Compute statistics
     print("Computing statistics...")
-    stats = compute_statistics(df)
+    stats = compute_statistics(df, require_collision_free=(table_type != 'static'))
 
     # Print results
     print_statistics(stats)
@@ -840,7 +1373,7 @@ def analyze_single_case(data_dir: Path, output_name: str, config_name: str, late
 
     # Generate and save LaTeX table
     print("\nUpdating LaTeX table...")
-    latex_code = generate_latex_table(stats, config_name, case_name=case_name, existing_file=latex_output)
+    latex_code = generate_latex_table(stats, config_name, case_name=case_name, existing_file=latex_output, table_type=table_type)
     latex_output.parent.mkdir(parents=True, exist_ok=True)
     latex_output.write_text(latex_code)
 
@@ -896,6 +1429,23 @@ def main():
         help='Analyze all cases (easy, medium, hard) from parent directory'
     )
 
+    parser.add_argument(
+        '--table-type',
+        type=str,
+        choices=['dynamic', 'static'],
+        default='dynamic',
+        help='LaTeX table format: dynamic (default) or static (for static forest benchmarks)'
+    )
+
+    parser.add_argument(
+        '--goal-pos',
+        type=float,
+        nargs=3,
+        default=[105.0, 0.0, 2.0],
+        metavar=('X', 'Y', 'Z'),
+        help='Goal position for travel time recomputation (default: 105.0 0.0 2.0)'
+    )
+
     args = parser.parse_args()
 
     # Determine which cases to analyze
@@ -905,10 +1455,10 @@ def main():
         if base_dir.is_file():
             base_dir = base_dir.parent
 
-        # Look for easy_*, medium_*, hard_* directories
+        # Look for easy_*, medium_*, hard_* directories (exclude files like CSVs)
         case_dirs = []
         for pattern in ['easy_*', 'medium_*', 'hard_*']:
-            matching = sorted(base_dir.glob(pattern))
+            matching = sorted([p for p in base_dir.glob(pattern) if p.is_dir()])
             if matching:
                 case_dirs.append(matching[-1])  # Use most recent
 
@@ -926,8 +1476,10 @@ def main():
 
         # Analyze each case
         latex_output = Path("/home/kkondo/paper_writing/DYNUS_v3/tables") / args.latex_name
+        goal_pos = tuple(args.goal_pos)
         for case_dir in case_dirs:
-            analyze_single_case(case_dir, args.output_name, args.config_name, latex_output)
+            analyze_single_case(case_dir, args.output_name, args.config_name, latex_output,
+                                table_type=args.table_type, goal_pos=goal_pos)
 
         print("\n" + "="*80)
         print("ALL CASES ANALYSIS COMPLETE")
@@ -938,7 +1490,9 @@ def main():
     else:
         # Single case analysis
         latex_output = Path("/home/kkondo/paper_writing/DYNUS_v3/tables") / args.latex_name
-        analyze_single_case(Path(args.data_dir), args.output_name, args.config_name, latex_output)
+        goal_pos = tuple(args.goal_pos)
+        analyze_single_case(Path(args.data_dir), args.output_name, args.config_name, latex_output,
+                            table_type=args.table_type, goal_pos=goal_pos)
 
 
 
