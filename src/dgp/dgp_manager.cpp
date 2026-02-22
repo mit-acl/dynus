@@ -152,10 +152,16 @@ void DGPManager::freeGoal(Vec3f &goal, double factor)
 
 bool DGPManager::checkIfPointOccupied(const Vec3f &point)
 {
-    // Check if the point is free
-    Veci<3> point_int = map_util_for_planning_->floatToInt(point);
+    // Use planning map if available, otherwise fall back to the base map.
+    // map_util_for_planning_ is only created inside setupDGPPlanner/solveDGP,
+    // so callers outside the planning pipeline (e.g. checkHoverAvoidance) need
+    // the fallback.
+    const auto &mu = map_util_for_planning_ ? map_util_for_planning_ : map_util_;
+    if (!mu)
+        return false;  // map not yet initialized
 
-    return map_util_for_planning_->isOccupied(point_int);
+    Veci<3> point_int = mu->floatToInt(point);
+    return mu->isOccupied(point_int);
 }
 
 // Sample along [p0, p1] at a safe step to ensure we don't skip thin obstacles.
@@ -324,9 +330,12 @@ void DGPManager::pushPathIntoFreeSpace(const vec_Vecf<3> &path, vec_Vecf<3> &fre
 
 bool DGPManager::checkIfPointFree(const Vec3f &point) const
 {
-    // Check if the point is free
-    Veci<3> point_int = map_util_for_planning_->floatToInt(point);
-    return map_util_for_planning_->isFree(point_int);
+    const auto &mu = map_util_for_planning_ ? map_util_for_planning_ : map_util_;
+    if (!mu)
+        return true;  // map not yet initialized, assume free
+
+    Veci<3> point_int = mu->floatToInt(point);
+    return mu->isFree(point_int);
 }
 
 bool DGPManager::checkIfPointHasNonFreeNeighbour(const Vec3f &point) const
@@ -745,7 +754,7 @@ void DGPManager::obstacle_to_vec(
     // Dynamic obstacles are provided separately in obst_pos.
 
     const double res = par_.factor_dgp * par_.res;
-    const double r = par_.obst_max_vel * traj_max_time; // [m]
+    const double r = par_.obst_max_vel * traj_max_time + par_.obst_position_error; // [m] motion + estimation error
 
     if (!(r > 0.0) || !(res > 0.0))
         return;

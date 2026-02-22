@@ -579,6 +579,156 @@ def analyze_collision_from_bag(bag_path: Path, drone_bbox: Tuple[float, float, f
     return result
 
 
+def analyze_collision_from_trajs_bag(bag_path: Path, drone_bbox: Tuple[float, float, float],
+                                     trajs_topic: str = '/trajs_ground_truth') -> Dict:
+    """Analyze collisions from rosbag using DynTraj messages on a ground truth topic.
+
+    Unlike analyze_collision_from_bag() which reads /tf frames, this reads DynTraj
+    messages directly, extracting per-obstacle bounding boxes from msg.bbox.
+    This is needed for the unknown_dynamic benchmark where obstacle sizes vary
+    (dynamic 0.8^3, vertical 0.4x0.4x4.0, horizontal 0.4x4.0x0.4).
+
+    Args:
+        bag_path: Path to rosbag directory
+        drone_bbox: Drone half-extents (hx, hy, hz) - not used (point mass)
+        trajs_topic: Topic name for DynTraj ground truth messages
+
+    Returns:
+        Dictionary with collision statistics
+    """
+    default_result = {'collision_count': 0, 'min_distance': float('inf'),
+                      'collision_free_ratio': 1.0, 'unique_obstacles': 0}
+
+    if not HAS_ROSBAG:
+        print(f"  Warning: Cannot analyze bag {bag_path}, rosbag2_py not available")
+        return default_result
+
+    if not bag_path.exists():
+        print(f"  Warning: Bag not found at {bag_path}")
+        return default_result
+
+    print(f"  Analyzing collision from bag (trajs): {bag_path.name}")
+
+    # Setup bag reader
+    storage_options = StorageOptions(uri=str(bag_path), storage_id='sqlite3')
+    converter_options = ConverterOptions(input_serialization_format='cdr', output_serialization_format='cdr')
+
+    reader = SequentialReader()
+    reader.open(storage_options, converter_options)
+
+    # Extract data
+    agent_trajectory = []  # [(time, x, y, z), ...]
+    obstacle_trajectories = {}  # {obs_id: {'times': [], 'positions': [], 'half_extents': (hx,hy,hz)}}
+
+    # Message types
+    goal_msg_type = get_message('dynus_interfaces/msg/Goal')
+    dyntraj_msg_type = get_message('dynus_interfaces/msg/DynTraj')
+
+    while reader.has_next():
+        (topic, data, t) = reader.read_next()
+        timestamp = t / 1e9  # Convert to seconds
+
+        if topic == '/NX01/goal':
+            msg = deserialize_message(data, goal_msg_type)
+            agent_trajectory.append((timestamp, msg.p.x, msg.p.y, msg.p.z))
+
+        elif topic == trajs_topic:
+            msg = deserialize_message(data, dyntraj_msg_type)
+            if msg.is_agent:
+                continue
+
+            obs_id = f"obstacle_{msg.id}"
+
+            # Extract per-obstacle half-extents from DynTraj.bbox
+            if len(msg.bbox) >= 3:
+                half_extents = (float(msg.bbox[0]) / 2.0,
+                                float(msg.bbox[1]) / 2.0,
+                                float(msg.bbox[2]) / 2.0)
+            else:
+                half_extents = (0.4, 0.4, 0.4)  # Default: 0.8m cube
+
+            if obs_id not in obstacle_trajectories:
+                obstacle_trajectories[obs_id] = {
+                    'times': [],
+                    'positions': [],
+                    'half_extents': half_extents,
+                }
+
+            obstacle_trajectories[obs_id]['times'].append(timestamp)
+            obstacle_trajectories[obs_id]['positions'].append([msg.pos.x, msg.pos.y, msg.pos.z])
+
+    del reader
+
+    if len(agent_trajectory) == 0:
+        print(f"    Warning: No agent trajectory found in bag")
+        return default_result
+
+    # Convert to numpy arrays for efficient processing
+    agent_times = np.array([t for t, x, y, z in agent_trajectory])
+    agent_positions = np.array([[x, y, z] for t, x, y, z in agent_trajectory])
+
+    obstacle_data = {}
+    for obs_id, traj in obstacle_trajectories.items():
+        if len(traj['times']) > 0:
+            obstacle_data[obs_id] = {
+                'times': np.array(traj['times']),
+                'positions': np.array(traj['positions']),
+                'half_extents': traj['half_extents'],
+            }
+
+    print(f"    Loaded {len(agent_positions)} agent positions, {len(obstacle_data)} obstacles")
+
+    # Collision checking (point mass - no drone bounding box)
+    collisions = 0
+    min_distance = float('inf')
+    collision_free_segments = 0
+
+    for i, (t, px, py, pz) in enumerate(zip(agent_times, agent_positions[:, 0],
+                                              agent_positions[:, 1], agent_positions[:, 2])):
+        segment_collision_free = True
+        for obs_id, obs_data in obstacle_data.items():
+            # Interpolate obstacle position at this time
+            obs_pos = interpolate_position(obs_data['times'], obs_data['positions'], t)
+
+            # Pre-filter: skip obstacles too far away
+            center_dist = np.sqrt((px - obs_pos[0])**2 + (py - obs_pos[1])**2 + (pz - obs_pos[2])**2)
+            if center_dist > 5.0:
+                continue
+
+            # Per-obstacle half-extents
+            hx, hy, hz = obs_data['half_extents']
+
+            # Point-to-AABB distance
+            closest_x = np.clip(px, obs_pos[0] - hx, obs_pos[0] + hx)
+            closest_y = np.clip(py, obs_pos[1] - hy, obs_pos[1] + hy)
+            closest_z = np.clip(pz, obs_pos[2] - hz, obs_pos[2] + hz)
+
+            distance = np.sqrt((px - closest_x)**2 + (py - closest_y)**2 + (pz - closest_z)**2)
+            min_distance = min(min_distance, distance)
+
+            # Check collision: point inside obstacle AABB
+            if (obs_pos[0] - hx <= px <= obs_pos[0] + hx and
+                obs_pos[1] - hy <= py <= obs_pos[1] + hy and
+                obs_pos[2] - hz <= pz <= obs_pos[2] + hz):
+                segment_collision_free = False
+                collisions += 1
+
+        if segment_collision_free:
+            collision_free_segments += 1
+
+    collision_free_ratio = collision_free_segments / len(agent_positions) if len(agent_positions) > 0 else 1.0
+
+    result = {
+        'collision_count': collisions,
+        'min_distance': min_distance if min_distance != float('inf') else 0.0,
+        'collision_free_ratio': collision_free_ratio,
+        'unique_obstacles': len(obstacle_data),
+    }
+
+    print(f"    Collisions: {collisions}, Min distance: {result['min_distance']:.3f}m")
+    return result
+
+
 def analyze_collision_from_static_obstacles(bag_path: Path, drone_bbox: Tuple[float, float, float],
                                              obstacle_csv_path: Path) -> Dict:
     """Analyze collisions against static cylindrical obstacles from CSV
@@ -1015,6 +1165,17 @@ def generate_latex_table(stats: dict, config_name: str = "default", case_name: s
 
         # DYNUS row (5th in block, no multirow): 2 constraint columns
         dynus_row = f"       & DYNUS & Hard & $L_\\infty$ & {data_values}"
+    elif table_type == 'unknown_dynamic':
+        # Unknown dynamic table: no Algorithm column, just Env | data...
+        per_opt_time = stats.get('avg_local_traj_time_mean', 0)
+        min_distance = stats.get('min_distance_to_obstacles_mean', 0)
+        min_dist_str = min_distance if isinstance(min_distance, str) else f"{min_distance:.2f}"
+
+        data_values = (f"{success_rate:.1f} & {per_opt_time:.1f} & "
+                       f"{travel_time:.1f} & {path_length:.1f} & {jerk_integral:.1f} & {min_dist_str} & "
+                       f"{vel_viol:.1f} & {acc_viol:.1f} & {jerk_viol:.1f} \\\\")
+
+        dynus_row = f"      {case_name} & {data_values}"
     else:
         # Dynamic table columns: Env & Algorithm(2cols) & R_succ & T_per_opt & T_trav & L_path & S_jerk & d_min & rho_vel & rho_acc & rho_jerk
         per_opt_time = stats.get('avg_local_traj_time_mean', 0)
@@ -1062,6 +1223,12 @@ def generate_latex_table(stats: dict, config_name: str = "default", case_name: s
                     print(f"  Updated {case_name} + DYNUS row (multi-algorithm format)")
                     row_updated = True
 
+                # Case 3: unknown_dynamic format - rows start with case name directly (no DYNUS, no multirow)
+                elif table_type == 'unknown_dynamic' and stripped.startswith(case_name) and '&' in stripped and '\\\\' in stripped:
+                    updated_lines.append(dynus_row)
+                    print(f"  Updated {case_name} row (unknown_dynamic format)")
+                    row_updated = True
+
                 else:
                     updated_lines.append(line)
 
@@ -1079,6 +1246,8 @@ def generate_latex_table(stats: dict, config_name: str = "default", case_name: s
     # --- Generate new table ---
     if table_type == 'static':
         return _generate_new_static_table(case_name, dynus_row, data_values)
+    elif table_type == 'unknown_dynamic':
+        return _generate_new_unknown_dynamic_table(case_name, dynus_row, data_values)
     else:
         return _generate_new_dynamic_table(case_name, dynus_row, data_values)
 
@@ -1206,6 +1375,70 @@ def _generate_new_dynamic_table(case_name: str, dynus_row: str, data_values: str
     return "\n".join(latex)
 
 
+def _generate_new_unknown_dynamic_table(case_name: str, dynus_row: str, data_values: str) -> str:
+    """Generate a new unknown dynamic obstacle benchmark LaTeX table.
+
+    Same columns as dynamic table minus Algorithm:
+    Env | R_succ | T_per_opt | T_trav | L_path | S_jerk | d_min | rho_vel | rho_acc | rho_jerk
+    """
+
+    dashes = "{-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} \\\\"
+
+    cases = ['Easy', 'Medium', 'Hard']
+    latex = []
+    latex.append("\\begin{table*}")
+    latex.append("  \\caption{Benchmark results in unknown dynamic environments. "
+                 "DYNUS navigates using only pointcloud sensing (no ground truth obstacle trajectories). "
+                 "We report success rate, computation time, flight performance, smoothness, safety, and constraint violation metrics.}")
+    latex.append("  \\label{tab:unknown_dynamic_benchmark}")
+    latex.append("  \\centering")
+    latex.append("  \\renewcommand{\\arraystretch}{1.2}")
+    latex.append("  \\resizebox{\\textwidth}{!}{")
+    latex.append("    \\begin{tabular}{c c c c c c c c c c}")
+    latex.append("      \\toprule")
+
+    latex.append("      \\multirow{2}{*}[-0.4em]{\\textbf{Env}}")
+    latex.append("      & \\multicolumn{1}{c}{\\textbf{Success}}")
+    latex.append("      & \\multicolumn{1}{c}{\\textbf{Comp. Time}}")
+    latex.append("      & \\multicolumn{3}{c}{\\textbf{Performance}}")
+    latex.append("      & \\multicolumn{1}{c}{\\textbf{Safety}}")
+    latex.append("      & \\multicolumn{3}{c}{\\textbf{Constraint Violation}}")
+    latex.append("      \\\\")
+
+    latex.append("      \\cmidrule(lr){2-2}")
+    latex.append("      \\cmidrule(lr){3-3}")
+    latex.append("      \\cmidrule(lr){4-6}")
+    latex.append("      \\cmidrule(lr){7-7}")
+    latex.append("      \\cmidrule(lr){8-10}")
+
+    latex.append("      &")
+    latex.append("      $R_{\\mathrm{succ}}$ [\\%] &")
+    latex.append("      $T^{\\mathrm{per}}_{\\mathrm{opt}}$ [ms] &")
+    latex.append("      $T_{\\mathrm{trav}}$ [s] &")
+    latex.append("      $L_{\\mathrm{path}}$ [m] &")
+    latex.append("      $S_{\\mathrm{jerk}}$ [m/s$^{2}$] &")
+    latex.append("      $d_{\\mathrm{min}}$ [m] &")
+    latex.append("      $\\rho_{\\mathrm{vel}}$ [\\%] &")
+    latex.append("      $\\rho_{\\mathrm{acc}}$ [\\%] &")
+    latex.append("      $\\rho_{\\mathrm{jerk}}$ [\\%]")
+    latex.append("      \\\\")
+    latex.append("      \\midrule")
+
+    for case in cases:
+        if case == case_name:
+            latex.append(dynus_row)
+        else:
+            latex.append(f"      {case} & {dashes}")
+
+    latex.append("      \\bottomrule")
+    latex.append("    \\end{tabular}")
+    latex.append("  }")
+    latex.append("  \\vspace{-1.0em}")
+    latex.append("\\end{table*}")
+
+    return "\n".join(latex)
+
+
 def analyze_single_case(data_dir: Path, output_name: str, config_name: str, latex_output: Path,
                         table_type: str = 'dynamic', goal_pos: Tuple[float, float, float] = (105.0, 0.0, 2.0)):
     """Analyze a single case directory and update LaTeX table"""
@@ -1277,7 +1510,27 @@ def analyze_single_case(data_dir: Path, output_name: str, config_name: str, late
             # Default drone bbox (can be loaded from dynus.yaml if needed)
             drone_bbox = (0.1, 0.1, 0.1)  # half-extents
 
-            if table_type == 'static':
+            if table_type == 'unknown_dynamic':
+                # Unknown dynamic collision analysis using DynTraj messages from /trajs_ground_truth
+                print("\nAnalyzing collisions from rosbags (trajs_ground_truth)...")
+
+                for idx, row in df.iterrows():
+                    trial_id = row['trial_id']
+                    bag_path = bags_dir / f"trial_{trial_id}"
+
+                    if bag_path.exists():
+                        collision_result = analyze_collision_from_trajs_bag(
+                            bag_path, drone_bbox, trajs_topic='/trajs_ground_truth')
+                        df.at[idx, 'collision_count'] = collision_result['collision_count']
+                        df.at[idx, 'min_distance_to_obstacles'] = collision_result['min_distance']
+                        df.at[idx, 'collision_free_ratio'] = collision_result['collision_free_ratio']
+                        df.at[idx, 'collision'] = collision_result['collision_count'] > 0
+                    else:
+                        print(f"  Warning: Bag not found for trial {trial_id}")
+
+                print("  Collision analysis complete (trajs_ground_truth)\n")
+
+            elif table_type == 'static':
                 # Static obstacle collision analysis using CSV obstacle data
                 case_csv_map = {
                     'Easy': 'easy_forest_obstacle_parameters.csv',
@@ -1432,9 +1685,10 @@ def main():
     parser.add_argument(
         '--table-type',
         type=str,
-        choices=['dynamic', 'static'],
+        choices=['dynamic', 'static', 'unknown_dynamic'],
         default='dynamic',
-        help='LaTeX table format: dynamic (default) or static (for static forest benchmarks)'
+        help='LaTeX table format: dynamic (default), static (for static forest benchmarks), '
+             'or unknown_dynamic (for unknown dynamic obstacle benchmarks)'
     )
 
     parser.add_argument(
@@ -1447,6 +1701,10 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # Auto-set latex-name based on table-type if user didn't override
+    if args.table_type == 'unknown_dynamic' and args.latex_name == 'dynamic_benchmark.tex':
+        args.latex_name = 'unknown_dynamic_sim.tex'
 
     # Determine which cases to analyze
     if args.all_cases:

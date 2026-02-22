@@ -93,6 +93,7 @@ DYNUS_NODE::DYNUS_NODE() : Node("dynus_node")
   pub_vel_text_ = this->create_publisher<visualization_msgs::msg::Marker>("vel_text", 10);                                                            // visual level 1
   pub_dynamic_heat_cloud_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("heat_cloud", 10);
   pub_occupied_cloud_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("dynus_occupied_cloud", 10);
+  pub_hover_avoidance_viz_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("hover_avoidance_viz", 10);
 
   // Debug publishers
   pub_yaw_output_ = this->create_publisher<dynus_interfaces::msg::YawOutput>("yaw_output", 10);
@@ -103,7 +104,8 @@ DYNUS_NODE::DYNUS_NODE() : Node("dynus_node")
   pub_goal_reached_ = this->create_publisher<std_msgs::msg::Empty>("goal_reached", critical_qos);
 
   // Subscribers
-  sub_traj_ = this->create_subscription<dynus_interfaces::msg::DynTraj>("/trajs", critical_qos, std::bind(&DYNUS_NODE::trajCallback, this, std::placeholders::_1), options_re_1);
+  if (!par_.ignore_other_trajs)
+    sub_traj_ = this->create_subscription<dynus_interfaces::msg::DynTraj>("/trajs", critical_qos, std::bind(&DYNUS_NODE::trajCallback, this, std::placeholders::_1), options_re_1);
   sub_predicted_traj_ = this->create_subscription<dynus_interfaces::msg::DynTraj>("predicted_trajs", critical_qos, std::bind(&DYNUS_NODE::trajCallback, this, std::placeholders::_1), options_re_1);
   sub_state_ = this->create_subscription<dynus_interfaces::msg::State>("state", critical_qos, std::bind(&DYNUS_NODE::stateCallback, this, std::placeholders::_1), options_re_1);
   sub_terminal_goal_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("term_goal", critical_qos, std::bind(&DYNUS_NODE::terminalGoalCallback, this, std::placeholders::_1));
@@ -114,6 +116,8 @@ DYNUS_NODE::DYNUS_NODE() : Node("dynus_node")
   if (use_benchmark_)
     timer_goal_reached_check_ = this->create_wall_timer(100ms, std::bind(&DYNUS_NODE::goalReachedCheckCallback, this), this->cb_group_re_3_);
   timer_cleanup_old_trajs_ = this->create_wall_timer(500ms, std::bind(&DYNUS_NODE::cleanUpOldTrajsCallback, this), this->cb_group_mu_5_);
+  if (par_.hover_avoidance_enabled)
+    timer_hover_avoidance_viz_ = this->create_wall_timer(33ms, std::bind(&DYNUS_NODE::publishHoverAvoidanceViz, this), this->cb_group_mu_6_);
   if (par_.use_hardware)
     timer_initial_pose_ = this->create_wall_timer(100ms, std::bind(&DYNUS_NODE::getInitialPoseHwCallback, this), this->cb_group_mu_9_);
 
@@ -341,6 +345,7 @@ void DYNUS_NODE::declareParameters()
   this->declare_parameter("factor_final", 5.0);
   this->declare_parameter("factor_constant_step_size", 0.1);
   this->declare_parameter("obst_max_vel", 0.5);
+  this->declare_parameter("obst_position_error", 0.0);
   this->declare_parameter("max_gurobi_comp_time_sec", 0.05);
   this->declare_parameter("jerk_smooth_weight", 1.0e+1);
 
@@ -365,6 +370,15 @@ void DYNUS_NODE::declareParameters()
 
   // Debug flag
   this->declare_parameter("debug_verbose", false);
+
+  // Trajectory sharing
+  this->declare_parameter("ignore_other_trajs", false);
+
+  // Hover avoidance parameters
+  this->declare_parameter("hover_avoidance_enabled", false);
+  this->declare_parameter("hover_avoidance_d_trigger", 4.0);
+  this->declare_parameter("hover_avoidance_h", 3.0);
+  this->declare_parameter("hover_avoidance_min_repulsion_norm", 0.01);
 }
 
 // ----------------------------------------------------------------------------
@@ -521,6 +535,7 @@ void DYNUS_NODE::setParameters()
   par_.factor_final = this->get_parameter("factor_final").as_double();
   par_.factor_constant_step_size = this->get_parameter("factor_constant_step_size").as_double();
   par_.obst_max_vel = this->get_parameter("obst_max_vel").as_double();
+  par_.obst_position_error = this->get_parameter("obst_position_error").as_double();
   par_.max_gurobi_comp_time_sec = this->get_parameter("max_gurobi_comp_time_sec").as_double();
   par_.jerk_smooth_weight = this->get_parameter("jerk_smooth_weight").as_double();
 
@@ -555,6 +570,15 @@ void DYNUS_NODE::setParameters()
 
   // Debug flag
   par_.debug_verbose = this->get_parameter("debug_verbose").as_bool();
+
+  // Trajectory sharing
+  par_.ignore_other_trajs = this->get_parameter("ignore_other_trajs").as_bool();
+
+  // Hover avoidance parameters
+  par_.hover_avoidance_enabled = this->get_parameter("hover_avoidance_enabled").as_bool();
+  par_.hover_avoidance_d_trigger = this->get_parameter("hover_avoidance_d_trigger").as_double();
+  par_.hover_avoidance_h = this->get_parameter("hover_avoidance_h").as_double();
+  par_.hover_avoidance_min_repulsion_norm = this->get_parameter("hover_avoidance_min_repulsion_norm").as_double();
 }
 
 // ----------------------------------------------------------------------------
@@ -669,6 +693,7 @@ void DYNUS_NODE::printParameters()
   RCLCPP_INFO(this->get_logger(), "Factor Final: %f", par_.factor_final);
   RCLCPP_INFO(this->get_logger(), "Factor Constant Step Size: %f", par_.factor_constant_step_size);
   RCLCPP_INFO(this->get_logger(), "Obst Max Vel: %f", par_.obst_max_vel);
+  RCLCPP_INFO(this->get_logger(), "Obst Position Error: %f", par_.obst_position_error);
   RCLCPP_INFO(this->get_logger(), "Max Gurobi Comp Time Sec: %f", par_.max_gurobi_comp_time_sec);
   RCLCPP_INFO(this->get_logger(), "Jerk Smooth Weight: %f", par_.jerk_smooth_weight);
 
@@ -728,6 +753,9 @@ void DYNUS_NODE::trajCallback(const dynus_interfaces::msg::DynTraj::SharedPtr ms
   // Get dynTraj from the message
   auto traj = std::make_shared<dynTraj>();
   convertDynTrajMsg2DynTraj(*msg, traj, current_time);
+
+  printf("[ADVER_DBG][%s] trajCallback: received traj id=%d is_agent=%d pos=(%.2f,%.2f,%.2f)\n",
+         ns_.c_str(), msg->id, msg->is_agent, msg->pos.x, msg->pos.y, msg->pos.z);
 
   // Pass the dynTraj to dynus.cpp
   dynus_ptr_->addTraj(traj, current_time);
@@ -839,7 +867,6 @@ void DYNUS_NODE::replanCallback()
     publishTraj();
 
   // For visualization of the safe corridor
-  std::cout << "dgp_result: " << dgp_result << std::endl;
   if (dgp_result && par_.visual_level >= 1)
     publishPoly();
 
@@ -1032,6 +1059,7 @@ void DYNUS_NODE::convertDynTrajMsg2DynTraj(const dynus_interfaces::msg::DynTraj 
   if (!skip_future_traj)
   {
     traj->pwp = dynus_utils::convertPwpMsg2Pwp(msg.pwp);
+    traj->mode = dynTraj::Mode::Piecewise;  // default to PWP; overridden below if analytic compiles
   }
   else
   {
@@ -1104,6 +1132,9 @@ void DYNUS_NODE::convertDynTrajMsg2DynTraj(const dynus_interfaces::msg::DynTraj 
 
   // Record received time
   traj->time_received = current_time;
+
+  // Store actual current position from message
+  traj->current_pos << msg.pos.x, msg.pos.y, msg.pos.z;
 
   // Get is_agent
   traj->is_agent = msg.is_agent;
@@ -1453,6 +1484,13 @@ void DYNUS_NODE::publishOwnTraj()
   msg.pwp = dynus_utils::convertPwp2PwpMsg(pwp_to_share_);
   msg.is_agent = true;
 
+  // Set current position so other agents can track this agent's actual location
+  state current_state;
+  dynus_ptr_->getState(current_state);
+  msg.pos.x = current_state.pos.x();
+  msg.pos.y = current_state.pos.y();
+  msg.pos.z = current_state.pos.z();
+
   // Get the terminal goal
   state G;
   dynus_ptr_->getG(G);
@@ -1626,8 +1664,6 @@ void DYNUS_NODE::publishPoly()
 
   // retrieve the polyhedra
   dynus_ptr_->retrievePolytopes(poly_whole_, poly_safe_);
-
-  std::cout << "Number of polyhedra for whole trajectory: " << poly_whole_.size() << std::endl;
 
   // For whole trajectory
   if (!poly_whole_.empty())
@@ -1945,6 +1981,112 @@ BUILD_OCC_MSG:
   }
 
   pub_occupied_cloud_->publish(msg);
+}
+
+// ----------------------------------------------------------------------------
+
+void DYNUS_NODE::publishHoverAvoidanceViz()
+{
+  visualization_msgs::msg::MarkerArray ma;
+
+  double current_time = this->now().seconds();
+  int drone_status = dynus_ptr_->getDroneStatus();
+  double d_trigger = dynus_ptr_->getHoverAvoidanceDTrigger();
+
+  // --- Danger spheres around each obstacle ---
+  std::vector<std::shared_ptr<dynTraj>> trajs;
+  dynus_ptr_->getTrajs(trajs);
+
+  if (!trajs.empty())
+  {
+    static int viz_dbg_count = 0;
+    if (viz_dbg_count++ % 30 == 0)  // print every ~1s at 30Hz
+    {
+      printf("[ADVER_DBG][%s] hoverViz: %zu trajs, status=%d\n", ns_.c_str(), trajs.size(), drone_status);
+      for (size_t j = 0; j < trajs.size(); ++j)
+        printf("  traj[%zu] id=%d current_pos=(%.2f,%.2f,%.2f) eval=(%.2f,%.2f,%.2f)\n",
+               j, trajs[j]->id,
+               trajs[j]->current_pos.x(), trajs[j]->current_pos.y(), trajs[j]->current_pos.z(),
+               trajs[j]->eval(current_time).x(), trajs[j]->eval(current_time).y(), trajs[j]->eval(current_time).z());
+    }
+  }
+
+  for (size_t i = 0; i < trajs.size(); ++i)
+  {
+    // Use the agent's actual reported position (updated each msg) rather than
+    // eval(current_time) which can return stale endpoint for expired PWP trajectories.
+    Eigen::Vector3d p_obs = trajs[i]->current_pos;
+
+    visualization_msgs::msg::Marker sphere;
+    sphere.header.frame_id = "map";
+    sphere.header.stamp = this->now();
+    sphere.ns = "danger_sphere";
+    sphere.id = static_cast<int>(i);
+    sphere.type = visualization_msgs::msg::Marker::SPHERE;
+    sphere.action = visualization_msgs::msg::Marker::ADD;
+    sphere.pose.position.x = p_obs.x();
+    sphere.pose.position.y = p_obs.y();
+    sphere.pose.position.z = p_obs.z();
+    sphere.pose.orientation.w = 1.0;
+    sphere.scale.x = d_trigger * 2.0;  // diameter
+    sphere.scale.y = d_trigger * 2.0;
+    sphere.scale.z = d_trigger * 2.0;
+    sphere.color.r = 1.0;
+    sphere.color.g = 0.0;
+    sphere.color.b = 0.0;
+    sphere.color.a = 0.12;
+    sphere.lifetime = rclcpp::Duration::from_seconds(0.1);
+    ma.markers.push_back(sphere);
+  }
+
+  // --- Delete stale danger sphere markers ---
+  // If there are fewer obstacles than before, delete old markers
+  for (size_t i = trajs.size(); i < trajs.size() + 10; ++i)
+  {
+    visualization_msgs::msg::Marker del;
+    del.header.frame_id = "map";
+    del.header.stamp = this->now();
+    del.ns = "danger_sphere";
+    del.id = static_cast<int>(i);
+    del.action = visualization_msgs::msg::Marker::DELETE;
+    ma.markers.push_back(del);
+  }
+
+  // --- Hover position marker (orange sphere, 0.3m radius) ---
+  bool show_hover = (drone_status == DroneStatus::HOVER_AVOIDING ||
+                     drone_status == DroneStatus::GOAL_REACHED);
+  Eigen::Vector3d p_hover = dynus_ptr_->getHoverPos();
+
+  visualization_msgs::msg::Marker hover_marker;
+  hover_marker.header.frame_id = "map";
+  hover_marker.header.stamp = this->now();
+  hover_marker.ns = "hover_pos";
+  hover_marker.id = 0;
+  hover_marker.type = visualization_msgs::msg::Marker::SPHERE;
+  hover_marker.pose.orientation.w = 1.0;
+  hover_marker.lifetime = rclcpp::Duration::from_seconds(0.1);
+
+  if (show_hover && p_hover.norm() > 1e-9)
+  {
+    hover_marker.action = visualization_msgs::msg::Marker::ADD;
+    hover_marker.pose.position.x = p_hover.x();
+    hover_marker.pose.position.y = p_hover.y();
+    hover_marker.pose.position.z = p_hover.z();
+    hover_marker.scale.x = 0.4;  // diameter = 2 * 0.2m
+    hover_marker.scale.y = 0.4;
+    hover_marker.scale.z = 0.4;
+    hover_marker.color.r = 1.0;
+    hover_marker.color.g = 0.5;
+    hover_marker.color.b = 0.0;
+    hover_marker.color.a = 0.9;
+  }
+  else
+  {
+    hover_marker.action = visualization_msgs::msg::Marker::DELETE;
+  }
+  ma.markers.push_back(hover_marker);
+
+  pub_hover_avoidance_viz_->publish(ma);
 }
 
 // ----------------------------------------------------------------------------

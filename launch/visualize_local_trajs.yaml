@@ -14,7 +14,8 @@ windows:
       # run benchmark (dynus, dynus_star, faster) (mode: loop, screenshot)
       - shell_command:
         - sleep 2
-        - ros2 run dynus visualize_local_trajs_node --ros-args -p viz_enable_z_offset:=true -p viz_z_step:=0.05 -p mode:=loop -p viz_enable_halo:=false -p alpha_pts_base:=1.0 -p viz_alpha_line_base:=1.0
+        - ros2 run dynus visualize_local_trajs_node --ros-args -p mode:=loop -p planner_whitelist:="['dynus_N4', 'dynus_N5', 'dynus_N6', 'original_faster_N4', 'original_faster_N5', 'original_faster_N6', 'super_l2','super_linf']" -p viz_enable_z_offset:=true -p viz_z_step:=0.05 -p viz_enable_halo:=false -p alpha_pts_base:=1.0 -p viz_alpha_line_base:=1.0
+
 
 
 

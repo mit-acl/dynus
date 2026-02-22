@@ -131,6 +131,8 @@ public:
 
         publish_markers_ = declare_parameter<bool>("publish_markers", true);
         publish_tf_ = declare_parameter<bool>("publish_tf", false);
+        publish_trajs_ = declare_parameter<bool>("publish_trajs", true);
+        trajs_topic_ = declare_parameter<std::string>("trajs_topic", "/trajs");
         move_models_ = declare_parameter<bool>("move_gazebo_models", false);
         use_spawn_origins_ = declare_parameter<bool>("use_spawn_origins", false);
 
@@ -190,7 +192,8 @@ public:
             RCLCPP_INFO(get_logger(), "Waiting to adopt spawn origins from /gazebo/model_states...");
         }
 
-        traj_pub_ = create_publisher<DynTraj>("/trajs", 10);
+        if (publish_trajs_)
+            traj_pub_ = create_publisher<DynTraj>(trajs_topic_, 10);
         if (move_models_)
             model_state_pub_ = create_publisher<gazebo_msgs::msg::ModelState>("/gazebo/set_model_state", 50);
 
@@ -305,19 +308,22 @@ private:
             double x, y, z;
             o.evaluate(t_now, x, y, z);
 
-            // Publish DynTraj
-            DynTraj traj;
-            traj.header.stamp = stamp;
-            traj.is_agent = false;
-            traj.mode = "analytic";
-            traj.id = 4000 + idx;
-            traj.function = {o.traj_x, o.traj_y, o.traj_z};
-            traj.velocity = {o.traj_vx, o.traj_vy, o.traj_vz};
-            traj.pos.x = x;
-            traj.pos.y = y;
-            traj.pos.z = z;
-            traj.bbox = {o.bbox[0], o.bbox[1], o.bbox[2]};
-            traj_pub_->publish(traj);
+            // Publish DynTraj (ground truth obstacle trajectories)
+            if (publish_trajs_)
+            {
+                DynTraj traj;
+                traj.header.stamp = stamp;
+                traj.is_agent = false;
+                traj.mode = "analytic";
+                traj.id = 4000 + idx;
+                traj.function = {o.traj_x, o.traj_y, o.traj_z};
+                traj.velocity = {o.traj_vx, o.traj_vy, o.traj_vz};
+                traj.pos.x = x;
+                traj.pos.y = y;
+                traj.pos.z = z;
+                traj.bbox = {o.bbox[0], o.bbox[1], o.bbox[2]};
+                traj_pub_->publish(traj);
+            }
 
             if (publish_tf_)
             {
@@ -372,6 +378,8 @@ private:
 
     bool publish_markers_{true};
     bool publish_tf_{false};
+    bool publish_trajs_{true};
+    std::string trajs_topic_{"/trajs"};
     bool move_models_{false};
     bool use_spawn_origins_{false};
     bool adopted_spawn_{false};

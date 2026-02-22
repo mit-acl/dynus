@@ -95,6 +95,18 @@ def _spawn_static_block(context):
     # Check if we should skip Gazebo spawning (rviz-only mode)
     skip_gazebo = _as_bool(context, 'skip_gazebo', False)
 
+    # Check if a pre-generated obstacles JSON file is provided
+    obstacles_json_file = LaunchConfiguration('obstacles_json_file').perform(context).strip()
+
+    if obstacles_json_file:
+        # Load obstacles from pre-generated file (shared with WorldPlugin)
+        print(f"[dyn_obstacles][spawn] Loading obstacles from file: {obstacles_json_file}")
+        with open(obstacles_json_file) as f:
+            obstacles_meta = json.load(f)
+        _OBSTACLES_JSON_STORAGE['obstacles_json'] = json.dumps(obstacles_meta)
+        print(f"[dyn_obstacles][spawn] Loaded {len(obstacles_meta)} obstacles from file")
+        return []  # No Gazebo spawn actions needed (WorldPlugin handles it)
+
     num_obstacles   = _as(context, 'num_obstacles', int,   1)
     x_min           = _as(context, 'x_min', float, 5.0)
     x_max           = _as(context, 'x_max', float, 105.0)
@@ -270,6 +282,9 @@ def _maybe_launch_forest_node(context):
     seed             = _as(context, 'seed', int, 0)
     publish_markers  = _as_bool(context, 'publish_markers', True)
     publish_tf       = _as_bool(context, 'publish_tf', True)
+    publish_trajs    = _as_bool(context, 'publish_trajs', True)
+    trajs_topic      = LaunchConfiguration('trajs_topic').perform(context).strip() or '/trajs'
+    use_sim_time     = _as_bool(context, 'use_sim_time', False)
 
     if DEBUG_DYN_OBS:
         print("[dyn_obstacles][forest_node] delay:", delay,
@@ -288,7 +303,10 @@ def _maybe_launch_forest_node(context):
         'seed': seed,
         'publish_markers': publish_markers,
         'publish_tf': publish_tf,
-        'use_spawn_origins': False
+        'publish_trajs': publish_trajs,
+        'trajs_topic': trajs_topic,
+        'use_spawn_origins': False,
+        'use_sim_time': use_sim_time,
     }
 
     forest_node = Node(
@@ -316,6 +334,10 @@ def generate_launch_description():
         DeclareLaunchArgument('launch_forest_node', default_value='true'),
         DeclareLaunchArgument('publish_markers', default_value='true'),
         DeclareLaunchArgument('publish_tf', default_value='true'),
+        DeclareLaunchArgument('publish_trajs', default_value='true',
+                              description='Publish ground truth /trajs (set false for unknown environments)'),
+        DeclareLaunchArgument('trajs_topic', default_value='/trajs',
+                              description='Topic name for publishing DynTraj messages'),
         DeclareLaunchArgument('use_sim_time', default_value='false'),
         DeclareLaunchArgument('skip_gazebo', default_value='false',
                               description='Skip Gazebo spawning (RViz-only mode)'),
@@ -335,6 +357,12 @@ def generate_launch_description():
 
         # URDF
         DeclareLaunchArgument('urdf_xacro', default_value='dyn_obstacle1.urdf.xacro'),
+
+        # Pre-generated obstacle JSON file (when set, skip internal generation)
+        DeclareLaunchArgument('obstacles_json_file', default_value='',
+                              description='Path to pre-generated obstacles JSON file. '
+                                          'When set, obstacles are loaded from this file '
+                                          'instead of being generated internally.'),
     ]
 
     ld = LaunchDescription(args)

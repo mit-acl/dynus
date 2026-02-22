@@ -28,9 +28,13 @@ def generate_launch_description():
     use_benchmark_arg = DeclareLaunchArgument('use_benchmark', default_value='false', description='Flag to indicate whether to use the global planner benchmark') # global planner benchmark
     use_hardware_arg = DeclareLaunchArgument('use_hardware', default_value='false', description='Flag to indicate whether to use hardware or simulation') # flag to indicte if this is hardware or simulation
     sim_env_arg = DeclareLaunchArgument('sim_env', default_value='', description='Simulation environment (gazebo, fake_sim). Empty string uses value from config file.') # override sim_env from config
+    environment_assumption_arg = DeclareLaunchArgument('environment_assumption', default_value='', description='Override environment_assumption from config (static, dynamic, dynamic_worst_case). Empty string uses value from config file.')
     publish_odom_arg  = DeclareLaunchArgument('publish_odom', default_value='true')
     odom_topic_arg    = DeclareLaunchArgument('odom_topic', default_value='visual_slam/odom')
     odom_frame_id_arg = DeclareLaunchArgument('odom_frame_id', default_value='map')
+    v_max_arg = DeclareLaunchArgument('v_max', default_value='', description='Override v_max from config. Empty string uses value from config file.')
+    hover_avoidance_enabled_arg = DeclareLaunchArgument('hover_avoidance_enabled', default_value='', description='Override hover_avoidance_enabled from config (true/false). Empty string uses value from config file.')
+    ignore_other_trajs_arg = DeclareLaunchArgument('ignore_other_trajs', default_value='', description='Override ignore_other_trajs from config (true/false). Empty string uses value from config file.')
 
     # Need to be the same as simulartor.launch.py
     map_size_x_arg = DeclareLaunchArgument('map_size_x', default_value='20.0')
@@ -52,9 +56,13 @@ def generate_launch_description():
         use_benchmark = convert_str_to_bool(LaunchConfiguration('use_benchmark').perform(context))
         use_hardware = convert_str_to_bool(LaunchConfiguration('use_hardware').perform(context))
         sim_env_override = LaunchConfiguration('sim_env').perform(context)
+        environment_assumption_override = LaunchConfiguration('environment_assumption').perform(context)
         publish_odom = convert_str_to_bool(LaunchConfiguration('publish_odom').perform(context))
         odom_topic = LaunchConfiguration('odom_topic').perform(context)
         odom_frame_id = LaunchConfiguration('odom_frame_id').perform(context)
+        v_max_override = LaunchConfiguration('v_max').perform(context)
+        hover_avoidance_enabled_override = LaunchConfiguration('hover_avoidance_enabled').perform(context)
+        ignore_other_trajs_override = LaunchConfiguration('ignore_other_trajs').perform(context)
         base_frame_id = namespace + '/base_link'
         map_size_x = float(LaunchConfiguration('map_size_x').perform(context))
         map_size_y = float(LaunchConfiguration('map_size_y').perform(context))
@@ -75,6 +83,22 @@ def generate_launch_description():
         # Override sim_env if provided
         if sim_env_override:
             parameters['sim_env'] = sim_env_override
+
+        # Override environment_assumption if provided
+        if environment_assumption_override:
+            parameters['environment_assumption'] = environment_assumption_override
+
+        # Override v_max if provided
+        if v_max_override:
+            parameters['v_max'] = float(v_max_override)
+
+        # Override hover_avoidance_enabled if provided
+        if hover_avoidance_enabled_override:
+            parameters['hover_avoidance_enabled'] = convert_str_to_bool(hover_avoidance_enabled_override)
+
+        # Override ignore_other_trajs if provided
+        if ignore_other_trajs_override:
+            parameters['ignore_other_trajs'] = convert_str_to_bool(ignore_other_trajs_override)
 
         # Update parameters for benchmarking
         parameters['file_path'] = data_file
@@ -228,6 +252,7 @@ def generate_launch_description():
         use_benchmark_arg,
         use_hardware_arg,
         sim_env_arg,
+        environment_assumption_arg,
         publish_odom_arg,
         odom_topic_arg,
         odom_frame_id_arg,
@@ -235,5 +260,8 @@ def generate_launch_description():
         map_size_y_arg,
         map_size_z_arg,
         odometry_topic_arg,
+        v_max_arg,
+        hover_avoidance_enabled_arg,
+        ignore_other_trajs_arg,
         OpaqueFunction(function=launch_setup)
     ])

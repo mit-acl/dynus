@@ -201,10 +201,10 @@ def generate_latex(temporal: Dict[str, dict], worst_case: Dict[str, dict]) -> st
     rows = []
     for case in CASES:
         label = CASE_LABELS[case]
-        if case in temporal:
-            rows.append((case, label, "Temporal", temporal[case]))
         if case in worst_case:
             rows.append((case, label, "Worst-Case", worst_case[case]))
+        if case in temporal:
+            rows.append((case, label, "DYNUS (Temporal)", temporal[case]))
 
     if not rows:
         return "% ERROR: No data to generate table"

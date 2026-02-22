@@ -71,8 +71,6 @@ DYNUS::DYNUS(parameters par) : par_(par)
   tmp_traj_solver_ptr->setXf(tmp_end_state);
   worst_traj_time_ = tmp_traj_solver_ptr->getInitialDt() * par_.num_N;
 
-  std::cout << bold << green << "[DYNUS] Worst case trajectory time for pre-computation: " << worst_traj_time_ << " [s]" << reset << std::endl;
-
   // Set up basis converter
   BasisConverter basis_converter;
   A_rest_pos_basis_ = basis_converter.getArestMinvo(); // Use Minvo basis
@@ -158,9 +156,19 @@ bool DYNUS::needReplan(const state &local_state, const state &local_G_term, cons
   double vel_magnitude = local_state.vel.norm();
   const double max_goal_velocity = 0.1; // [m/s] Maximum velocity when reaching goal
 
+  // Hover avoidance: allow replanning when GOAL_REACHED or HOVER_AVOIDING
+  // Must be checked before the GOAL_REACHED early return so the drone can
+  // detect nearby obstacles while hovering at the goal.
+  if (par_.hover_avoidance_enabled &&
+      (drone_status_ == DroneStatus::GOAL_REACHED || drone_status_ == DroneStatus::HOVER_AVOIDING))
+  {
+    return true;
+  }
+
   if (dist_to_term_G < par_.goal_radius && vel_magnitude < max_goal_velocity)
   {
     changeDroneStatus(DroneStatus::GOAL_REACHED);
+    p_hover_ = local_G_term.pos;
     return false;
   }
 
@@ -638,6 +646,14 @@ std::tuple<bool, bool> DYNUS::replan(double last_replaning_computation_time, dou
   if (!needReplan(local_state, local_G_term, last_plan_state))
     return std::make_tuple(false, false);
 
+  // Hover avoidance: check obstacles and potentially set evasion goal
+  if (par_.hover_avoidance_enabled &&
+      (drone_status_ == DroneStatus::GOAL_REACHED || drone_status_ == DroneStatus::HOVER_AVOIDING))
+  {
+    if (!checkHoverAvoidance(current_time))
+      return std::make_tuple(false, false);  // no avoidance needed, stay hovering
+  }
+
   if (par_.debug_verbose)
     std::cout << "Housekeeping: " << timer_housekeeping.getElapsedMicros() / 1000.0 << " ms" << std::endl;
 
@@ -884,7 +900,6 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
     obst_pos = obst_pos_;
     obst_bbox = obst_bbox_;
   }
-
   // Compute an initial dt for the local trajectory optimization
   whole_traj_solver_ptrs_[0]->setX0(local_A);
   whole_traj_solver_ptrs_[0]->setXf(local_E);
@@ -1238,10 +1253,6 @@ bool DYNUS::generateLocalTrajectory(
   for (size_t n = 0; n < N; ++n)
     time_end_times.push_back((static_cast<double>(n) + 1.0) * dt_layer);
 
-  // For choosing a representative safe corridor for visualization, keep your existing "worst case per spatial segment"
-  // This gives seg_end_times size = P (global segments)
-  std::vector<double> seg_end_times = computeWorstSegEndTimesPoly(initial_dt, factor, P);
-
   // Timer for computing the safe corridor
   MyTimer cvx_decomp_timer(true);
 
@@ -1510,6 +1521,12 @@ void DYNUS::getState(state &state)
 void DYNUS::getLastPlanState(state &state)
 {
   mtx_plan_.lock();
+  if (plan_.empty())
+  {
+    mtx_plan_.unlock();
+    getState(state);  // fallback to current state when no plan exists
+    return;
+  }
   state = plan_.back();
   mtx_plan_.unlock();
 }
@@ -1558,7 +1575,22 @@ void DYNUS::cleanUpOldTrajs(double current_time)
 void DYNUS::addTraj(std::shared_ptr<dynTraj> new_traj, double current_time)
 {
 
-  // Evaluate
+  // Always update existing trajectories (to keep time_received fresh and data current).
+  // Only apply map/horizon filtering when adding a brand-new trajectory.
+  {
+    std::lock_guard<std::mutex> lock(mtx_trajs_);
+    auto it = std::find_if(trajs_.begin(), trajs_.end(),
+                           [&](const std::shared_ptr<dynTraj> &t)
+                           { return t && t->id == new_traj->id; });
+
+    if (it != trajs_.end())
+    {
+      *it = new_traj; // always update existing trajectory
+      return;
+    }
+  }
+
+  // New trajectory: only add if currently within map and horizon
   Eigen::Vector3d p = new_traj->eval(current_time);
   if (!checkPointWithinMap(p))
     return;
@@ -1567,14 +1599,7 @@ void DYNUS::addTraj(std::shared_ptr<dynTraj> new_traj, double current_time)
 
   {
     std::lock_guard<std::mutex> lock(mtx_trajs_);
-    auto it = std::find_if(trajs_.begin(), trajs_.end(),
-                           [&](const std::shared_ptr<dynTraj> &t)
-                           { return t && t->id == new_traj->id; });
-
-    if (it != trajs_.end())
-      *it = new_traj; // replace pointer
-    else
-      trajs_.push_back(new_traj);
+    trajs_.push_back(new_traj);
   }
 }
 
@@ -1765,6 +1790,7 @@ void DYNUS::getDesiredYaw(state &next_goal)
     break;
   case DroneStatus::TRAVELING:
   case DroneStatus::GOAL_SEEN:
+  case DroneStatus::HOVER_AVOIDING:
     desired_yaw = atan2(next_goal.pos[1] - local_state.pos.y(), next_goal.pos[0] - local_state.pos.x());
     diff = desired_yaw - local_state.yaw;
     next_goal.yaw = desired_yaw;
@@ -1803,6 +1829,8 @@ void DYNUS::yaw(double diff, state &next_goal)
  */
 void DYNUS::setTerminalGoal(const state &term_goal)
 {
+  printf("[ADVER_DBG] setTerminalGoal: goal=(%.2f,%.2f,%.2f) status=%d\n",
+         term_goal.pos.x(), term_goal.pos.y(), term_goal.pos.z(), drone_status_);
 
   // Get the state
   state local_state;
@@ -1810,6 +1838,7 @@ void DYNUS::setTerminalGoal(const state &term_goal)
 
   // Set the terminal goal
   setGterm(term_goal);
+  p_hover_ = term_goal.pos;
 
   // Project the terminal goal to the sphere
   mtx_G_.lock();
@@ -1849,6 +1878,9 @@ void DYNUS::changeDroneStatus(int new_status)
   case DroneStatus::GOAL_REACHED:
     std::cout << bold << "status_=GOAL_REACHED" << reset;
     break;
+  case DroneStatus::HOVER_AVOIDING:
+    std::cout << bold << "status_=HOVER_AVOIDING" << reset;
+    break;
   }
 
   std::cout << " to ";
@@ -1866,6 +1898,9 @@ void DYNUS::changeDroneStatus(int new_status)
     break;
   case DroneStatus::GOAL_REACHED:
     std::cout << bold << "status_=GOAL_REACHED" << reset;
+    break;
+  case DroneStatus::HOVER_AVOIDING:
+    std::cout << bold << "status_=HOVER_AVOIDING" << reset;
     break;
   }
 
@@ -2100,8 +2135,13 @@ double DYNUS::computeObstPosAndTrajMaxTimeForMapUpdate(
   for (const auto &traj : local_trajs)
   {
     Eigen::Vector3d p = traj->eval(current_time);
-    if (!checkPointWithinMap(p) || (p - state_.pos).norm() > (par_.horizon))
+    bool in_map = checkPointWithinMap(p);
+    double dist = (p - state_.pos).norm();
+    bool in_horizon = dist <= par_.horizon;
+    if (!in_map || !in_horizon)
+    {
       continue;
+    }
 
     obst_pos.push_back(p);
     obst_bbox.push_back(traj->bbox);  // Extract bbox from dynTraj
@@ -2265,5 +2305,205 @@ bool DYNUS::goalReachedCheck()
   {
     return true;
   }
+  return false;
+}
+
+// ----------------------------------------------------------------------------
+
+/**
+ * @brief Checks for nearby dynamic obstacles during hover and computes evasion if needed.
+ * @param double current_time: Current timestamp for evaluating obstacle trajectories.
+ * @return bool: true if avoidance is needed (continue replanning), false otherwise.
+ */
+bool DYNUS::checkHoverAvoidance(double current_time)
+{
+  state local_state;
+  getState(local_state);
+
+  // Get current obstacle positions from trajs_
+  std::vector<std::shared_ptr<dynTraj>> local_trajs;
+  getTrajs(local_trajs);
+
+  static int hover_dbg_count = 0;
+  if (hover_dbg_count++ % 50 == 0)
+  {
+    printf("[ADVER_DBG] checkHoverAvoidance: drone=(%.2f,%.2f,%.2f) status=%d trajs=%zu p_hover=(%.2f,%.2f,%.2f)\n",
+           local_state.pos.x(), local_state.pos.y(), local_state.pos.z(),
+           drone_status_, local_trajs.size(),
+           p_hover_.x(), p_hover_.y(), p_hover_.z());
+    for (size_t j = 0; j < local_trajs.size(); ++j)
+    {
+      double dist = (local_state.pos - local_trajs[j]->current_pos).norm();
+      printf("  traj[%zu] id=%d current_pos=(%.2f,%.2f,%.2f) dist=%.2f d_trigger=%.2f\n",
+             j, local_trajs[j]->id,
+             local_trajs[j]->current_pos.x(), local_trajs[j]->current_pos.y(), local_trajs[j]->current_pos.z(),
+             dist, par_.hover_avoidance_d_trigger);
+    }
+  }
+
+  // Helper: check if a point is within d_trigger of any obstacle.
+  // When lookahead=true, samples over a future time window to catch periodic orbits
+  // (used for evasion goal validation). When lookahead=false, only checks the
+  // obstacle's current position (used for return-to-hover decisions so the drone
+  // returns as soon as the obstacle is visually clear).
+  const double lookahead_window = 15.0;  // seconds into the future
+  const double lookahead_step = 0.5;     // sampling interval
+  auto isPointThreatened = [&](const Eigen::Vector3d &pt, bool lookahead = true) -> bool
+  {
+    for (size_t i = 0; i < local_trajs.size(); ++i)
+    {
+      // Always check the agent's actual reported position first
+      if ((pt - local_trajs[i]->current_pos).norm() < par_.hover_avoidance_d_trigger)
+        return true;
+
+      // If lookahead enabled, also sample the predicted trajectory.
+      // For PWP trajectories (agents), limit to the trajectory's valid time range
+      // to avoid using stale endpoint extrapolation as a "future prediction".
+      // For analytic trajectories (obstacles), use the full lookahead window.
+      if (lookahead)
+      {
+        double t_end_lookahead = current_time + lookahead_window;
+        if (local_trajs[i]->mode == dynTraj::Mode::Piecewise &&
+            !local_trajs[i]->pwp.times.empty())
+        {
+          t_end_lookahead = std::min(t_end_lookahead, local_trajs[i]->pwp.times.back());
+        }
+        for (double t = current_time; t <= t_end_lookahead; t += lookahead_step)
+        {
+          Eigen::Vector3d p_obs = local_trajs[i]->eval(t);
+          if ((pt - p_obs).norm() < par_.hover_avoidance_d_trigger)
+            return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  // Compute repulsion vector from drone's current position
+  Eigen::Vector3d n_total = Eigen::Vector3d::Zero();
+  double closest_dist = 1e9;
+  for (const auto &traj : local_trajs)
+  {
+    // Use the agent's actual reported position for repulsion
+    Eigen::Vector3d p_obs = traj->current_pos;
+    Eigen::Vector3d r_i = local_state.pos - p_obs;
+    double dist_i = r_i.norm();
+    closest_dist = std::min(closest_dist, dist_i);
+
+    if (dist_i < par_.hover_avoidance_d_trigger && dist_i > 1e-6)
+    {
+      double w_i = 1.0 / (dist_i * dist_i);
+      n_total += w_i * (r_i / dist_i);
+    }
+  }
+
+  printf("[ADVER_DBG] repulsion: closest_dist=%.2f d_trigger=%.2f n_total_norm=%.4f min_norm=%.4f status=%d\n",
+         closest_dist, par_.hover_avoidance_d_trigger, n_total.norm(), par_.hover_avoidance_min_repulsion_norm, drone_status_);
+
+  if (n_total.norm() > par_.hover_avoidance_min_repulsion_norm)
+  {
+    // Store hover position once when first entering avoidance
+    if (drone_status_ != DroneStatus::HOVER_AVOIDING)
+    {
+      state temp_gterm;
+      getGterm(temp_gterm);
+      p_hover_ = temp_gterm.pos;
+      changeDroneStatus(DroneStatus::HOVER_AVOIDING);
+    }
+
+    // Compute evasion goal — push away from current position (not p_hover_)
+    Eigen::Vector3d direction = n_total.normalized();
+    Eigen::Vector3d p_evasion = local_state.pos + par_.hover_avoidance_h * direction;
+
+    // Clamp z to safe altitude
+    p_evasion.z() = std::max(par_.z_min + 0.5, std::min(p_evasion.z(), par_.z_max - 0.5));
+
+    // Reject evasion goal if it's still inside an obstacle's d_trigger
+    if (isPointThreatened(p_evasion, true))
+    {
+      // Try rotated directions to escape
+      const std::vector<double> angles = {M_PI/6, -M_PI/6, M_PI/3, -M_PI/3, M_PI/2, -M_PI/2, M_PI};
+      bool found_safe = false;
+      for (double angle : angles)
+      {
+        double cos_a = std::cos(angle), sin_a = std::sin(angle);
+        Eigen::Vector3d rotated_dir(
+            direction.x() * cos_a - direction.y() * sin_a,
+            direction.x() * sin_a + direction.y() * cos_a,
+            direction.z());
+        Eigen::Vector3d candidate = local_state.pos + par_.hover_avoidance_h * rotated_dir.normalized();
+        candidate.z() = std::max(par_.z_min + 0.5, std::min(candidate.z(), par_.z_max - 0.5));
+        if (!isPointThreatened(candidate, true) && !checkIfPointOccupied(Vec3f(candidate)))
+        {
+          p_evasion = candidate;
+          found_safe = true;
+          break;
+        }
+      }
+      if (!found_safe)
+        return false;  // can't find safe evasion point, stay put
+    }
+
+    // Also reject if evasion point hits a static obstacle
+    if (checkIfPointOccupied(Vec3f(p_evasion)))
+    {
+      const std::vector<double> angles = {M_PI/6, -M_PI/6, M_PI/3, -M_PI/3, M_PI/2, -M_PI/2};
+      bool found_free = false;
+      for (double angle : angles)
+      {
+        double cos_a = std::cos(angle), sin_a = std::sin(angle);
+        Eigen::Vector3d rotated_dir(
+            direction.x() * cos_a - direction.y() * sin_a,
+            direction.x() * sin_a + direction.y() * cos_a,
+            direction.z());
+        Eigen::Vector3d candidate = local_state.pos + par_.hover_avoidance_h * rotated_dir.normalized();
+        candidate.z() = std::max(par_.z_min + 0.5, std::min(candidate.z(), par_.z_max - 0.5));
+        if (!checkIfPointOccupied(Vec3f(candidate)) && !isPointThreatened(candidate, true))
+        {
+          p_evasion = candidate;
+          found_free = true;
+          break;
+        }
+      }
+      if (!found_free)
+        return false;
+    }
+
+    // Set evasion goal
+    state evasion_goal;
+    evasion_goal.setPos(p_evasion.x(), p_evasion.y(), p_evasion.z());
+    setGterm(evasion_goal);
+
+    mtx_G_.lock();
+    G_.pos = dynus_utils::projectPointToSphere(local_state.pos, p_evasion, par_.horizon);
+    mtx_G_.unlock();
+
+    return true;  // continue with replanning
+  }
+  else if (drone_status_ == DroneStatus::HOVER_AVOIDING)
+  {
+    // Obstacles cleared from drone's current position.
+    // Only return to p_hover_ if it's also clear of all obstacles.
+    if (isPointThreatened(p_hover_, false))
+    {
+      // p_hover_ is still unsafe — stay at current position and keep waiting.
+      // Do NOT overwrite p_hover_; the obstacle will eventually move away.
+      return false;
+    }
+
+    // Safe to return to original hover position
+    state hover_goal;
+    hover_goal.setPos(p_hover_.x(), p_hover_.y(), p_hover_.z());
+    setGterm(hover_goal);
+
+    mtx_G_.lock();
+    G_.pos = dynus_utils::projectPointToSphere(local_state.pos, p_hover_, par_.horizon);
+    mtx_G_.unlock();
+
+    changeDroneStatus(DroneStatus::TRAVELING);
+    return true;
+  }
+
+  // No obstacles nearby and not avoiding — stay in GOAL_REACHED
   return false;
 }

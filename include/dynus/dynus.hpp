@@ -71,7 +71,8 @@ enum DroneStatus
   YAWING = 0,
   TRAVELING = 1,
   GOAL_SEEN = 2,
-  GOAL_REACHED = 3
+  GOAL_REACHED = 3,
+  HOVER_AVOIDING = 4
 };
 
 class DYNUS
@@ -110,6 +111,10 @@ public:
   void yaw(double diff, state &next_goal);
   void computeG(const state &A, const state &G_term, double horizon);
   bool goalReachedCheck();
+  bool checkHoverAvoidance(double current_time);
+  Eigen::Vector3d getHoverPos() const { return p_hover_; }
+  int getDroneStatus() const { return drone_status_; }
+  double getHoverAvoidanceDTrigger() const { return par_.hover_avoidance_d_trigger; }
   void computeMapSize(const Eigen::Vector3d &min_pos, const Eigen::Vector3d &max_pos);
   bool checkPointWithinMap(const Eigen::Vector3d &point) const;
   void getStaticPushPoints(vec_Vecf<3> &static_push_points);
@@ -228,6 +233,10 @@ private:
 
   // Drone status
   int drone_status_ = DroneStatus::GOAL_REACHED; // status_ can be TRAVELING, GOAL_SEEN, GOAL_REACHED
+
+  // Hover avoidance
+  Eigen::Vector3d p_hover_ = Eigen::Vector3d::Zero();  // stored hover position
+  bool hover_avoidance_active_ = false;                  // whether we're currently avoiding
 
   // Mutex
   std::mutex mtx_plan_;                 // Mutex for the plan_

@@ -134,6 +134,7 @@ namespace dynus
         void publishVelocityInText(const Eigen::Vector3d &position, double velocity);
         void publishDynamicHeatCloud();
         void publishOccupiedCloud();
+        void publishHoverAvoidanceViz();
 
         // Timers for callback
         rclcpp::TimerBase::SharedPtr timer_replanning_;
@@ -144,6 +145,7 @@ namespace dynus
         rclcpp::TimerBase::SharedPtr timer_trajs_update_for_tmap_;
         rclcpp::TimerBase::SharedPtr timer_check_plan_safety_;
         rclcpp::TimerBase::SharedPtr timer_initial_pose_;
+        rclcpp::TimerBase::SharedPtr timer_hover_avoidance_viz_;
 
         // Callback groups
         rclcpp::CallbackGroup::SharedPtr cb_group_mu_1_;
@@ -203,6 +205,7 @@ namespace dynus
         rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr pub_vel_text_;
         rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_dynamic_heat_cloud_;
         rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_occupied_cloud_;
+        rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_hover_avoidance_viz_;
 
         // Subscribers
         rclcpp::Subscription<dynus_interfaces::msg::DynTraj>::SharedPtr sub_traj_;

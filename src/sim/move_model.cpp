@@ -54,21 +54,27 @@ namespace gazebo
       parser.compile(string_z, expression);
       traj_compiled_.push_back(expression);
 
-      // --- Initialize a ROS2 node and TF broadcaster ---
-      if (!rclcpp::ok())
+      // Check if TF publishing is requested via SDF parameter
+      if (_sdf->HasElement("publish_tf"))
       {
-        // In case rclcpp is not already initialized, do so.
-        rclcpp::init(0, nullptr);
+        publish_tf_ = _sdf->Get<bool>("publish_tf");
       }
-      // Create a dedicated node for this plugin.
-      std::string nodeName = "model_move_tf_" + model_->GetName();
-      rosnode_ = rclcpp::Node::make_shared(nodeName);
-      tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(rosnode_);
-      
-      // Spin the node in a separate thread so that the TF broadcaster works.
-      spinThread_ = std::thread([this]() {
-        rclcpp::spin(this->rosnode_);
-      });
+
+      // Only create ROS2 node + TF broadcaster when needed
+      if (publish_tf_)
+      {
+        if (!rclcpp::ok())
+        {
+          rclcpp::init(0, nullptr);
+        }
+        std::string nodeName = "model_move_tf_" + model_->GetName();
+        rosnode_ = rclcpp::Node::make_shared(nodeName);
+        tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(rosnode_);
+
+        spinThread_ = std::thread([this]() {
+          rclcpp::spin(this->rosnode_);
+        });
+      }
 
       // Connect to the world update event.
       updateConnection = event::Events::ConnectWorldUpdateBegin(

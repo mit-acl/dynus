@@ -529,3 +529,67 @@ src/dynus/
 # 3. python3 src/dynus/scripts/run_benchmark.py --setup-bash install/setup.bash --mode gazebo --cases easy medium hard --config-name static --num-trials 10
 # 4. python3 src/dynus/scripts/analyze_dynamic_benchmark.py --data-dir src/dynus/benchmark_data/static --all-cases --table-type static --latex-name static_benchmark.tex
 ```
+
+## Hover Avoidance Testing
+
+DYNUS includes a hover avoidance system that detects nearby dynamic obstacles when the drone is hovering at a reached goal and autonomously evades them. Two test modes are provided via `run_sim.py`.
+
+### Hover Test (Trefoil Obstacles)
+
+Spawns the drone in an empty world with 3 trefoil-knot obstacles orbiting nearby. The drone's goal equals its start position, so it immediately enters `GOAL_REACHED`. As obstacles pass close, the drone transitions to `HOVER_AVOIDING`, flies away, then returns when safe.
+
+```bash
+cd ~/code/dynus_ws
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select dynus
+source install/setup.bash
+
+# Launch hover avoidance test
+python3 src/dynus/scripts/run_sim.py --mode hover-test -s install/setup.bash
+```
+
+**What to expect in RViz:**
+- Red translucent spheres show the danger zone around each obstacle (radius = `hover_avoidance_d_trigger`)
+- An orange dot marks the hover position (the goal the drone returns to)
+- The drone evades when a red sphere covers the orange dot, then flies back when it clears
+
+**Expected console output cycle:**
+1. Drone starts at (0, 0, 2) and goal is sent to (0, 0, 2)
+2. `GOAL_REACHED` — drone hovers in place
+3. Obstacle approaches — `HOVER_AVOIDING` — drone moves away
+4. Obstacle recedes — `TRAVELING` — drone returns to hover position
+5. `GOAL_SEEN` — `GOAL_REACHED` — cycle repeats
+
+### Adversarial Test (Chaser vs. Evader)
+
+Spawns two DYNUS agents: an evader (NX01, v_max=5.0 m/s) hovering in place and a chaser (NX02, v_max=1.0 m/s) that continuously navigates toward the evader. Both agents share trajectories, so the evader's hover avoidance triggers when the chaser approaches.
+
+```bash
+cd ~/code/dynus_ws
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select dynus
+source install/setup.bash
+
+# Launch adversarial test
+python3 src/dynus/scripts/run_sim.py --mode adversarial-test -s install/setup.bash
+```
+
+**What to expect:**
+- NX01 (evader) hovers at (0, 0, 2) and evades when NX02 gets close
+- NX02 (chaser) starts at (8, 0, 2) and slowly pursues NX01
+- A `chaser_goal_forwarder` node continuously sends NX01's position as NX02's goal
+
+### Configuration
+
+Hover avoidance parameters are in `src/dynus/config/dynus.yaml`:
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `hover_avoidance_enabled` | Enable/disable hover avoidance | `true` |
+| `hover_avoidance_d_trigger` | Danger radius around obstacles (m) | `4.0` |
+| `hover_avoidance_h` | Evasion distance (m) | `3.0` |
+
+Both test modes support `--dry-run` to inspect the generated tmuxp YAML without launching:
+
+```bash
+python3 src/dynus/scripts/run_sim.py --mode hover-test -s install/setup.bash --dry-run
+python3 src/dynus/scripts/run_sim.py --mode adversarial-test -s install/setup.bash --dry-run
+```

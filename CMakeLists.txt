@@ -111,10 +111,15 @@ add_executable(convert_velodyne_to_ros_time src/dynus/convert_velodyne_to_ros_ti
 target_link_libraries(convert_velodyne_to_ros_time)
 ament_target_dependencies(convert_velodyne_to_ros_time rclcpp rclcpp_components visualization_msgs dynus_interfaces sensor_msgs gazebo_msgs sensor_msgs tf2 tf2_ros nav_msgs)
 
-# For dynamic obstacles in Gazebo
+# For dynamic obstacles in Gazebo (per-model plugin, legacy)
 add_library(move_model SHARED src/sim/move_model.cpp)
 target_link_libraries(move_model ${GAZEBO_LIBRARIES})
 ament_target_dependencies(move_model rclcpp tf2 tf2_ros geometry_msgs)
+
+# World plugin: single plugin manages ALL dynamic obstacles (replaces N move_model instances)
+add_library(dynamic_obstacles_world_plugin SHARED src/sim/dynamic_obstacles_world_plugin.cpp)
+target_link_libraries(dynamic_obstacles_world_plugin ${GAZEBO_LIBRARIES})
+ament_target_dependencies(dynamic_obstacles_world_plugin)
 
 # For gazebo plugins (IMU)
 add_library(imu_plugin SHARED src/sim/gazebo_ros_imu_sensor.cpp)
@@ -151,6 +156,12 @@ add_executable(temporal_layered_corridor_test_node src/dynus/temporal_layered_co
 target_link_libraries(temporal_layered_corridor_test_node ${GUROBI_LIBRARIES} ${PCL_LIBRARIES})
 ament_target_dependencies(temporal_layered_corridor_test_node rclcpp visualization_msgs std_msgs geometry_msgs Eigen3 decomp_util decomp_ros_msgs decomp_rviz_plugins decomp_test_node tf2 tf2_ros tf2_geometry_msgs tf2_eigen std_srvs pcl_ros pcl_conversions sensor_msgs dynus_interfaces)
 
+# Benchmark analysis tool (C++ port of analyze_dynamic_benchmark.py)
+find_package(rosbag2_cpp REQUIRED)
+find_package(rosbag2_storage REQUIRED)
+add_executable(analyze_benchmark src/tools/analyze_benchmark.cpp)
+ament_target_dependencies(analyze_benchmark rclcpp dynus_interfaces tf2_msgs rosbag2_cpp rosbag2_storage)
+
 # install for launch and config files
 install(DIRECTORY
 launch
@@ -176,6 +187,7 @@ install(TARGETS
   local_traj_benchmark_node
   visualize_local_trajs_node
   temporal_layered_corridor_test_node
+  analyze_benchmark
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -183,6 +195,7 @@ install(TARGETS
 install(TARGETS
   move_model
   imu_plugin
+  dynamic_obstacles_world_plugin
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
@@ -197,6 +210,7 @@ install(PROGRAMS
   scripts/goal_monitor_node.py
   scripts/generate_random_forest.py
   scripts/rviz_obstacles_node.py
+  scripts/chaser_goal_forwarder.py
   benchmarking/dynamic_obstacle_benchmark_node.py
   benchmarking/unc_benchmark_node.py
   DESTINATION lib/${PROJECT_NAME}

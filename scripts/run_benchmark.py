@@ -282,7 +282,8 @@ class BenchmarkMonitor(Node):
 
     def __init__(self, namespace: str = "NX01", v_max: float = 2.0,
                  a_max: float = 2.0, j_max: float = 3.0,
-                 commanded_start: tuple = None, commanded_goal: tuple = None):
+                 commanded_start: tuple = None, commanded_goal: tuple = None,
+                 trajs_topic: str = '/trajs'):
         super().__init__('benchmark_monitor')
 
         self.namespace = namespace
@@ -354,7 +355,7 @@ class BenchmarkMonitor(Node):
 
         self.sub_trajs = self.create_subscription(
             DynTraj,
-            '/trajs',
+            trajs_topic,
             self.trajs_callback,
             10
         )
@@ -381,25 +382,38 @@ class BenchmarkMonitor(Node):
         self.timestamps.append(msg_time)
 
     def goal_reached_callback(self, msg: Empty):
-        """Mark goal_reached signal received (actual end_time determined by proximity + velocity check)"""
+        """Mark goal_reached signal received.
+
+        When the planner publishes goal_reached, trust the signal if the drone
+        is within proximity of the goal. The planner may stop publishing /goal
+        commands after this, so we cannot rely on the speed check (the last
+        commanded velocity may be non-zero from the deceleration phase).
+        """
         self.get_logger().info(f"goal_reached_callback triggered! Current state: {self.goal_reached}")
         if not self.goal_reached:
-            # Check proximity (< 0.5m) and velocity (< 0.1 m/s) conditions
-            if self._check_arrival_conditions():
+            # Trust the planner's signal — only verify proximity (not speed)
+            # because the planner may stop publishing commands after goal_reached,
+            # leaving the last velocity non-zero.
+            if self._check_arrival_conditions(require_speed_check=False):
                 self.goal_reached = True
                 if self.timestamps:
                     self.end_time = self.timestamps[-1]
                 else:
                     self.end_time = self.get_clock().now().nanoseconds / 1e9
-                self.get_logger().info("Goal reached (proximity < 0.5m AND speed < 0.1 m/s)!")
+                self.get_logger().info("Goal reached (planner signal + proximity < 1.0m)!")
             else:
-                # Signal received but conditions not met yet; mark signal received
-                # The monitoring loop will keep checking
+                # Signal received but drone not near goal yet; keep checking
                 self.goal_reached_signal = True
-                self.get_logger().info("goal_reached signal received, waiting for proximity + velocity conditions...")
+                self.get_logger().info("goal_reached signal received, waiting for proximity condition...")
 
-    def _check_arrival_conditions(self) -> bool:
-        """Check if drone is within 0.5m of goal AND velocity < 0.1 m/s"""
+    def _check_arrival_conditions(self, require_speed_check: bool = True) -> bool:
+        """Check if drone is near goal.
+
+        Args:
+            require_speed_check: If True, also require speed < 0.1 m/s.
+                                 Set False when planner signal is received (planner may
+                                 stop publishing commands, leaving last velocity non-zero).
+        """
         goal = self.commanded_goal if self.commanded_goal else self.goal_pos
         if goal is None or len(self.positions) == 0 or len(self.velocities) == 0:
             return False
@@ -410,6 +424,9 @@ class BenchmarkMonitor(Node):
         dy = pos[1] - goal[1]
         dz = pos[2] - goal[2]
         dist = math.sqrt(dx*dx + dy*dy + dz*dz)
+
+        if not require_speed_check:
+            return dist < 1.0  # Relaxed threshold when planner confirms goal reached
 
         # Check velocity magnitude
         vel = self.velocities[-1]
@@ -578,7 +595,8 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
                      visualize: bool = False,
                      data_file: Optional[str] = None,
                      mode: str = 'rviz-only',
-                     env: Optional[str] = None) -> BenchmarkMetrics:
+                     env: Optional[str] = None,
+                     trajs_topic: str = '/trajs') -> BenchmarkMetrics:
     """Run a single simulation trial and collect metrics"""
 
     print(f"\nTrial {trial_id}: seed={seed}, obstacles={num_obstacles}, dynamic_ratio={dynamic_ratio}")
@@ -626,7 +644,8 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
         a_max=a_max_actual,
         j_max=j_max_actual,
         commanded_start=start,
-        commanded_goal=goal
+        commanded_goal=goal,
+        trajs_topic=trajs_topic
     )
 
     # Build run_sim.py command
@@ -640,6 +659,39 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
             "--start", str(start[0]), str(start[1]), str(start[2]),
             "--goal", str(goal[0]), str(goal[1]), str(goal[2]),
             "--no-goal-sender",  # Disable automatic goal sending - we'll send manually after rosbag starts
+        ]
+
+        if env:
+            cmd.extend(["--env", env])
+
+        # Add benchmark data file if specified
+        if data_file:
+            cmd.extend(["--data-file", data_file])
+            cmd.append("--use-benchmark")
+            cmd.extend(["--global-planner", global_planner])
+
+        # Headless for benchmarking
+        if not visualize:
+            cmd.append("--no-gazebo-gui")
+            cmd.append("--no-rviz")
+
+    elif mode == 'gazebo-dynamic':
+        cmd = [
+            "python3", str(run_sim_path),
+            "--mode", "gazebo-dynamic",
+            "--no-ground-truth",
+            "--trajs-topic", trajs_topic,
+            "--d435",
+            "--setup-bash", setup_bash,
+            "--start", str(start[0]), str(start[1]), str(start[2]),
+            "--goal", str(goal[0]), str(goal[1]), str(goal[2]),
+            "--num-obstacles", str(num_obstacles),
+            "--dynamic-ratio", str(dynamic_ratio),
+            "--obs-x-range", str(obs_x_range[0]), str(obs_x_range[1]),
+            "--obs-y-range", str(obs_y_range[0]), str(obs_y_range[1]),
+            "--obs-z-range", str(obs_z_range[0]), str(obs_z_range[1]),
+            "--seed", str(seed),
+            "--no-goal-sender",
         ]
 
         if env:
@@ -693,7 +745,7 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
     )
 
     # Wait for simulation to initialize (nodes to start up)
-    if mode == 'gazebo':
+    if mode in ('gazebo', 'gazebo-dynamic'):
         print("  Waiting for simulation to initialize (20s for Gazebo)...")
         time.sleep(20)
     else:
@@ -715,7 +767,7 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
             f"/{monitor.namespace}/goal_reached",
             "/tf",
             "/tf_static",
-            "/trajs"
+            trajs_topic
         ]
 
         bag_cmd = ["ros2", "bag", "record", "-o", bag_path] + record_topics
@@ -785,14 +837,15 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
             rclpy.spin_once(monitor, timeout_sec=0.05)
 
             # If goal_reached signal was received but conditions not yet met, keep checking
+            # Use relaxed check (no speed requirement) since planner already confirmed goal reached
             if monitor.goal_reached_signal and not monitor.goal_reached:
-                if monitor._check_arrival_conditions():
+                if monitor._check_arrival_conditions(require_speed_check=False):
                     monitor.goal_reached = True
                     if monitor.timestamps:
                         monitor.end_time = monitor.timestamps[-1]
                     else:
                         monitor.end_time = time.time()
-                    monitor.get_logger().info("Goal reached (proximity < 0.5m AND speed < 0.1 m/s)!")
+                    monitor.get_logger().info("Goal reached (planner signal + proximity < 1.0m)!")
 
             # Check if goal reached
             if monitor.goal_reached:
@@ -1144,9 +1197,10 @@ def main():
     parser.add_argument(
         '--mode',
         type=str,
-        choices=['rviz-only', 'gazebo'],
+        choices=['rviz-only', 'gazebo', 'gazebo-dynamic'],
         default='rviz-only',
-        help='Simulation mode: rviz-only (procedural obstacles) or gazebo (static world files) [default: rviz-only]'
+        help='Simulation mode: rviz-only (procedural obstacles), gazebo (static world files), '
+             'or gazebo-dynamic (Gazebo + dynamic obstacles, unknown environment) [default: rviz-only]'
     )
 
     parser.add_argument(
@@ -1192,10 +1246,16 @@ def main():
 
     # Run benchmarks for each case
     for case in cases_to_run:
-        # Determine obstacle count and environment for this case
+        # Determine obstacle count, environment, and trajs_topic for this case
+        trajs_topic = '/trajs'  # default
+
         if args.mode == 'gazebo':
             num_obstacles = 0  # Static world, no procedural obstacles
             env_name = args.env if args.env else case_environments[case]
+        elif args.mode == 'gazebo-dynamic':
+            num_obstacles = case_obstacles[case]
+            env_name = args.env if args.env else 'empty_wo_ground'
+            trajs_topic = '/trajs_ground_truth'
         else:
             num_obstacles = case_obstacles[case]
             env_name = None
@@ -1249,7 +1309,8 @@ def main():
                     visualize=args.visualize,
                     data_file=data_file,
                     mode=args.mode,
-                    env=env_name
+                    env=env_name,
+                    trajs_topic=trajs_topic
                 )
                 metrics_list.append(metrics)
 

@@ -165,6 +165,7 @@ struct parameters
   double factor_final = 5.0;              // final factor for the trajectory time allocation
   double factor_constant_step_size = 0.1; // step size for the constant factor increase
   double obst_max_vel;        // maximum velocity of dynamic obstacles
+  double obst_position_error = 0.0; // bounded position estimation error for dynamic obstacles
   double max_gurobi_comp_time_sec; // maximum Gurobi computation time per replanning
   double jerk_smooth_weight; // weight for the jerk smoothness
   bool using_variable_elimination = true;
@@ -190,6 +191,13 @@ struct parameters
 
   // Debug flag
   bool debug_verbose;
+
+  // Hover avoidance parameters
+  bool ignore_other_trajs = false;
+  bool hover_avoidance_enabled = false;
+  double hover_avoidance_d_trigger = 4.0;
+  double hover_avoidance_h = 3.0;
+  double hover_avoidance_min_repulsion_norm = 0.01;
 };
 
 struct BasisConverter
@@ -811,6 +819,7 @@ struct dynTraj
   std::vector<Eigen::Matrix<double, 3, 4>> control_points;
   Eigen::Vector3d bbox;
   Eigen::Vector3d goal;
+  Eigen::Vector3d current_pos{Eigen::Vector3d::Zero()}; // actual position at time of last msg
   bool is_agent = false;
   int id = -1;
   double time_received = 0.0;

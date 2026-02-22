@@ -39,6 +39,8 @@ def generate_launch_description():
         DeclareLaunchArgument('publish_rate_hz', default_value='100.0'),
         DeclareLaunchArgument('seed', default_value='0'),
         DeclareLaunchArgument('use_rviz', default_value='true'),
+        DeclareLaunchArgument('publish_tf', default_value='true',
+                              description='Publish TF for dynamic obstacles'),
     ]
 
     # RViz node for visualization
@@ -71,7 +73,7 @@ def generate_launch_description():
             'publish_rate_hz': LaunchConfiguration('publish_rate_hz'),
             'seed': LaunchConfiguration('seed'),
             'publish_markers': 'true',
-            'publish_tf': 'true',
+            'publish_tf': LaunchConfiguration('publish_tf'),
             'launch_forest_node': 'true',
         }.items()
     )

@@ -19,6 +19,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <map>
+#include <set>
 #include <algorithm>
 #include <limits>
 #include <cctype>
@@ -154,7 +155,8 @@ static const std::vector<std::string> kPlannerPaletteHex = {
     "#fffc5d", // yellow
     "#4adeaf", // mint
     "#00b2ff", // cyan
-    "#420e87"  // purple
+    "#420e87", // purple
+    "#00ff00"  // green
 };
 
 // ------------------------ overlap-visibility controls ------------------------
@@ -519,6 +521,14 @@ static bool parseTrajCsv(const fs::path &csv_path, TrajCsv &out)
             for (int i = 0; i < (int)toks.size(); ++i)
                 col[toks[i]] = i;
 
+            // Support both "x,y,z" and "px,py,pz" column names
+            if (col.find("x") == col.end() && col.find("px") != col.end())
+                col["x"] = col["px"];
+            if (col.find("y") == col.end() && col.find("py") != col.end())
+                col["y"] = col["py"];
+            if (col.find("z") == col.end() && col.find("pz") != col.end())
+                col["z"] = col["pz"];
+
             if (col.find("x") == col.end() ||
                 col.find("y") == col.end() ||
                 col.find("z") == col.end())
@@ -606,6 +616,13 @@ static bool parseTrajCsv(const fs::path &csv_path, TrajCsv &out)
     if (out.case_file.empty())
     {
         out.case_file = inferCaseFromFilename();
+
+        // Fallback: if filename is like "sfc_g000.csv" (no traj_ prefix / no __ separator),
+        // treat the bare stem as the case file (e.g. "sfc_g000").
+        if (out.case_file.empty() && startsWith(fname, "sfc_"))
+        {
+            out.case_file = stripCsvExt(fname);
+        }
     }
     else
     {
@@ -629,7 +646,14 @@ static bool parseTrajCsv(const fs::path &csv_path, TrajCsv &out)
         if (pos2 != std::string::npos)
             out.planner_name = stripCsvExt(s.substr(0, pos2));
         else
-            out.planner_name = "unknown";
+        {
+            // Fallback: use parent directory name as planner variant
+            // e.g. parent_dir = "traj_l2" -> planner_name = "super_l2"
+            if (startsWith(parent_dir, "traj_"))
+                out.planner_name = "super_" + parent_dir.substr(5);
+            else
+                out.planner_name = "unknown";
+        }
     }
 
     if (out.frame_id.empty())
@@ -644,23 +668,25 @@ static inline std::string prettyPlannerName(const std::string &planner_key)
 {
     // DYNUS
     if (planner_key == "dynus_N4")
-        return std::string("DYNUS (N=4)");
+        return "DYNUS(N=4)";
     if (planner_key == "dynus_N5")
-        return std::string("DYNUS (N=5)");
+        return "DYNUS(N=5)";
     if (planner_key == "dynus_N6")
-        return std::string("DYNUS (N=6)");
+        return "DYNUS(N=6)";
 
     // FASTER (original)
     if (planner_key == "original_faster_N4")
-        return std::string("FASTER (N=4)");
+        return "FASTER(N=4)";
     if (planner_key == "original_faster_N5")
-        return std::string("FASTER (N=5)");
+        return "FASTER(N=5)";
     if (planner_key == "original_faster_N6")
-        return std::string("FASTER (N=6)");
+        return "FASTER(N=6)";
 
     // SUPER
-    if (planner_key == "super")
-        return "SUPER";
+    if (planner_key == "super_l2")
+        return "SUPER(L2)";
+    if (planner_key == "super_linf")
+        return "SUPER(L-inf)";
 
     // Skip safe_faster trajectories by returning empty string
     if (planner_key.find("safe_faster") != std::string::npos)
@@ -773,11 +799,6 @@ static void appendPlannerLegendOnce(
 
         text.scale.z = text_scale * label_height;
 
-        if (N != 7)
-        {
-            text.color = makeColor((float)rr, (float)gg, (float)bb, alpha_text);
-        }
-        else
         {
             const std::string &hex = kPlannerPaletteHex[(size_t)i % kPlannerPaletteHex.size()];
             text.color = makeColorHex(hex, alpha_text);
@@ -1063,7 +1084,7 @@ static void appendTrajOverlayMarkers(
             initMarkerCommon(text, ns_label);
             text.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
 
-            text.pose.position.x = tr.pts.front().x - 2.0;
+            text.pose.position.x = tr.pts.front().x - 2.5;
             text.pose.position.y = y_label;
             text.pose.position.z = tr.pts.front().z + z_off + label_z_offset;
 
@@ -1136,7 +1157,8 @@ public:
             "traj_dump_root_dirs",
             std::vector<std::string>{
                 traj_dump_root_dir_,                               // dynus/faster dumps
-                "/media/kkondo/kota_elements/super/standardized_benchmark/traj_dump_ros1" // SUPER dumps
+                "/home/kkondo/code/super_ws/src/SUPER/data/standardized_benchmark/traj_l2",   // SUPER L2
+                "/home/kkondo/code/super_ws/src/SUPER/data/standardized_benchmark/traj_linf"  // SUPER Linf
             });
 
         // Topics
@@ -1158,6 +1180,11 @@ public:
         show_guide_path_ = declare_parameter<bool>("show_guide_path", true);
         show_points_ = declare_parameter<bool>("show_points", true);
         show_labels_ = declare_parameter<bool>("show_labels", true);
+
+        // Planner whitelist: if non-empty, only load these planner keys
+        planner_whitelist_vec_ = declare_parameter<std::vector<std::string>>(
+            "planner_whitelist", std::vector<std::string>{});
+        planner_whitelist_.insert(planner_whitelist_vec_.begin(), planner_whitelist_vec_.end());
 
         // Styling
         traj_line_width_ = declare_parameter<double>("traj_line_width", 0.06);
@@ -1303,6 +1330,11 @@ private:
 
                 TrajCsv tr;
                 if (!parseTrajCsv(p, tr))
+                    continue;
+
+                // Skip planners not in whitelist (if whitelist is non-empty)
+                if (!planner_whitelist_.empty() &&
+                    planner_whitelist_.find(tr.planner_name) == planner_whitelist_.end())
                     continue;
 
                 tr.case_file = fs::path(tr.case_file).filename().string();
@@ -1456,7 +1488,7 @@ private:
             show_points_, show_labels_,
             traj_line_width_, traj_point_diam_,
             label_height_, label_z_offset_,
-            /*goal_text_override=*/"goal",
+            /*goal_text_override=*/"goal(case-" + std::to_string(idx) + ")",
             start_opt, goal_opt,
             /*global_planner_index=*/&global_planner_index_,
             /*global_planner_count=*/global_planner_count_);
@@ -1685,6 +1717,9 @@ private:
     bool show_guide_path_{true};
     bool show_points_{true};
     bool show_labels_{true};
+
+    std::vector<std::string> planner_whitelist_vec_;
+    std::set<std::string> planner_whitelist_;
 
     double traj_line_width_{0.06};
     double traj_point_diam_{0.10};

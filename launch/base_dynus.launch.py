@@ -32,6 +32,7 @@ def generate_launch_description():
 
     # benchmark name
     benchmark_name_arg = DeclareLaunchArgument('benchmark_name', default_value='benchmark_name', description='Benchmark name')
+    world_file_arg = DeclareLaunchArgument('world_file', default_value='', description='Full path override for world file (bypasses env mapping)')
 
     # Opaque function to launch nodes
     def launch_setup(context, *args, **kwargs):
@@ -66,9 +67,13 @@ def generate_launch_description():
             'dynamic_forest': 'dynamic_forest.world',
         }
 
-        # Choose the world file based on the provided environment.
-        world_file = world_mapping.get(env_value, 'easy_forest.world')
-        world_path = PathJoinSubstitution([FindPackageShare('dynus'), 'worlds', world_file])
+        # Choose the world file: use world_file override if provided, else env mapping
+        world_file_override = LaunchConfiguration('world_file').perform(context).strip()
+        if world_file_override:
+            world_path = world_file_override
+        else:
+            world_file = world_mapping.get(env_value, 'easy_forest.world')
+            world_path = PathJoinSubstitution([FindPackageShare('dynus'), 'worlds', world_file])
 
         use_rviz = convert_str_to_bool(LaunchConfiguration('use_rviz').perform(context))
         use_dyn_obs = convert_str_to_bool(LaunchConfiguration('use_dyn_obs').perform(context))
@@ -130,5 +135,6 @@ def generate_launch_description():
         use_gazebo_gui_arg,
         use_dyn_obs_arg,
         benchmark_name_arg,
+        world_file_arg,
         OpaqueFunction(function=launch_setup)
     ])
