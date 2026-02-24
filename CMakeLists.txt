@@ -101,6 +101,11 @@ add_executable(convert_odom_to_state src/dynus/convert_odom_to_state.cpp)
 target_link_libraries(convert_odom_to_state)
 ament_target_dependencies(convert_odom_to_state rclcpp example_interfaces dynus_interfaces visualization_msgs Eigen3 sensor_msgs std_msgs decomp_rviz_plugins decomp_test_node tf2_geometry_msgs tf2 tf2_ros tf2_eigen)
 
+# Add odom to global state converter (local->global frame via TF2)
+add_executable(odom_to_global_state src/dynus/odom_to_global_state.cpp)
+target_link_libraries(odom_to_global_state)
+ament_target_dependencies(odom_to_global_state rclcpp dynus_interfaces Eigen3 tf2 tf2_ros nav_msgs geometry_msgs)
+
 # Add vicon to state converter
 add_executable(convert_vicon_to_state src/dynus/convert_vicon_to_state.cpp)
 target_link_libraries(convert_vicon_to_state)
@@ -180,6 +185,7 @@ install(TARGETS
   obstacle_tracker_node
   convert_goal_to_cmd_vel
   convert_odom_to_state
+  odom_to_global_state
   convert_vicon_to_state
   convert_velodyne_to_ros_time
   dynamic_forest_node

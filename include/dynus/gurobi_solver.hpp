@@ -257,7 +257,13 @@ protected:
 
     int N_of_polytopes_ = 3;
 
-    GRBEnv *env = new GRBEnv();
+    GRBEnv *env = []() {
+      GRBEnv *e = new GRBEnv(true);   // start with empty env
+      e->set(GRB_IntParam_OutputFlag, 0);
+      e->set(GRB_IntParam_LogToConsole, 0);
+      e->start();                      // start env (suppresses license banner)
+      return e;
+    }();
     GRBModel m_ = GRBModel(*env);
 
     std::vector<GRBConstr> at_least_1_pol_cons_;    // Constraints at least in one polytope

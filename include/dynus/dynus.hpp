@@ -139,7 +139,7 @@ public:
       const std::vector<LinearConstraint3D>* precomputed_spatial_constraints = nullptr,
       const vec_E<Polyhedron<3>>* precomputed_spatial_poly_out = nullptr);
   void resetData();
-  void retrieveData(double &final_g, double &global_planning_time, double &dgp_static_jps_time, double &dgp_check_path_time, double &dgp_dynamic_astar_time, double &dgp_recover_path_time, double &cvx_decomp_time, double &local_traj_computatoin_time, double &safety_check_time, double &safe_paths_time, double &yaw_sequence_time, double &yaw_fitting_time);
+  void retrieveData(double &final_g, double &global_planning_time, double &dgp_static_jps_time, double &dgp_check_path_time, double &dgp_dynamic_astar_time, double &dgp_recover_path_time, double &cvx_decomp_time, double &local_traj_computatoin_time, double &safety_check_time, double &safe_paths_time, double &yaw_sequence_time, double &yaw_fitting_time, double &successful_factor);
   void retrievePolytopes(vec_E<Polyhedron<3>> &poly_out_whole, vec_E<Polyhedron<3>> &poly_out_safe);
   void retrieveGoalSetpoints(std::vector<state> &goal_setpoints);
   void retrieveListSubOptGoalSetpoints(std::vector<std::vector<state>> &list_subopt_goal_setpoints);
@@ -195,6 +195,7 @@ private:
   double dgp_dynamic_astar_time_ = 0.0;
   double dgp_recover_path_time_ = 0.0;
   double cvx_decomp_time_ = 0.0;
+  double successful_factor_ = 0.0;
   double local_traj_computation_time_ = 0.0;
   double safe_paths_time_ = 0.0;
   double safety_check_time_ = 0.0;

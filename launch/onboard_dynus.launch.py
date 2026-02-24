@@ -27,6 +27,7 @@ def generate_launch_description():
     global_planner_arg = DeclareLaunchArgument('global_planner', default_value='sjps', description='Global planner to use') # global planner
     use_benchmark_arg = DeclareLaunchArgument('use_benchmark', default_value='false', description='Flag to indicate whether to use the global planner benchmark') # global planner benchmark
     use_hardware_arg = DeclareLaunchArgument('use_hardware', default_value='false', description='Flag to indicate whether to use hardware or simulation') # flag to indicte if this is hardware or simulation
+    use_onboard_localization_arg = DeclareLaunchArgument('use_onboard_localization', default_value='false', description='Use onboard localization (DLIO odom) instead of Vicon')
     sim_env_arg = DeclareLaunchArgument('sim_env', default_value='', description='Simulation environment (gazebo, fake_sim). Empty string uses value from config file.') # override sim_env from config
     environment_assumption_arg = DeclareLaunchArgument('environment_assumption', default_value='', description='Override environment_assumption from config (static, dynamic, dynamic_worst_case). Empty string uses value from config file.')
     publish_odom_arg  = DeclareLaunchArgument('publish_odom', default_value='true')
@@ -55,6 +56,7 @@ def generate_launch_description():
         global_planner = LaunchConfiguration('global_planner').perform(context)
         use_benchmark = convert_str_to_bool(LaunchConfiguration('use_benchmark').perform(context))
         use_hardware = convert_str_to_bool(LaunchConfiguration('use_hardware').perform(context))
+        use_onboard_localization = convert_str_to_bool(LaunchConfiguration('use_onboard_localization').perform(context))
         sim_env_override = LaunchConfiguration('sim_env').perform(context)
         environment_assumption_override = LaunchConfiguration('environment_assumption').perform(context)
         publish_odom = convert_str_to_bool(LaunchConfiguration('publish_odom').perform(context))
@@ -71,7 +73,10 @@ def generate_launch_description():
 
         # The path to the urdf file
         urdf_path=PathJoinSubstitution([FindPackageShare('dynus'), 'urdf', 'quadrotor.urdf.xacro'])
-        parameters_path=os.path.join(get_package_share_directory('dynus'), 'config', 'dynus.yaml')
+        if use_hardware:
+            parameters_path=os.path.join(get_package_share_directory('dynus'), 'config', 'dynus_hw_quadrotor.yaml')
+        else:
+            parameters_path=os.path.join(get_package_share_directory('dynus'), 'config', 'dynus.yaml')
 
         # Get the dict of parameters from the yaml file
         with open(parameters_path, 'r') as file:
@@ -80,9 +85,11 @@ def generate_launch_description():
         # Extract specific node parameters
         parameters = parameters['dynus_node']['ros__parameters']
 
-        # Override sim_env if provided
+        # Override sim_env if provided (hardware configs may not have sim_env)
         if sim_env_override:
             parameters['sim_env'] = sim_env_override
+        elif 'sim_env' not in parameters:
+            parameters['sim_env'] = ''
 
         # Override environment_assumption if provided
         if environment_assumption_override:
@@ -178,6 +185,21 @@ def generate_launch_description():
             # arguments=['--ros-args', '--log-level', 'error']
         )
 
+        # Convert odom (from DLIO) to global-frame state and pose via TF2
+        odom_to_global_state_node = Node(
+            package='dynus',
+            executable='odom_to_global_state',
+            name='odom_to_global_state',
+            namespace=namespace,
+            remappings=[
+                ('odom', 'dlio/odom_node/odom'),
+                ('state', 'state'),
+                ('global_pose', 'global_pose')
+            ],
+            emulate_tty=True,
+            output='screen',
+        )
+
         # When using ground robot, we don't need to send the exact state to gazebo - the state will be taken care of by wheel controllers
         # send_state_to_gazebo = False if use_ground_robot else True
         # Create a fake sim node
@@ -230,11 +252,17 @@ def generate_launch_description():
 
         # Return launch description
         nodes_to_start = [dynus_node]
-        nodes_to_start.append(pose_twist_to_state_node) if use_hardware else None
-        nodes_to_start.append(fake_sim_node) if not use_hardware else None
-        nodes_to_start.append(robot_state_publisher_node) if parameters['sim_env'] == 'gazebo' else None
-        nodes_to_start.append(spawn_entity_node) if parameters['sim_env'] == 'gazebo' else None
-        nodes_to_start.append(pcl_render_node) if parameters['sim_env'] == 'fake_sim' else None
+        if use_hardware and use_onboard_localization:
+            nodes_to_start.append(odom_to_global_state_node)
+        elif use_hardware:
+            nodes_to_start.append(pose_twist_to_state_node)
+        else:
+            nodes_to_start.append(fake_sim_node)
+            if parameters['sim_env'] == 'gazebo':
+                nodes_to_start.append(robot_state_publisher_node)
+                nodes_to_start.append(spawn_entity_node)
+            elif parameters['sim_env'] == 'fake_sim':
+                nodes_to_start.append(pcl_render_node)
         nodes_to_start.append(obstacle_tracker_node) if use_obstacle_tracker else None
 
         return nodes_to_start
@@ -251,6 +279,7 @@ def generate_launch_description():
         global_planner_arg,
         use_benchmark_arg,
         use_hardware_arg,
+        use_onboard_localization_arg,
         sim_env_arg,
         environment_assumption_arg,
         publish_odom_arg,

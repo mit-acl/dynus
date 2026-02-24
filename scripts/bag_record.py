@@ -2,111 +2,109 @@ import os
 import subprocess
 import argparse
 
-def record_ros2_bag(bag_name, bag_path, agents, topics=None):
-    
-    # Define the topics template that is common across all agents
+def record_ros2_bag(bag_name, bag_path, agents, use_hardware=False, topics=None):
+
+    # Per-agent topics common to both sim and hardware (prefixed with /{agent})
     base_topics = [
-        # "/agent_initial_guess_pos",
-        # "/agent_pos",
-        # "/agent_pos_array",
-        # "/camera_info",
-        # "/depth_camera/free_cells_vis_array",
-        # "/depth_camera/occupied_cells_vis_array",
-        "/drone_marker",
-        # "/drone_marker_array",
-        # "/dummy_traj_pos",
+        # --- Planner core ---
+        "/state",
         "/goal",
-        # "/image_raw",
-        # "/joint_states",
+        "/term_goal",
+        "/traj",
+
+        # --- Trajectory visualization ---
+        "/traj_committed_colored",
+        "/traj_subopt_colored",
+        "/actual_traj",
+
+        # --- Global planner paths ---
         "/dgp_path_marker",
-        # "/original_dgp_path_marker",
-        # "/free_dgp_path_marker",
-        # "/lidar/free_cells_vis_array",
-        # "/lidar/occupied_cells_vis_array",
-        # "/mode",
-        # "/own_traj",
+        "/original_dgp_path_marker",
+
+        # --- Safe corridors ---
+        "/poly_safe",
+
+        # --- Waypoints ---
         "/point_G",
         "/point_A",
         "/point_E",
         "/point_G_term",
-        # "/poly_whole",
-        "/poly_safe",
-        # "/projected_map",
-        # "/robot_description",
-        "/state",
-        "/term_goal",
-        "/traj",
-        "/traj_committed_colored",
-        "/traj_subopt_colored",
-        "/mid360_PointCloud2",
-        "/d435/color/image_raw",
-        # "/d435/color/image_raw/compressed",
-        # "/d435/depth/color/points",
-        # "/d435/depth/image_raw",
-        # "/d435/depth/image_raw/compressed",
-        # "/d435/depth/image_raw/compressedDepth",
-        # "/d435/color/camera_info",
-        # "/d435/depth/camera_info",
-        # "/dynamic_map_marker",
-        # "/free_map_marker",
-        # "/actual_traj",
-        # "/tracked_obstacles",
-        # "/cluster_bounding_boxes",
-        # "/yaw_output",
-        # "/predicted_trajs",
-        # "/pn_adaptation",
-        # "/fov",
-        # "/yolo/image_yolo",
-        # "/frontiers",
-        # "/uncertainty_spheres",
-        # "/point_current_state",
-        # "/cp",
-        # "/static_push_points",
-        # "/local_global_path_mazrker",
-        # "/local_global_path_after_push_marker",
-        "/vel_text",
-        # "/livox/lidar",
+
+        # --- Hover avoidance ---
+        "/hover_avoidance_viz",
+
+        # --- Mapping (from global_mapper) ---
         "/occupancy_grid",
-        # "/free_grid",
         "/unknown_grid",
-        # "/sensor_point_cloud",
+        "/dynamic_grid",
+        "/heat_cloud",
+
+        # --- Obstacle tracking ---
+        "/tracked_obstacles",
+        "/cluster_bounding_boxes",
+        "/predicted_trajs",
+
+        # --- Sensors ---
+        "/d435/color/image_raw",
+
+        # --- HUD ---
+        "/vel_text",
+        "/drone_marker",
+
+        # --- Computation times ---
+        "/computation_times",
     ]
 
-    # Static topics (not agent-specific)
+    # Hardware-only per-agent topics
+    hw_topics = [
+        "/livox/lidar",
+        "/mavros/setpoint_trajectory/local",
+        "/mavros/local_position/pose",
+        "/mavros/vision_pose/pose_cov",
+    ]
+
+    # Simulation-only per-agent topics
+    sim_topics = [
+        "/mid360_PointCloud2",
+    ]
+
+    # Global topics (not agent-specific)
     static_topics = [
-        "/clicked_point",
-        "/clock",
-        # "/dummy_traj",
-        # "/initialpose",
-        "/parameter_events",
-        # "/performance_metrics",
-        # "/plug/link_states_plug",
-        # "/plug/model_states_plug",
-        # "/trajs",
-        "/rosout",
         "/tf",
         "/tf_static",
-        "/map_generator/global_cloud",
-
-        # "/shapes_dynamic_mesh"
+        "/trajs",
+        "/clock",
     ]
-    
+
+    # Simulation-only global topics
+    sim_static_topics = [
+        "/clicked_point",
+        "/parameter_events",
+        "/rosout",
+        "/map_generator/global_cloud",
+    ]
+
+    # Build per-agent topic list
+    agent_topics = base_topics + (hw_topics if use_hardware else sim_topics)
+
     # Generate topics for all agents
     all_topics = []
     for agent in agents:
-        for topic in base_topics:
+        for topic in agent_topics:
             all_topics.append(f"/{agent}{topic}")
 
-    # Add static topics (non-agent-specific topics)
+    # Add global topics
     all_topics.extend(static_topics)
+    if not use_hardware:
+        all_topics.extend(sim_static_topics)
 
     # Use provided topics if specified, otherwise default to generated topics
     if topics is None:
         topics = all_topics
-    
+
     # Build the ros2 bag record command
     command = ["ros2", "bag", "record", "-o", os.path.join(bag_path, bag_name)] + topics
-    
+
     # Execute the command
     try:
         subprocess.run(command, check=True)
@@ -118,7 +116,8 @@ def record_ros2_bag(bag_name, bag_path, agents, topics=None):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Record a ROS2 bag")
-    parser.add_argument("--bag_number", type=int, help="Bag number to record")
+    parser.add_argument("--bag_number", type=int, default=None, help="Bag number to record (legacy, produces num_N name)")
+    parser.add_argument("--bag_name", type=str, default=None, help="Bag name (e.g. 20260222_170122)")
     parser.add_argument(
         "--bag_path",
         type=str,
@@ -132,9 +131,20 @@ if __name__ == "__main__":
         # default=['NX01', 'NX02', 'NX03', 'NX04', 'NX05', 'NX06', 'NX07', 'NX08', 'NX09', 'NX10'],
         default=['NX01'],
     )
+    parser.add_argument(
+        "--hardware",
+        action="store_true",
+        help="Use hardware topic set (livox/lidar instead of mid360_PointCloud2, etc.)",
+    )
     args = parser.parse_args()
 
-    bag_name = "num_" + str(args.bag_number)
+    if args.bag_name:
+        bag_name = args.bag_name
+    elif args.bag_number is not None:
+        bag_name = "num_" + str(args.bag_number)
+    else:
+        from datetime import datetime
+        bag_name = datetime.now().strftime("%Y%m%d_%H%M%S")
     bag_path = args.bag_path
 
     # NO string conversion needed – args.agents is already a list of strings
@@ -143,6 +153,6 @@ if __name__ == "__main__":
     print("Bag name:", bag_name)
     print("Bag path:", bag_path)
     print("Agents:", agents)
+    print("Hardware:", args.hardware)
 
-    record_ros2_bag(bag_name, bag_path, agents)
-
+    record_ros2_bag(bag_name, bag_path, agents, use_hardware=args.hardware)

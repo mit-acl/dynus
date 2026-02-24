@@ -6,28 +6,30 @@
 # See LICENSE file for the license information
 # --------------------------------------------------------------------------
 
-# This is the configuration file for the dynus package
+# This is the HARDWARE configuration file for the dynus package (quadrotor)
+# Based on dynus.yaml with hardware-appropriate values
 dynus_node:
 
     ros__parameters:
 
         # Sim environment
-        sim_env: "gazebo"                            # ["gazebo", "fake_sim", "rviz_only"]
-        use_global_pc: true                          # [-] Use global pointcloud (treat the environment as known environment)
+        sim_env: "hardware"                             # ["gazebo", "fake_sim", "rviz_only", "hardware"]
+        use_global_pc: false                            # [-] No global pointcloud on hardware (unknown environment)
 
         # Vehicle type
         vehicle_type: "uav"                                     # ["uav", "ground_robot", "qudruped_robot"]
-        
+
         # Hardware-related parameters
-        provide_goal_in_global_frame: false                     # [-] Provide goal in the global frame
-        use_hardware: false                                     # [-] Use hardware
-        
-        # Flight mode should be terminal_goal 
+        provide_goal_in_global_frame: true                      # [-] Provide goal in the global frame (hardware goals are in global/world frame)
+        state_already_in_global_frame: true                    # [-] State from odom_to_global_state is already in global frame; skip internal transform
+        use_hardware: true                                      # [-] Use hardware
+
+        # Flight mode should be terminal_goal
         flight_mode: "terminal_goal"                            # ["terminal_goal"]
 
-        # Visual (for real-world implementation, visual should be 0)
+        # Visual (for real-world implementation, visual should be 0 for production, 2 for debugging)
         visual_level: 2                                         # [-] visual level (0: no visual, 1: minimal visual, 2: full visual)
-        
+
         # Benchmark parameters
         environment_assumption: "dynamic"            # ["static", "dynamic", "dynamic_worst_case"] Environment assumption for convex decomposition
         use_only_curr_pos_for_dynamic_obst: true   # [-] Use only current position (no future trajectory prediction) for fair comparison
@@ -36,18 +38,12 @@ dynus_node:
         global_planner: "astar_heat"                                # ["sjps", "sastar", "astar_heat"]
         factor_dgp: 1.0                                         # do not change - [m] actual_resolution = factor_dgp * (resolution of the map)
         inflation_dgp: 0.45                                     # [m] The obstacles are inflated (to run DGP) by this amount
-        x_min: -5.0                                             # [m] x_min of the map (tightened for corridor)
-        x_max: 110.0                                            # [m] x_max of the map (tightened for corridor)
-        y_min: -5.0                                            # [m] y_min of the map (tightened for corridor)
-        y_max: 5.0                                             # [m] y_max of the map (tightened for corridor)
-        z_min: 0.3                                              # [m] points below this are considered ground
-        z_max: 5.0                                              # [m] DGP is run with resolution=factor_dgp*(resolution of the map)
-        # x_min: -100.0                                             # [m] x_min of the map (tightened for corridor)
-        # x_max: 100.0                                            # [m] x_max of the map (tightened for corridor)
-        # y_min: -100.0                                            # [m] y_min of the map (tightened for corridor)
-        # y_max: 100.0                                             # [m] y_max of the map (tightened for corridor)
-        # z_min: -100.0                                              # [m] points below this are considered ground
-        # z_max: 100.0                                              # [m] DGP is run with resolution=factor_dgp*(resolution of the map)
+        x_min: -6.0                                             # [m] x_min of the map (tightened for corridor)
+        x_max: 20.0                                             # [m] x_max of the map
+        y_min: -5.0                                             # [m] y_min of the map
+        y_max: 5.0                                              # [m] y_max of the map
+        z_min: 0.5                                              # [m] points below this are considered ground
+        z_max: 4.0                                              # [m] DGP is run with resolution=factor_dgp*(resolution of the map)
         dgp_timeout_duration_ms: 1000                           # [ms] Timeout duration for the DGP
         max_num_expansion: 100000                                # [-] Maximum number of node expansions allowed
         use_free_start: true                                    # [-] Use free start for the DGP
@@ -110,29 +106,30 @@ dynus_node:
         horizon: 15.0                               # [m] Horizon
         dc: 0.01                                    # [s] Duration for the interpolation=Value of the timer pubGoal
         dynamic_constraint_type: "Linf"               # [-] Constraint type: "Linf" (per-axis |v|≤vmax), "L2" (||v||₂≤vmax), "L1" (||v||₁≤vmax)
-        v_max: 5.0                                  # [m/s]  max velocity
-        a_max: 20.0                                 # [m/s2] max acceleration
-        j_max: 100.0                                 # [m/s3] max jerk
-        drone_bbox: [0.2, 0.2, 0.2]                 # [m] Size of the bounding box for the obstacles
+        v_max: 1.0                                  # [m/s]  max velocity (conservative for hardware)
+        a_max: 2.0                                  # [m/s2] max acceleration (conservative for hardware)
+        j_max: 3.0                                 # [m/s3] max jerk (conservative for hardware)
+        drone_bbox: [0.35, 0.35, 0.35]              # [m] Size of the bounding box (real drone size)
         goal_radius: 0.5                           # [m] Radius of the goal
         goal_seen_radius: 2.0                       # [m] Radius of the goal that the drone can see and stop replanning. Note that if this number is too small, the trajectory planning becomes extremely difficult.
-        
+
         # DYNUS specific parameters
-        num_P: 3                                    # [-] Number of polytopes (num_P <= num_N)
+        num_P: 2                                    # [-] Number of polytopes (num_P <= num_N)
         num_N: 5                                    # [-] Number of trajectory pieces
         use_dynamic_factor: true                  # [-] Use dynamic factor for the trajectory time allocation
-        dynamic_factor_k_radius: 0.4              # [-] the factors are [prev_successful_factor - k_radius, prev_successful_factor - k_radius + factor_constant_step_size, ..., prev_successful_factor, ... prev_successful_factor + k_radius]        
-        dynamic_factor_initial_mean: 1.5               # [-] Initial factor for the dynamic factor search (only used when use_dynamic_factor is true)
-        factor_initial: 1.0                       # [-] Initial factor for the trajectory time allocation
-        factor_final: 1.6                         # [-] Final factor for the trajectory time allocation
+        dynamic_factor_k_radius: 0.4              # [-] the factors are [prev_successful_factor - k_radius, prev_successful_factor - k_radius + factor_constant_step_size, ..., prev_successful_factor, ... prev_successful_factor + k_radius]
+        dynamic_factor_initial_mean: 1.8               # [-] Initial factor for the dynamic factor search (only used when use_dynamic_factor is true)
+        factor_initial: 1.2                       # [-] Initial factor for the trajectory time allocation
+        factor_final: 2.5                         # [-] Final factor for the trajectory time allocation
         factor_constant_step_size: 0.1          # [-] Step size for the constant factor increase
-        obst_max_vel: 0.5                         # [m/s] Maximum velocity of the dynamic obstacles
+        obst_max_vel: 0.25                         # [m/s] Maximum velocity of the dynamic obstacles
         obst_position_error: 0.0                  # [m] Bounded position estimation error for dynamic obstacles
+        inflate_unknown_boundary: false           # [-] Disable unknown-space boundary inflation for corridor decomposition (hardware)
         max_gurobi_comp_time_sec: 1.0            # [s] Maximum Gurobi computation time per replanning
         jerk_smooth_weight: 1.0e+1                # [-] Weight for the jerk smoothness
 
         # Dynamic obstacle parameters
-        traj_lifetime: 7.0                          # [s] Time to keep the trajectory
+        traj_lifetime: 3.0                          # [s] Time to keep the trajectory
 
         # Dynamic k_value parameters
         num_replanning_before_adapt: 10             # [-] Number of replanning before adapting the k_value
@@ -142,19 +139,19 @@ dynus_node:
 
         # Yaw-related parameters
         alpha_filter_dyaw: 0.8                  # [-] Filter parameter for dyaw, \in [0,1]. Higher--> More aggressive filtering
-        w_max: 1.0                              # [rd/s] Maximum angular velocity. ~4.0 for Hardware
-        yaw_spinning_threshold: 10000           # [-] if the planner keeps failing more than this number, we switch to the spinning mode
+        w_max: 0.5                              # [rd/s] Maximum angular velocity (~4.0 for hardware)
+        yaw_spinning_threshold: 10              # [-] if the planner keeps failing more than this number, we switch to the spinning mode
         yaw_spinning_dyaw: 1.0                  # [rd/s] Spinning dyaw
 
         # Simulation env parameters
-        force_goal_z: True                     # [-] Force the goal to be at the certain height since Rviz GUI's goal's z is 0
+        force_goal_z: true                    # [-] Do not force goal z on hardware (use the actual goal z)
         default_goal_z: 2.0                     # [m] Default goal height
-        
+
         # Hover avoidance parameters
         ignore_other_trajs: false              # [-] Ignore shared trajectories from /trajs (useful for adversarial chaser agent)
         hover_avoidance_enabled: true           # [-] Enable hover obstacle repulsion
-        hover_avoidance_d_trigger: 4.0          # [m] Distance threshold to trigger avoidance
-        hover_avoidance_h: 3.0                  # [m] Evasion distance from hover position
+        hover_avoidance_d_trigger: 2.0          # [m] Distance threshold to trigger avoidance
+        hover_avoidance_h: 2.0                  # [m] Evasion distance from hover position
         hover_avoidance_min_repulsion_norm: 0.01 # [-] Minimum repulsion vector norm to trigger
 
         # Debug flags
@@ -173,7 +170,7 @@ dynus_node:
         min_wdy: 15.0                           # [m] Minimum depth of the map
         min_wdz: 4.0                           # [m] Minimum height of the map
         dynus_map_res: 0.3              # [m] Resolution of the map
-        
+
         # Communication delay parameters
         use_comm_delay_inflation: true  # [-] Use communication delay inflation
         comm_delay_inflation_alpha: 0.2 # [-] Alpha for the communication delay inflation
@@ -208,5 +205,5 @@ dynus_node:
         use_path_push_for_visualization: false  # [-] If true, we just do global planning and return true in replan() function. This is useful for the paper visualization.
 
         # Global planner benchmarking parameters
-        use_benchmark: true                     # [-] Use global planner benchmarking
-        file_path: "/media/kkondo/T7/dynus/tro_paper/global_planner_benchmarking/csv/dgp/num_0.csv" # path to the file to save the data
+        use_benchmark: false                    # [-] No benchmarking on hardware
+        file_path: ""                           # path to the file to save the data

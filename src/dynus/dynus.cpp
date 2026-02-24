@@ -34,7 +34,7 @@ DYNUS::DYNUS(parameters par) : par_(par)
     for (int i = 0; i < num_dynamic_factors_; i++)
     {
       double factor = par_.dynamic_factor_initial_mean - par_.dynamic_factor_k_radius + i * par_.factor_constant_step_size;
-      if (factor >= 1.0)
+      if (factor >= par_.factor_initial && factor <= par_.factor_final)
         factors_.push_back(factor);
     }
   }
@@ -567,7 +567,8 @@ void DYNUS::retrieveData(double &final_g,
                           double &safety_check_time,
                           double &safe_paths_time,
                           double &yaw_sequence_time,
-                          double &yaw_fitting_time)
+                          double &yaw_fitting_time,
+                          double &successful_factor)
 {
   final_g = final_g_;
   global_planning_time = global_planning_time_;
@@ -581,6 +582,7 @@ void DYNUS::retrieveData(double &final_g,
   safety_check_time = safety_check_time_;
   yaw_sequence_time = yaw_sequence_time_;
   yaw_fitting_time = yaw_fitting_time_;
+  successful_factor = successful_factor_;
 }
 
 // ----------------------------------------------------------------------------
@@ -699,7 +701,7 @@ std::tuple<bool, bool> DYNUS::replan(double last_replaning_computation_time, dou
   MyTimer timer_final(true);
 
   if (par_.debug_verbose)
-    std::cout << bold << green << "Replanning succeeded" << reset << std::endl;
+    printf("\033[1;32mReplanning succeeded (factor=%.2f)\033[0m\n", successful_factor_);
 
   // Reset the replanning failure count
   replanning_failure_count_ = 0;
@@ -849,10 +851,18 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
   getG(local_G);
   getA_time(A_time);
 
-  // If the global path's size is < 3 after trimming, we cannot proceed
+  // If the global path has exactly 2 points, subdivide the longest segment
+  // by inserting midpoints until we reach at least 3 points.
+  while (global_path.size() == 2)
+  {
+    // Find the midpoint of the single segment
+    Eigen::Vector3d mid = (global_path[0] + global_path[1]) / 2.0;
+    global_path.insert(global_path.begin() + 1, mid);
+  }
+
+  // If the global path's size is still < 3, we cannot proceed
   if (global_path.empty() || global_path.size() < 3)
   {
-    // std::cout << bold << red << "Global path's size is < 3 after trimming" << reset << std::endl;
     replanning_failure_count_++;
     return false;
   }
@@ -883,7 +893,7 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
 
   // Get the base map vector
   vec_Vec3f base_map;
-  if (par_.sim_env == "gazebo")
+  if (par_.sim_env == "gazebo" || par_.sim_env == "hardware")
   {
     dgp_manager_.getVecUnknownOccupied(base_map);
   }
@@ -950,6 +960,9 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
       std::cout << bold << red << "Precomputed spatial convex decomposition failed for static environment" << reset << std::endl;
       return false;
     }
+
+    // Save the whole polytopes for visualization (available even if local traj optimization fails)
+    poly_out_whole_ = shared_spatial_poly_out;
   }
 
   std::vector<std::future<std::tuple<bool, double, double, double, vec_E<Polyhedron<3>>>>> futures;
@@ -1022,6 +1035,10 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
   {
     auto [result, thread_gurobi_time, thread_convx_decomp_time, thread_factor, thread_poly_out_safe] = futures[i].get();
 
+    // Save polytopes for visualization even if the optimizer failed
+    if (poly_out_safe_.empty() && !thread_poly_out_safe.empty())
+      poly_out_safe_ = thread_poly_out_safe;
+
     if (!result)
       continue;
 
@@ -1067,6 +1084,7 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
       cps_ = vec_cps[i];
       local_traj_computation_time_ = vec_gurobi_times[i];
       cvx_decomp_time_ = vec_convx_decomp_times[i];
+      successful_factor_ = factors_[i];
       poly_out_safe_ = vec_poly_out_safe[i];
       successful_index = i;
       break; // Exit the loop after the first success
@@ -1100,7 +1118,7 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
       for (int i = 0; i < num_dynamic_factors_; i++)
       {
         double factor = successful_factor - par_.dynamic_factor_k_radius + i * par_.factor_constant_step_size;
-        if (factor >= 1.0)
+        if (factor >= par_.factor_initial && factor <= par_.factor_final)
           factors_.push_back(factor);
       }
 
@@ -1113,13 +1131,36 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
     // if the optimization failed, we increase the factors_ for next replanning
     if (par_.use_dynamic_factor)
     {
-      if (!dynamic_factor_inital_sucess_)
+      // compute current mean of the factor window
+      double current_mean = 0.0;
+      for (size_t i = 0; i < factors_.size(); i++)
+        current_mean += factors_[i];
+      current_mean /= static_cast<double>(factors_.size());
+
+      if (current_mean + par_.factor_constant_step_size > par_.factor_final)
+      {
+        // reset factors back to the initial window
+        factors_.clear();
+        factors_.reserve(num_dynamic_factors_);
+        for (int i = 0; i < num_dynamic_factors_; i++)
+        {
+          double factor = par_.dynamic_factor_initial_mean - par_.dynamic_factor_k_radius + i * par_.factor_constant_step_size;
+          if (factor >= par_.factor_initial && factor <= par_.factor_final)
+            factors_.push_back(factor);
+        }
+      }
+      else
       {
         // shift all the factors in factors_ by factor_constant_step_size
         for (size_t i = 0; i < factors_.size(); i++)
         {
           factors_[i] = factors_[i] + par_.factor_constant_step_size;
         }
+        // remove any factors that exceed factor_final
+        factors_.erase(
+          std::remove_if(factors_.begin(), factors_.end(),
+                         [this](double f) { return f > par_.factor_final; }),
+          factors_.end());
       }
     }
   }
@@ -1283,7 +1324,6 @@ bool DYNUS::generateLocalTrajectory(
             l_constraints_by_time,
             poly_out_by_time))
     {
-      std::cout << bold << red << "Time-layered convex decomposition failed" << reset << std::endl;
       poly_out_safe.clear();
       return false;
     }
@@ -1334,7 +1374,9 @@ bool DYNUS::generateLocalTrajectory(
 
   // If no solution is found, return.
   if (!gurobi_result)
+  {
     return false;
+  }
 
   return true;
 }
@@ -1614,7 +1656,7 @@ void DYNUS::updateState(state data)
 
   // If we are doing hardware and provide goal in global frame (e.g. vicon), we need to transform the goal to the local frame
 
-  if (par_.use_hardware && par_.provide_goal_in_global_frame)
+  if (par_.use_hardware && par_.provide_goal_in_global_frame && !par_.state_already_in_global_frame)
   {
     // Apply transformation to position
     Eigen::Vector4d homo_pos(data.pos[0], data.pos[1], data.pos[2], 1.0);
@@ -1699,7 +1741,7 @@ bool DYNUS::getNextGoal(state &next_goal)
     mtx_plan_.unlock();
   }
 
-  if (par_.use_hardware && par_.provide_goal_in_global_frame)
+  if (par_.use_hardware && par_.provide_goal_in_global_frame && !par_.state_already_in_global_frame)
   {
     // Apply transformation to position
     Eigen::Vector4d homo_pos(next_goal.pos[0], next_goal.pos[1], next_goal.pos[2], 1.0);
@@ -1744,7 +1786,7 @@ bool DYNUS::getNextGoal(state &next_goal)
       }
     }
 
-    if (par_.use_hardware && par_.provide_goal_in_global_frame)
+    if (par_.use_hardware && par_.provide_goal_in_global_frame && !par_.state_already_in_global_frame)
     {
       next_goal.yaw -= yaw_init_offset_;
     }
@@ -1814,8 +1856,12 @@ void DYNUS::getDesiredYaw(state &next_goal)
 
 void DYNUS::yaw(double diff, state &next_goal)
 {
-  saturate(diff, -par_.dc * par_.w_max, par_.dc * par_.w_max);
-  dyaw_filtered_ = (1 - par_.alpha_filter_dyaw) * (copysign(1, diff) * par_.w_max) + par_.alpha_filter_dyaw * dyaw_filtered_;
+  // Proportional yaw rate: command rate proportional to error, clamped to w_max
+  double desired_dyaw = std::clamp(diff / par_.dc, -par_.w_max, par_.w_max);
+
+  // Smooth with exponential filter
+  dyaw_filtered_ = (1 - par_.alpha_filter_dyaw) * desired_dyaw + par_.alpha_filter_dyaw * dyaw_filtered_;
+
   next_goal.dyaw = dyaw_filtered_;
   next_goal.yaw = previous_yaw_ + dyaw_filtered_ * par_.dc;
   previous_yaw_ = next_goal.yaw;
@@ -1829,12 +1875,29 @@ void DYNUS::yaw(double diff, state &next_goal)
  */
 void DYNUS::setTerminalGoal(const state &term_goal)
 {
-  printf("[ADVER_DBG] setTerminalGoal: goal=(%.2f,%.2f,%.2f) status=%d\n",
-         term_goal.pos.x(), term_goal.pos.y(), term_goal.pos.z(), drone_status_);
 
   // Get the state
   state local_state;
   getState(local_state);
+
+  // Re-initialize plan from current state so that the first replan's
+  // A point reflects the actual drone position (not the stale position
+  // from when state_initialized_ was first set, e.g. z=0 on the ground).
+  {
+    state tmp;
+    tmp.pos = local_state.pos;
+    tmp.vel = local_state.vel;
+    tmp.accel = local_state.accel;
+    tmp.yaw = local_state.yaw;
+
+    mtx_plan_.lock();
+    plan_.clear();
+    plan_.push_back(tmp);
+    mtx_plan_.unlock();
+
+    setA(tmp);
+    setG(tmp);
+  }
 
   // Set the terminal goal
   setGterm(term_goal);
@@ -1917,41 +1980,13 @@ void DYNUS::changeDroneStatus(int new_status)
  */
 bool DYNUS::checkReadyToReplan()
 {
+  bool map_init = dgp_manager_.isMapInitialized();
+  bool kdtree_ok = !par_.use_hardware || kdtree_map_initialized_;
+
   return state_initialized_ &&
          terminal_goal_initialized_ &&
-         dgp_manager_.isMapInitialized() &&
-         (!par_.use_hardware || (kdtree_map_initialized_
-                                 // && kdtree_unk_initialized_
-                                 ));
-
-  // // In rviz_only mode, we don't wait for point cloud or map (no sensor simulation)
-  // bool is_rviz_only = (par_.sim_env == "rviz_only");
-  // bool need_kdtree = par_.use_hardware && !is_rviz_only;
-  // bool need_map = !is_rviz_only;  // Skip map check in rviz_only mode
-
-  // bool is_ready = state_initialized_ &&
-  //                 terminal_goal_initialized_ &&
-  //                 (!need_map || dgp_manager_.isMapInitialized()) &&
-  //                 (!need_kdtree || kdtree_map_initialized_);
-
-  // if (!is_ready) {
-  //   printf("\033[1;31m[DEBUG] Not ready to replan:\033[0m\n");
-  //   printf("  state_initialized_=%d\n", state_initialized_);
-  //   printf("  terminal_goal_initialized_=%d\n", terminal_goal_initialized_);
-  //   printf("  sim_env='%s' (is_rviz_only=%d)\n", par_.sim_env.c_str(), is_rviz_only);
-  //   if (need_map) {
-  //     printf("  dgp_manager_.isMapInitialized()=%d\n", dgp_manager_.isMapInitialized());
-  //   } else {
-  //     printf("  dgp_manager_.isMapInitialized()=SKIPPED (rviz_only mode)\n");
-  //   }
-  //   printf("  need_kdtree=%d (use_hardware=%d)\n", need_kdtree, par_.use_hardware);
-  //   if (need_kdtree) {
-  //     printf("  kdtree_map_initialized_=%d\n", kdtree_map_initialized_);
-  //   }
-  // }
-
-  // return is_ready;
-
+         map_init &&
+         kdtree_ok;
 }
 
 // ----------------------------------------------------------------------------
@@ -1968,6 +2003,18 @@ void DYNUS::updateMapPtr(
   {
     std::lock_guard<std::mutex> lk(mtx_pclptr_unk_);
     pclptr_unk_ = pclptr_unk;
+  }
+
+  // Build the KD-tree from the incoming occupied cloud so that
+  // kdtree_map_initialized_ becomes true even before the first replan.
+  // Without this, checkReadyToReplan() would block forever on hardware
+  // because updateMap() (which also builds the kdtree) only runs inside
+  // the replan loop — a chicken-and-egg problem.
+  if (pclptr_map && !pclptr_map->points.empty() && !kdtree_map_initialized_)
+  {
+    std::lock_guard<std::mutex> lk(mtx_kdtree_map_);
+    kdtree_map_.setInputCloud(pclptr_map);
+    kdtree_map_initialized_ = true;
   }
 
   if (!dgp_manager_.isMapInitialized())
@@ -2324,22 +2371,6 @@ bool DYNUS::checkHoverAvoidance(double current_time)
   std::vector<std::shared_ptr<dynTraj>> local_trajs;
   getTrajs(local_trajs);
 
-  static int hover_dbg_count = 0;
-  if (hover_dbg_count++ % 50 == 0)
-  {
-    printf("[ADVER_DBG] checkHoverAvoidance: drone=(%.2f,%.2f,%.2f) status=%d trajs=%zu p_hover=(%.2f,%.2f,%.2f)\n",
-           local_state.pos.x(), local_state.pos.y(), local_state.pos.z(),
-           drone_status_, local_trajs.size(),
-           p_hover_.x(), p_hover_.y(), p_hover_.z());
-    for (size_t j = 0; j < local_trajs.size(); ++j)
-    {
-      double dist = (local_state.pos - local_trajs[j]->current_pos).norm();
-      printf("  traj[%zu] id=%d current_pos=(%.2f,%.2f,%.2f) dist=%.2f d_trigger=%.2f\n",
-             j, local_trajs[j]->id,
-             local_trajs[j]->current_pos.x(), local_trajs[j]->current_pos.y(), local_trajs[j]->current_pos.z(),
-             dist, par_.hover_avoidance_d_trigger);
-    }
-  }
 
   // Helper: check if a point is within d_trigger of any obstacle.
   // When lookahead=true, samples over a future time window to catch periodic orbits
@@ -2397,8 +2428,7 @@ bool DYNUS::checkHoverAvoidance(double current_time)
     }
   }
 
-  printf("[ADVER_DBG] repulsion: closest_dist=%.2f d_trigger=%.2f n_total_norm=%.4f min_norm=%.4f status=%d\n",
-         closest_dist, par_.hover_avoidance_d_trigger, n_total.norm(), par_.hover_avoidance_min_repulsion_norm, drone_status_);
+
 
   if (n_total.norm() > par_.hover_avoidance_min_repulsion_norm)
   {

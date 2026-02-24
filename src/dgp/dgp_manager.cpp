@@ -282,6 +282,10 @@ bool DGPManager::solveDGP(const Vec3f &start_sent, const Vec3f &start_vel, const
     // Add more vertices if necessary
     dynus_utils::createMoreVertexes(path, max_dist_vertexes_);
 
+    // Final cleanup: merge any vertices closer than min_len
+    // (can arise from createMoreVertexes remainders or post-processing steps after collapseShortEdges)
+    path = planner_ptr_->collapseShortEdges(path, par_.min_len);
+
     return result;
 }
 
@@ -796,9 +800,10 @@ void DGPManager::obstacle_to_vec(
     //
     // Fast path: dense local voxel window (no hashing) if the unknown AABB is reasonable.
     // Fallback: single unordered_map (still faster than set+map+set).
+    // Gated by inflate_unknown_boundary parameter (default true).
     // ------------------------------------------------------------------------
     const std::size_t base_sz = pts.size();
-    if (base_sz > 0)
+    if (base_sz > 0 && par_.inflate_unknown_boundary)
     {
         // Collect unknown voxel indices (+ representative point) in one pass.
         // We need reps to preserve the same world-frame anchoring as your original (c + offset*res).

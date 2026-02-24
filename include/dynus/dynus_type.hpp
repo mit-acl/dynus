@@ -40,6 +40,7 @@ struct parameters
   // UAV or Ground robot
   std::string vehicle_type;
   bool provide_goal_in_global_frame;
+  bool state_already_in_global_frame;
   bool use_hardware;
 
   // Flight mode
@@ -166,6 +167,7 @@ struct parameters
   double factor_constant_step_size = 0.1; // step size for the constant factor increase
   double obst_max_vel;        // maximum velocity of dynamic obstacles
   double obst_position_error = 0.0; // bounded position estimation error for dynamic obstacles
+  bool inflate_unknown_boundary = true; // inflate unknown-space boundary in corridor decomposition
   double max_gurobi_comp_time_sec; // maximum Gurobi computation time per replanning
   double jerk_smooth_weight; // weight for the jerk smoothness
   bool using_variable_elimination = true;

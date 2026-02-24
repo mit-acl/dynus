@@ -94,6 +94,7 @@ DYNUS_NODE::DYNUS_NODE() : Node("dynus_node")
   pub_dynamic_heat_cloud_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("heat_cloud", 10);
   pub_occupied_cloud_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("dynus_occupied_cloud", 10);
   pub_hover_avoidance_viz_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("hover_avoidance_viz", 10);
+  pub_computation_times_ = this->create_publisher<dynus_interfaces::msg::ComputationTimes>("computation_times", 10);
 
   // Debug publishers
   pub_yaw_output_ = this->create_publisher<dynus_interfaces::msg::YawOutput>("yaw_output", 10);
@@ -204,6 +205,7 @@ void DYNUS_NODE::declareParameters()
   // UAV or Ground robot
   this->declare_parameter("vehicle_type", "uav");
   this->declare_parameter("provide_goal_in_global_frame", false);
+  this->declare_parameter("state_already_in_global_frame", false);
   this->declare_parameter("use_hardware", false);
 
   // Flight mode
@@ -346,6 +348,7 @@ void DYNUS_NODE::declareParameters()
   this->declare_parameter("factor_constant_step_size", 0.1);
   this->declare_parameter("obst_max_vel", 0.5);
   this->declare_parameter("obst_position_error", 0.0);
+  this->declare_parameter("inflate_unknown_boundary", true);
   this->declare_parameter("max_gurobi_comp_time_sec", 0.05);
   this->declare_parameter("jerk_smooth_weight", 1.0e+1);
 
@@ -397,6 +400,7 @@ void DYNUS_NODE::setParameters()
   // Vehicle type (UAV, Wheeled Robit, or Quadruped)
   par_.vehicle_type = this->get_parameter("vehicle_type").as_string();
   par_.provide_goal_in_global_frame = this->get_parameter("provide_goal_in_global_frame").as_bool();
+  par_.state_already_in_global_frame = this->get_parameter("state_already_in_global_frame").as_bool();
   par_.use_hardware = this->get_parameter("use_hardware").as_bool();
 
   // Flight mode
@@ -536,6 +540,7 @@ void DYNUS_NODE::setParameters()
   par_.factor_constant_step_size = this->get_parameter("factor_constant_step_size").as_double();
   par_.obst_max_vel = this->get_parameter("obst_max_vel").as_double();
   par_.obst_position_error = this->get_parameter("obst_position_error").as_double();
+  par_.inflate_unknown_boundary = this->get_parameter("inflate_unknown_boundary").as_bool();
   par_.max_gurobi_comp_time_sec = this->get_parameter("max_gurobi_comp_time_sec").as_double();
   par_.jerk_smooth_weight = this->get_parameter("jerk_smooth_weight").as_double();
 
@@ -754,8 +759,7 @@ void DYNUS_NODE::trajCallback(const dynus_interfaces::msg::DynTraj::SharedPtr ms
   auto traj = std::make_shared<dynTraj>();
   convertDynTrajMsg2DynTraj(*msg, traj, current_time);
 
-  printf("[ADVER_DBG][%s] trajCallback: received traj id=%d is_agent=%d pos=(%.2f,%.2f,%.2f)\n",
-         ns_.c_str(), msg->id, msg->is_agent, msg->pos.x, msg->pos.y, msg->pos.z);
+
 
   // Pass the dynTraj to dynus.cpp
   dynus_ptr_->addTraj(traj, current_time);
@@ -889,9 +893,11 @@ void DYNUS_NODE::replanCallback()
     publishStaticPushPoints();
   }
 
-  // If verbose_computation_time_ or use_benchmark_ or local_traj_comp_verbose_ is true, we need to retrieve data from dynus_ptr_
-  if (verbose_computation_time_ || use_benchmark_ || local_traj_comp_verbose_)
-    retrieveData();
+  // Always retrieve data so we can publish computation times
+  retrieveData();
+
+  // Publish computation times topic
+  publishComputationTimes(replanning_result);
 
   // Verbose computation time to the terminal
   if (verbose_computation_time_)
@@ -1318,7 +1324,8 @@ void DYNUS_NODE::retrieveData()
                             safety_check_time_,
                             safe_paths_time_,
                             yaw_sequence_time_,
-                            yaw_fitting_time_);
+                            yaw_fitting_time_,
+                            successful_factor_);
 }
 
 // ----------------------------------------------------------------------------
@@ -1341,6 +1348,29 @@ void DYNUS_NODE::printComputationTime(bool result)
   RCLCPP_INFO(this->get_logger(), "Yaw Sequence Time [ms]: %f", yaw_sequence_time_);
   RCLCPP_INFO(this->get_logger(), "Yaw Fitting Time [ms]: %f", yaw_fitting_time_);
   RCLCPP_INFO(this->get_logger(), "------------------------");
+}
+
+// ----------------------------------------------------------------------------
+
+void DYNUS_NODE::publishComputationTimes(bool result)
+{
+  dynus_interfaces::msg::ComputationTimes msg;
+  msg.header.stamp = this->now();
+  msg.result = result;
+  msg.successful_factor = successful_factor_;
+  msg.total_replanning_ms = replanning_computation_time_ * 1000.0;
+  msg.global_planning_ms = global_planning_time_;
+  msg.dgp_static_jps_ms = dgp_static_jps_time_;
+  msg.dgp_check_path_ms = dgp_check_path_time_;
+  msg.dgp_dynamic_astar_ms = dgp_dynamic_astar_time_;
+  msg.dgp_recover_path_ms = dgp_recover_path_time_;
+  msg.cvx_decomp_ms = cvx_decomp_time_;
+  msg.local_traj_ms = local_traj_computation_time_;
+  msg.safe_paths_ms = safe_paths_time_;
+  msg.safety_check_ms = safety_check_time_;
+  msg.yaw_sequence_ms = yaw_sequence_time_;
+  msg.yaw_fitting_ms = yaw_fitting_time_;
+  pub_computation_times_->publish(msg);
 }
 
 // ----------------------------------------------------------------------------
@@ -1624,6 +1654,12 @@ void DYNUS_NODE::publishActualTraj()
  */
 void DYNUS_NODE::publishGoal()
 {
+
+  // On hardware, don't publish goal setpoints when hovering at goal — stops
+  // the MAVROS bridge from continuously feeding PX4's position controller,
+  // which causes oscillation around the goal position.
+  if (par_.use_hardware && dynus_ptr_->getDroneStatus() == DroneStatus::GOAL_REACHED)
+    return;
 
   // Initialize the goal
   state next_goal;
@@ -2000,15 +2036,6 @@ void DYNUS_NODE::publishHoverAvoidanceViz()
   if (!trajs.empty())
   {
     static int viz_dbg_count = 0;
-    if (viz_dbg_count++ % 30 == 0)  // print every ~1s at 30Hz
-    {
-      printf("[ADVER_DBG][%s] hoverViz: %zu trajs, status=%d\n", ns_.c_str(), trajs.size(), drone_status);
-      for (size_t j = 0; j < trajs.size(); ++j)
-        printf("  traj[%zu] id=%d current_pos=(%.2f,%.2f,%.2f) eval=(%.2f,%.2f,%.2f)\n",
-               j, trajs[j]->id,
-               trajs[j]->current_pos.x(), trajs[j]->current_pos.y(), trajs[j]->current_pos.z(),
-               trajs[j]->eval(current_time).x(), trajs[j]->eval(current_time).y(), trajs[j]->eval(current_time).z());
-    }
   }
 
   for (size_t i = 0; i < trajs.size(); ++i)

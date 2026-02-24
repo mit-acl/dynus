@@ -16,6 +16,7 @@
 #include "dynus_interfaces/msg/goal.hpp"
 #include "dynus_interfaces/msg/yaw_output.hpp"
 #include "dynus_interfaces/msg/pn_adaptation.hpp"
+#include "dynus_interfaces/msg/computation_times.hpp"
 #include <dynus/utils.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
@@ -107,6 +108,7 @@ namespace dynus
         void clearMarkerArray(visualization_msgs::msg::MarkerArray &path_marker, rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr publisher);
         void runSim();
         void printComputationTime(bool result);
+        void publishComputationTimes(bool result);
         void recordData(bool result);
         void logData();
         void setComputationTimesToZero();
@@ -206,6 +208,7 @@ namespace dynus
         rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_dynamic_heat_cloud_;
         rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_occupied_cloud_;
         rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_hover_avoidance_viz_;
+        rclcpp::Publisher<dynus_interfaces::msg::ComputationTimes>::SharedPtr pub_computation_times_;
 
         // Subscribers
         rclcpp::Subscription<dynus_interfaces::msg::DynTraj>::SharedPtr sub_traj_;
@@ -280,6 +283,7 @@ namespace dynus
         double yaw_sequence_time_ = 0.0;
         double yaw_fitting_time_ = 0.0;
         double replanning_computation_time_ = 0.0;
+        double successful_factor_ = 0.0;
         double current_time_for_debug_ = 0.0;
 
         // Visualization
