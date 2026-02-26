@@ -14,6 +14,7 @@
 #include <math.h>
 #include <cmath>
 #include <algorithm>
+#include <chrono>
 #include <vector>
 #include <stdlib.h>
 
@@ -235,6 +236,10 @@ private:
   // Drone status
   int drone_status_ = DroneStatus::GOAL_REACHED; // status_ can be TRAVELING, GOAL_SEEN, GOAL_REACHED
 
+  // YAWING state: fixed position the drone should hold while rotating
+  Eigen::Vector3d yaw_start_pos_ = Eigen::Vector3d::Zero();
+  std::chrono::steady_clock::time_point yaw_start_time_;  // for YAWING timeout
+
   // Hover avoidance
   Eigen::Vector3d p_hover_ = Eigen::Vector3d::Zero();  // stored hover position
   bool hover_avoidance_active_ = false;                  // whether we're currently avoiding
@@ -297,11 +302,12 @@ private:
 
   // Initial pose
   geometry_msgs::msg::TransformStamped init_pose_;
-  Eigen::Matrix4d init_pose_transform_;
-  Eigen::Matrix3d init_pose_transform_rotation_;
-  Eigen::Matrix4d init_pose_transform_inv_;
-  Eigen::Matrix3d init_pose_transform_rotation_inv_;
+  Eigen::Matrix4d init_pose_transform_ = Eigen::Matrix4d::Identity();
+  Eigen::Matrix3d init_pose_transform_rotation_ = Eigen::Matrix3d::Identity();
+  Eigen::Matrix4d init_pose_transform_inv_ = Eigen::Matrix4d::Identity();
+  Eigen::Matrix3d init_pose_transform_rotation_inv_ = Eigen::Matrix3d::Identity();
   double yaw_init_offset_ = 0.0;
+  bool init_pose_set_ = false;
 
   // Safe corridor
   std::vector<Eigen::Matrix<double, Eigen::Dynamic, 3>, Eigen::aligned_allocator<Eigen::Matrix<double, Eigen::Dynamic, 3>>> A_stat_;

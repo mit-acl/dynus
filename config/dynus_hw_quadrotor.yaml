@@ -21,7 +21,7 @@ dynus_node:
 
         # Hardware-related parameters
         provide_goal_in_global_frame: true                      # [-] Provide goal in the global frame (hardware goals are in global/world frame)
-        state_already_in_global_frame: true                    # [-] State from odom_to_global_state is already in global frame; skip internal transform
+        state_already_in_global_frame: true                    # [-] State from /state topic is already in global frame (transformed upstream via TF)
         use_hardware: true                                      # [-] Use hardware
 
         # Flight mode should be terminal_goal
@@ -81,8 +81,8 @@ dynus_node:
         static_heat_alpha: 1.0                      # [-] Peak heat at obstacle boundary
         static_heat_p: 2                            # [-] Falloff power
         static_heat_Hmax: 5.0                      # [-] Maximum static heat value
-        static_heat_rmax_m: 1.0                     # [m] Maximum radius for halo
-        static_heat_default_radius_m: 0.5           # [m] Default radius
+        static_heat_rmax_m: 2.0                     # [m] Maximum radius for halo
+        static_heat_default_radius_m: 1.0           # [m] Default radius
         static_heat_boundary_only: true             # [-] Use only boundary voxels
         static_heat_apply_on_unknown: false         # [-] Apply heat on unknown cells
         static_heat_exclude_dynamic: true           # [-] Exclude dynamic obstacles
@@ -107,14 +107,14 @@ dynus_node:
         dc: 0.01                                    # [s] Duration for the interpolation=Value of the timer pubGoal
         dynamic_constraint_type: "Linf"               # [-] Constraint type: "Linf" (per-axis |v|≤vmax), "L2" (||v||₂≤vmax), "L1" (||v||₁≤vmax)
         v_max: 1.0                                  # [m/s]  max velocity (conservative for hardware)
-        a_max: 2.0                                  # [m/s2] max acceleration (conservative for hardware)
-        j_max: 3.0                                 # [m/s3] max jerk (conservative for hardware)
-        drone_bbox: [0.35, 0.35, 0.35]              # [m] Size of the bounding box (real drone size)
+        a_max: 5.0                                  # [m/s2] max acceleration (conservative for hardware)
+        j_max: 10.0                                 # [m/s3] max jerk (conservative for hardware)
+        drone_bbox: [0.6, 0.6, 0.6]              # [m] Size of the bounding box (real drone size)
         goal_radius: 0.5                           # [m] Radius of the goal
         goal_seen_radius: 2.0                       # [m] Radius of the goal that the drone can see and stop replanning. Note that if this number is too small, the trajectory planning becomes extremely difficult.
 
         # DYNUS specific parameters
-        num_P: 2                                    # [-] Number of polytopes (num_P <= num_N)
+        num_P: 3                                    # [-] Number of polytopes (num_P <= num_N)
         num_N: 5                                    # [-] Number of trajectory pieces
         use_dynamic_factor: true                  # [-] Use dynamic factor for the trajectory time allocation
         dynamic_factor_k_radius: 0.4              # [-] the factors are [prev_successful_factor - k_radius, prev_successful_factor - k_radius + factor_constant_step_size, ..., prev_successful_factor, ... prev_successful_factor + k_radius]
@@ -138,18 +138,19 @@ dynus_node:
         k_value_factor: 5.0                         # [-] Factor for the k_value adaptation
 
         # Yaw-related parameters
-        alpha_filter_dyaw: 0.8                  # [-] Filter parameter for dyaw, \in [0,1]. Higher--> More aggressive filtering
-        w_max: 0.5                              # [rd/s] Maximum angular velocity (~4.0 for hardware)
+        alpha_filter_dyaw: 0.8                  # [-] Yaw angle smoothing \in [0,1]. Higher--> smoother (each step covers (1-alpha) of remaining error). 0.8 = 20% per step
+        w_max: 1.0                              # [rd/s] Maximum yaw rate (~57 deg/s)
+        w_max_yawing: 0.5                        # [rad/s] Maximum yaw rate during YAWING state
         yaw_spinning_threshold: 10              # [-] if the planner keeps failing more than this number, we switch to the spinning mode
         yaw_spinning_dyaw: 1.0                  # [rd/s] Spinning dyaw
 
         # Simulation env parameters
         force_goal_z: true                    # [-] Do not force goal z on hardware (use the actual goal z)
-        default_goal_z: 2.0                     # [m] Default goal height
+        default_goal_z: 1.5                     # [m] Default goal height
 
         # Hover avoidance parameters
         ignore_other_trajs: false              # [-] Ignore shared trajectories from /trajs (useful for adversarial chaser agent)
-        hover_avoidance_enabled: true           # [-] Enable hover obstacle repulsion
+        hover_avoidance_enabled: false           # [-] Enable hover obstacle repulsion
         hover_avoidance_d_trigger: 2.0          # [m] Distance threshold to trigger avoidance
         hover_avoidance_h: 2.0                  # [m] Evasion distance from hover position
         hover_avoidance_min_repulsion_norm: 0.01 # [-] Minimum repulsion vector norm to trigger

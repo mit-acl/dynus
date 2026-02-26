@@ -184,6 +184,7 @@ struct parameters
   // Yaw-related parameters
   double alpha_filter_dyaw;
   double w_max;
+  double w_max_yawing;
   int yaw_spinning_threshold;
   double yaw_spinning_dyaw;
 

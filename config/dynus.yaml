@@ -143,6 +143,7 @@ dynus_node:
         # Yaw-related parameters
         alpha_filter_dyaw: 0.8                  # [-] Filter parameter for dyaw, \in [0,1]. Higher--> More aggressive filtering
         w_max: 1.0                              # [rd/s] Maximum angular velocity. ~4.0 for Hardware
+        w_max_yawing: 0.5                         # [rd/s] Maximum yaw rate during YAWING state (~29 deg/s)
         yaw_spinning_threshold: 10000           # [-] if the planner keeps failing more than this number, we switch to the spinning mode
         yaw_spinning_dyaw: 1.0                  # [rd/s] Spinning dyaw
 

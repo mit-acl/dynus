@@ -366,21 +366,21 @@ namespace dynus
         }
       }
 
-      // 8b) Mark boundary walls — keep planner away from global y/z limits
+      // 8b) Mark boundary walls — keep planner away from global y limits
       //     so SFC corridors have room to expand.
+      //     Note: z boundaries are NOT marked because z_min/z_max already
+      //     constrain the map. Marking them creates false heat sources that
+      //     push the global planner away from the floor/ceiling.
       {
         const float buf = inflation;  // reuse the inflation radius as boundary buffer
         for (int ix = 0; ix < dimX; ++ix)
         {
-          const float wx = origin.x() + (ix + 0.5f) * res_;
           for (int iy = 0; iy < dimY; ++iy)
           {
             const float wy = origin.y() + (iy + 0.5f) * res_;
-            for (int iz = 0; iz < dimZ; ++iz)
+            if (wy <= y_map_min_ + buf || wy >= y_map_max_ - buf)
             {
-              const float wz = origin.z() + (iz + 0.5f) * res_;
-              if (wy <= y_map_min_ + buf || wy >= y_map_max_ - buf ||
-                  wz <= z_map_min_ + buf || wz >= z_map_max_ - buf)
+              for (int iz = 0; iz < dimZ; ++iz)
               {
                 map_[idx3(ix, iy, iz)] = val_occ_;
               }

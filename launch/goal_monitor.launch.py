@@ -13,7 +13,7 @@ def generate_launch_description():
     # list out the four namespaces you want
     # namespaces = ['NX01', 'NX02', 'NX03', 'NX04', 'NX05',
                 #   'NX06', 'NX07', 'NX08', 'NX09', 'NX10']
-    namespaces = ['NX01']
+    namespaces = ['PX03']
 
     # for each namespace, create one Node
     nodes = []

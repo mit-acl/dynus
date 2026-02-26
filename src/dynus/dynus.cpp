@@ -7,6 +7,7 @@
  * -------------------------------------------------------------------------- */
 
 #include "dynus/dynus.hpp"
+#include <chrono>
 
 using namespace dynus;
 using namespace termcolor;
@@ -167,10 +168,26 @@ bool DYNUS::needReplan(const state &local_state, const state &local_G_term, cons
 
   if (dist_to_term_G < par_.goal_radius && vel_magnitude < max_goal_velocity)
   {
-    changeDroneStatus(DroneStatus::GOAL_REACHED);
-    p_hover_ = local_G_term.pos;
-    return false;
+    if (par_.hover_avoidance_enabled)
+    {
+      p_hover_ = local_G_term.pos;
+      changeDroneStatus(DroneStatus::HOVER_AVOIDING);
+      return true;  // allow replan loop to run checkHoverAvoidance
+    }
+    else
+    {
+      changeDroneStatus(DroneStatus::GOAL_REACHED);
+      p_hover_ = local_G_term.pos;
+      return false;
+    }
   }
+
+  // Don't plan if drone is not traveling
+  // IMPORTANT: this must come BEFORE the GOAL_SEEN check below, otherwise
+  // the GOAL_SEEN distance check would overwrite YAWING status and trigger
+  // replanning (causing the drone to move instead of yawing in place).
+  if (drone_status_ == DroneStatus::GOAL_REACHED || drone_status_ == DroneStatus::YAWING)
+    return false;
 
   if (dist_to_term_G < par_.goal_seen_radius)
   {
@@ -181,10 +198,6 @@ bool DYNUS::needReplan(const state &local_state, const state &local_G_term, cons
   {
     return false;
   }
-
-  // Don't plan if drone is not traveling
-  if (drone_status_ == DroneStatus::GOAL_REACHED || (drone_status_ == DroneStatus::YAWING))
-    return false;
 
   return true;
 }
@@ -871,7 +884,7 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
   bool optimization_succeeded = false;
 
   // Set local_E
-  if (drone_status_ == DroneStatus::GOAL_REACHED || drone_status_ == DroneStatus::GOAL_SEEN)
+  if (drone_status_ == DroneStatus::GOAL_REACHED || drone_status_ == DroneStatus::GOAL_SEEN || drone_status_ == DroneStatus::HOVER_AVOIDING)
     local_E = local_G;
   else
     local_E.pos = global_path.back();
@@ -1685,9 +1698,26 @@ void DYNUS::updateState(state data)
 
     // create temporary state
     state tmp;
-    tmp.pos = data.pos;
+    if (drone_status_ == DroneStatus::YAWING)
+    {
+      // During YAWING, command the FIXED start position so PX4 actively
+      // pulls the drone back if it drifts. Using the drifting current
+      // position would let the drone wander and change desired_yaw.
+      tmp.pos = yaw_start_pos_;
+    }
+    else
+    {
+      tmp.pos = data.pos;
+    }
     tmp.yaw = data.yaw;
-    previous_yaw_ = data.yaw;
+
+    // Only seed previous_yaw_ on first-ever state.
+    // During YAWING, previous_yaw_ is seeded once by setTerminalGoal() and
+    // then driven forward by yaw() each goal tick.  Resetting it here every
+    // state callback would collapse the step to a tiny w_max*dc delta that
+    // PX4 ignores, so the drone never starts rotating.
+    if (!state_initialized_)
+      previous_yaw_ = data.yaw;
 
     // Push the state to the plan
     mtx_plan_.lock();
@@ -1716,8 +1746,14 @@ void DYNUS::updateState(state data)
 bool DYNUS::getNextGoal(state &next_goal)
 {
 
-  // Check if the planner is initialized
-  if (!checkReadyToReplan())
+  // Check if the planner is initialized.
+  // During YAWING we only need state + terminal goal (no map required — just rotating in place).
+  if (drone_status_ == DroneStatus::YAWING)
+  {
+    if (!state_initialized_ || !terminal_goal_initialized_)
+      return false;
+  }
+  else if (!checkReadyToReplan())
   {
     return false;
   }
@@ -1741,27 +1777,7 @@ bool DYNUS::getNextGoal(state &next_goal)
     mtx_plan_.unlock();
   }
 
-  if (par_.use_hardware && par_.provide_goal_in_global_frame && !par_.state_already_in_global_frame)
-  {
-    // Apply transformation to position
-    Eigen::Vector4d homo_pos(next_goal.pos[0], next_goal.pos[1], next_goal.pos[2], 1.0);
-    Eigen::Vector4d global_pos = init_pose_transform_inv_ * homo_pos;
-
-    // Apply transformation to velocity
-    Eigen::Vector3d global_vel = init_pose_transform_rotation_inv_ * next_goal.vel;
-
-    // Apply transformation to accel
-    Eigen::Vector3d global_accel = init_pose_transform_rotation_inv_ * next_goal.accel;
-
-    // Apply transformation to jerk
-    Eigen::Vector3d global_jerk = init_pose_transform_rotation_inv_ * next_goal.jerk;
-
-    next_goal.pos = Eigen::Vector3d(global_pos[0], global_pos[1], global_pos[2]);
-    next_goal.vel = global_vel;
-    next_goal.accel = global_accel;
-    next_goal.jerk = global_jerk;
-  }
-
+  // ---- Yaw computation (BEFORE frame transform — everything in global frame) ----
   if (!(drone_status_ == DroneStatus::GOAL_REACHED))
   {
     // Get the desired yaw
@@ -1775,20 +1791,18 @@ bool DYNUS::getNextGoal(state &next_goal)
     else
     {
       // If the local_plan is small just use the previous yaw with no dyaw
-      if (local_plan.size() < 5)
+      // Exception: during YAWING we always need to call getDesiredYaw (plan is
+      // intentionally kept at 1 entry by updateState)
+      if (local_plan.size() < 5 && drone_status_ != DroneStatus::YAWING)
       {
         next_goal.yaw = previous_yaw_;
         next_goal.dyaw = 0.0;
       }
       else
       {
+        // next_goal.vel is still in GLOBAL frame here, matching previous_yaw_
         getDesiredYaw(next_goal);
       }
-    }
-
-    if (par_.use_hardware && par_.provide_goal_in_global_frame && !par_.state_already_in_global_frame)
-    {
-      next_goal.yaw -= yaw_init_offset_;
     }
 
     next_goal.dyaw = std::clamp(next_goal.dyaw, -par_.w_max, par_.w_max);
@@ -1797,6 +1811,28 @@ bool DYNUS::getNextGoal(state &next_goal)
   {
     next_goal.yaw = previous_yaw_;
     next_goal.dyaw = 0.0;
+  }
+
+  // ---- Frame transform (global → local for MAVROS) ----
+  if (par_.use_hardware && par_.provide_goal_in_global_frame && init_pose_set_)
+  {
+    // Convert position from global to local frame
+    Eigen::Vector4d homo_pos(next_goal.pos[0], next_goal.pos[1], next_goal.pos[2], 1.0);
+    Eigen::Vector4d local_pos = init_pose_transform_inv_ * homo_pos;
+
+    // Apply inverse rotation to velocity, accel, jerk
+    Eigen::Vector3d local_vel = init_pose_transform_rotation_inv_ * next_goal.vel;
+    Eigen::Vector3d local_accel = init_pose_transform_rotation_inv_ * next_goal.accel;
+    Eigen::Vector3d local_jerk = init_pose_transform_rotation_inv_ * next_goal.jerk;
+
+    next_goal.pos = Eigen::Vector3d(local_pos[0], local_pos[1], local_pos[2]);
+    next_goal.vel = local_vel;
+    next_goal.accel = local_accel;
+    next_goal.jerk = local_jerk;
+
+    // Convert yaw from global to local frame and wrap to [-pi, pi]
+    next_goal.yaw -= yaw_init_offset_;
+    dynus_utils::angle_wrap(next_goal.yaw);
   }
 
   return true;
@@ -1810,60 +1846,132 @@ bool DYNUS::getNextGoal(state &next_goal)
  */
 void DYNUS::getDesiredYaw(state &next_goal)
 {
+  // YAWING/HOVER_AVOIDING: closed-loop diff from actual drone yaw (state_.yaw).
+  // TRAVELING/GOAL_SEEN: open-loop diff from commanded reference (previous_yaw_).
 
-  double diff = 0.0;
   double desired_yaw = 0.0;
-
-  // Get state
-  state local_state;
-  getState(local_state);
-
-  // Get G_term
-  mtx_G_term_.lock();
-  state G_term = G_term_;
-  mtx_G_term_.unlock();
 
   switch (drone_status_)
   {
   case DroneStatus::YAWING:
-    desired_yaw = atan2(G_term.pos[1] - next_goal.pos[1], G_term.pos[0] - next_goal.pos[0]);
-    diff = desired_yaw - local_state.yaw;
-    // std::cout << "diff1= " << diff << std::endl;
+  {
+    mtx_G_term_.lock();
+    state G_term = G_term_;
+    mtx_G_term_.unlock();
+    // Use the fixed yaw-start position (not the potentially drifted
+    // next_goal.pos) so that desired_yaw stays stable during rotation.
+    desired_yaw = atan2(G_term.pos[1] - yaw_start_pos_[1], G_term.pos[0] - yaw_start_pos_[0]);
     break;
+  }
+  case DroneStatus::HOVER_AVOIDING:
+  {
+    // Face toward the hover position (p_hover_), unless too close (atan2 unstable)
+    double dx = p_hover_.x() - next_goal.pos[0];
+    double dy = p_hover_.y() - next_goal.pos[1];
+    double dist_xy = std::sqrt(dx * dx + dy * dy);
+    if (dist_xy < 0.3)
+    {
+      // Too close — hold current yaw
+      next_goal.yaw = previous_yaw_;
+      next_goal.dyaw = 0.0;
+      return;
+    }
+    desired_yaw = atan2(dy, dx);
+    break;
+  }
   case DroneStatus::TRAVELING:
   case DroneStatus::GOAL_SEEN:
-  case DroneStatus::HOVER_AVOIDING:
-    desired_yaw = atan2(next_goal.pos[1] - local_state.pos.y(), next_goal.pos[0] - local_state.pos.x());
-    diff = desired_yaw - local_state.yaw;
-    next_goal.yaw = desired_yaw;
+  {
+    double speed_xy = std::sqrt(next_goal.vel[0] * next_goal.vel[0] +
+                                next_goal.vel[1] * next_goal.vel[1]);
+    if (speed_xy < 0.01)
+    {
+      next_goal.yaw = previous_yaw_;
+      next_goal.dyaw = 0.0;
+      return;
+    }
+    desired_yaw = atan2(next_goal.vel[1], next_goal.vel[0]);
     break;
+  }
   case DroneStatus::GOAL_REACHED:
     next_goal.dyaw = 0.0;
     next_goal.yaw = previous_yaw_;
     return;
   }
 
-  dynus_utils::angle_wrap(diff);
-  if (fabs(diff) < 0.04 && drone_status_ == DroneStatus::YAWING)
+  if (drone_status_ == DroneStatus::YAWING)
   {
-    changeDroneStatus(DroneStatus::TRAVELING);
-  }
+    // Closed-loop yaw from actual drone heading.
+    state local_state;
+    getState(local_state);
+    double diff = desired_yaw - local_state.yaw;
+    dynus_utils::angle_wrap(diff);
 
-  yaw(diff, next_goal);
+    // Convergence check: transition when within ~17 deg of target
+    if (std::fabs(diff) < 0.3)
+    {
+      changeDroneStatus(DroneStatus::TRAVELING);
+    }
+
+    // Timeout: if yawing for > 5 seconds and roughly facing the right way, transition
+    double yaw_elapsed = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - yaw_start_time_).count();
+    if (yaw_elapsed > 10.0 && std::fabs(diff) < 1.0)
+    {
+      changeDroneStatus(DroneStatus::TRAVELING);
+    }
+
+    // Step from previous_yaw_ (commanded reference) toward desired_yaw.
+    // Using previous_yaw_ instead of local_state.yaw ensures the quaternion
+    // marches steadily toward the target — PX4 tracks the quaternion position,
+    // not the dyaw feedforward, so the commanded yaw must lead the drone.
+    double diff_cmd = desired_yaw - previous_yaw_;
+    dynus_utils::angle_wrap(diff_cmd);
+    double max_step = par_.w_max_yawing * par_.dc;
+    double step = std::clamp(diff_cmd, -max_step, max_step);
+    next_goal.yaw = previous_yaw_ + step;
+    next_goal.dyaw = step / par_.dc;
+    previous_yaw_ = next_goal.yaw;
+  }
+  else if (drone_status_ == DroneStatus::HOVER_AVOIDING)
+  {
+    // Closed-loop yaw toward hover position.
+    state local_state;
+    getState(local_state);
+    double diff = desired_yaw - local_state.yaw;
+    dynus_utils::angle_wrap(diff);
+
+    double lookahead = std::copysign(std::min(std::fabs(diff), par_.w_max_yawing), diff);
+    next_goal.yaw = local_state.yaw + lookahead;
+    next_goal.dyaw = lookahead / par_.dc;
+    previous_yaw_ = next_goal.yaw;
+  }
+  else
+  {
+    // TRAVELING/GOAL_SEEN: open-loop from commanded reference (previous_yaw_)
+    // for smooth convergence without overshoot.
+    double diff = desired_yaw - previous_yaw_;
+    dynus_utils::angle_wrap(diff);
+    yaw(diff, next_goal);
+  }
 }
 
 // ----------------------------------------------------------------------------
 
 void DYNUS::yaw(double diff, state &next_goal)
 {
-  // Proportional yaw rate: command rate proportional to error, clamped to w_max
-  double desired_dyaw = std::clamp(diff / par_.dc, -par_.w_max, par_.w_max);
+  // Filter the yaw ANGLE directly instead of the rate.
+  // Each step covers a fraction of the remaining error → exponential
+  // convergence with zero overshoot. PX4's attitude controller handles
+  // the actual rate tracking (just like RC controller yaw).
+  double step = (1.0 - par_.alpha_filter_dyaw) * diff;
 
-  // Smooth with exponential filter
-  dyaw_filtered_ = (1 - par_.alpha_filter_dyaw) * desired_dyaw + par_.alpha_filter_dyaw * dyaw_filtered_;
+  // Clamp step size to enforce max yaw rate
+  double max_step = par_.w_max * par_.dc;
+  step = std::clamp(step, -max_step, max_step);
 
-  next_goal.dyaw = dyaw_filtered_;
-  next_goal.yaw = previous_yaw_ + dyaw_filtered_ * par_.dc;
+  next_goal.yaw = previous_yaw_ + step;
+  next_goal.dyaw = step / par_.dc;  // feedforward rate for PX4
   previous_yaw_ = next_goal.yaw;
 }
 
@@ -1903,12 +2011,25 @@ void DYNUS::setTerminalGoal(const state &term_goal)
   setGterm(term_goal);
   p_hover_ = term_goal.pos;
 
+  // Reset previous_yaw_ to actual drone yaw so the first getDesiredYaw
+  // during YAWING computes diff from the correct reference
+  previous_yaw_ = local_state.yaw;
+
+  // Reset replanning failure count so YAWING uses getDesiredYaw (not spinning mode)
+  replanning_failure_count_ = 0;
+
   // Project the terminal goal to the sphere
   mtx_G_.lock();
   G_.pos = dynus_utils::projectPointToSphere(local_state.pos, term_goal.pos, par_.horizon);
   mtx_G_.unlock();
 
-  changeDroneStatus(DroneStatus::TRAVELING);
+  // Store the position and time where yawing starts so the drone holds this
+  // point (not the continuously-drifting state) during rotation.
+  yaw_start_pos_ = local_state.pos;
+  yaw_start_time_ = std::chrono::steady_clock::now();
+
+  // Start with YAWING: rotate to face terminal goal before planning
+  changeDroneStatus(DroneStatus::YAWING);
 
   if (!terminal_goal_initialized_)
     terminal_goal_initialized_ = true;
@@ -2262,26 +2383,56 @@ void DYNUS::setInitialPose(const geometry_msgs::msg::TransformStamped &init_pose
 {
   init_pose_ = init_pose;
 
-  // First compute transformation matrix from init_pose_ (geometry_msgs::msg::TransformStamped)
-  Eigen::Matrix4d init_pose_transform = Eigen::Matrix4d::Identity();
-  Eigen::Quaterniond init_pose_quat(init_pose_.transform.rotation.w, init_pose_.transform.rotation.x, init_pose_.transform.rotation.y, init_pose_.transform.rotation.z);
-  Eigen::Vector3d init_pose_translation(init_pose_.transform.translation.x, init_pose_.transform.translation.y, init_pose_.transform.translation.z);
-  init_pose_transform.block<3, 3>(0, 0) = init_pose_quat.toRotationMatrix();
-  init_pose_transform.block<3, 1>(0, 3) = init_pose_translation;
+  // Extract and normalize quaternion
+  Eigen::Quaterniond q(init_pose_.transform.rotation.w,
+                       init_pose_.transform.rotation.x,
+                       init_pose_.transform.rotation.y,
+                       init_pose_.transform.rotation.z);
+  q.normalize();
 
-  // Get initial pose
-  init_pose_transform_ = init_pose_transform;
-  init_pose_transform_rotation_ = init_pose_quat.toRotationMatrix();
-  yaw_init_offset_ = std::atan2(init_pose_transform_rotation_(1, 0),
-                                init_pose_transform_rotation_(0, 0));
+  Eigen::Vector3d t(init_pose_.transform.translation.x,
+                    init_pose_.transform.translation.y,
+                    init_pose_.transform.translation.z);
 
-  std::cout << bold << green << "yaw_init_offset_: " << yaw_init_offset_ << reset << std::endl;
+  // Rotation matrix and its transpose (= inverse for orthogonal matrices)
+  Eigen::Matrix3d R = q.toRotationMatrix();
+  Eigen::Matrix3d R_T = R.transpose();
 
-  // Get the inverse of init_pose_ (geometry_msgs::msg::TransformStamped)
-  init_pose_transform_inv_ = init_pose_transform.inverse();
-  init_pose_transform_rotation_inv_ = init_pose_quat.toRotationMatrix().inverse();
-  // yaw_init_offset_ = std::atan2(init_pose_transform_rotation_inv_(1, 0),
-  // init_pose_transform_rotation_inv_(0, 0));
+  // Forward transform: local → global  [R | t; 0 0 0 1]
+  init_pose_transform_ = Eigen::Matrix4d::Identity();
+  init_pose_transform_.block<3, 3>(0, 0) = R;
+  init_pose_transform_.block<3, 1>(0, 3) = t;
+
+  // Inverse transform: global → local  [R^T | -R^T * t; 0 0 0 1]
+  // Using the analytic SE(3) inverse instead of general matrix inverse
+  init_pose_transform_inv_ = Eigen::Matrix4d::Identity();
+  init_pose_transform_inv_.block<3, 3>(0, 0) = R_T;
+  init_pose_transform_inv_.block<3, 1>(0, 3) = -R_T * t;
+
+  // Store rotation matrices
+  init_pose_transform_rotation_ = R;
+  init_pose_transform_rotation_inv_ = R_T;
+
+  // Yaw offset
+  yaw_init_offset_ = std::atan2(R(1, 0), R(0, 0));
+
+  // Sanity check: M_inv * init_pos should give (0,0,0) in local frame
+  Eigen::Vector4d t_homo(t.x(), t.y(), t.z(), 1.0);
+  Eigen::Vector4d local_origin = init_pose_transform_inv_ * t_homo;
+  double sanity_err = local_origin.head<3>().norm();
+  if (sanity_err < 0.1)
+  {
+    std::cout << bold << green << "****** [DYNUS] READY TO FLY ******" << reset << std::endl;
+  }
+  else
+  {
+    std::cout << "\033[1;31m" << "****** [DYNUS] TRANSFORM SANITY CHECK FAILED ******" << "\033[0m" << std::endl;
+    std::cout << "\033[1;31m" << "inv * init_pos = ("
+              << local_origin[0] << ", " << local_origin[1] << ", " << local_origin[2]
+              << ") [should be ~(0,0,0), err=" << sanity_err << "]" << "\033[0m" << std::endl;
+  }
+
+  init_pose_set_ = true;
 }
 
 // ----------------------------------------------------------------------------
@@ -2348,7 +2499,8 @@ void DYNUS::applyInitiPoseInverseTransform(PieceWisePol &pwp)
  */
 bool DYNUS::goalReachedCheck()
 {
-  if (checkReadyToReplan() && drone_status_ == DroneStatus::GOAL_REACHED)
+  if (checkReadyToReplan() &&
+      (drone_status_ == DroneStatus::GOAL_REACHED || drone_status_ == DroneStatus::HOVER_AVOIDING))
   {
     return true;
   }
@@ -2530,10 +2682,10 @@ bool DYNUS::checkHoverAvoidance(double current_time)
     G_.pos = dynus_utils::projectPointToSphere(local_state.pos, p_hover_, par_.horizon);
     mtx_G_.unlock();
 
-    changeDroneStatus(DroneStatus::TRAVELING);
+    // Stay in HOVER_AVOIDING — drone is back at hover position but keeps monitoring
     return true;
   }
 
-  // No obstacles nearby and not avoiding — stay in GOAL_REACHED
+  // No obstacles nearby — stay in HOVER_AVOIDING (ready to dodge)
   return false;
 }

@@ -73,17 +73,12 @@ class GoalMonitorNode(Node):
             # opposite of NX05
             self.goal_points = [[ -8.090,  5.878, 1.0], [  8.090, -5.878, 1.0]]
             
+        elif self.namespace == 'PX03':
+            self.goal_points = [[15.5, 0.5, 1.0], [-4.0, 0.0, 1.25]]
+
         else:
             self.get_logger().error(f"Unknown namespace: {self.namespace}. No goal points defined.")
             self.goal_points = [[0.0, 0.0, 0.0]]  # Default goal point if namespace is unknown
-
-        # repeat the two-goal pattern N times
-        num_iterations = 3
-        self.goal_points = self.goal_points * num_iterations
-
-        # repeat pattern
-        num_iterations = 3
-        self.goal_points = self.goal_points * num_iterations
 
         # Publishers and Subscribers
         self.state_sub = self.create_subscription(State, 'state', self.state_callback, 10)
@@ -92,11 +87,9 @@ class GoalMonitorNode(Node):
         # Timer to check the distance to the current goal
         self.goal_timer = self.create_timer(self.distance_check_frequency, self.distance_check_callback)
 
-        # Timer to publish the current goal periodically
-        self.term_goal_timer = self.create_timer(1.0, self.publish_term_goal)
-
         # Data to store
         self.current_position = Vector3()
+        self.goal_published = False  # Track if current goal has been published
 
         self.get_logger().info("Goal Monitor Node initialized.")
 
@@ -119,10 +112,16 @@ class GoalMonitorNode(Node):
 
         self.get_logger().info(f"Distance to goal: {distance:.2f}")
 
+        # Publish current goal once if not yet published
+        if not self.goal_published:
+            self.publish_term_goal()
+            self.goal_published = True
+
         # Check if the drone has reached the current goal and next goal is not out of bounds
         if distance < self.goal_tolerance and self.current_goal_index < len(self.goal_points) - 1:
             self.get_logger().info(f"Goal {self.current_goal_index} reached!")
             self.current_goal_index = self.current_goal_index + 1
+            self.goal_published = False  # Publish the new goal once
 
     def publish_term_goal(self):
         """Publishes the current goal as a PoseStamped message."""

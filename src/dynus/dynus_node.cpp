@@ -364,6 +364,7 @@ void DYNUS_NODE::declareParameters()
   // Yaw-related parameters
   this->declare_parameter("alpha_filter_dyaw", 0.8);
   this->declare_parameter("w_max", 0.5);
+  this->declare_parameter("w_max_yawing", 0.5);
   this->declare_parameter("yaw_spinning_threshold", 10);
   this->declare_parameter("yaw_spinning_dyaw", 0.1);
 
@@ -556,6 +557,7 @@ void DYNUS_NODE::setParameters()
   // Yaw-related parameters
   par_.alpha_filter_dyaw = this->get_parameter("alpha_filter_dyaw").as_double();
   par_.w_max = this->get_parameter("w_max").as_double();
+  par_.w_max_yawing = this->get_parameter("w_max_yawing").as_double();
   par_.yaw_spinning_threshold = this->get_parameter("yaw_spinning_threshold").as_int();
   par_.yaw_spinning_dyaw = this->get_parameter("yaw_spinning_dyaw").as_double();
 
@@ -1654,6 +1656,10 @@ void DYNUS_NODE::publishActualTraj()
  */
 void DYNUS_NODE::publishGoal()
 {
+
+  // On hardware, don't publish until initial pose transform is acquired
+  if (par_.use_hardware && !initial_pose_received_)
+    return;
 
   // On hardware, don't publish goal setpoints when hovering at goal — stops
   // the MAVROS bridge from continuously feeding PX4's position controller,
