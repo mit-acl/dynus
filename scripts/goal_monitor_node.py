@@ -74,7 +74,7 @@ class GoalMonitorNode(Node):
             self.goal_points = [[ -8.090,  5.878, 1.0], [  8.090, -5.878, 1.0]]
             
         elif self.namespace == 'PX03':
-            self.goal_points = [[15.5, 0.5, 1.0], [-4.0, 0.0, 1.25]]
+            self.goal_points = [[15.2, 0.9, 1.0], [-4.0, 0.0, 1.25]]
 
         else:
             self.get_logger().error(f"Unknown namespace: {self.namespace}. No goal points defined.")

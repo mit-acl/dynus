@@ -404,6 +404,9 @@ void DYNUS_NODE::setParameters()
   par_.state_already_in_global_frame = this->get_parameter("state_already_in_global_frame").as_bool();
   par_.use_hardware = this->get_parameter("use_hardware").as_bool();
 
+  // Visualization frame: use "world" when operating in global frame (hardware), "map" otherwise
+  viz_frame_ = (par_.use_hardware && par_.state_already_in_global_frame) ? "world" : "map";
+
   // Flight mode
   par_.flight_mode = this->get_parameter("flight_mode").as_string();
 
@@ -975,7 +978,7 @@ void DYNUS_NODE::publishVelocityInText(const Eigen::Vector3d &position, double v
   std::string text = oss.str();
 
   visualization_msgs::msg::Marker marker;
-  marker.header.frame_id = "map";
+  marker.header.frame_id = viz_frame_;
   marker.header.stamp = this->get_clock()->now();
   marker.action = visualization_msgs::msg::Marker::ADD;
   marker.pose.orientation.w = 1.0;
@@ -1190,7 +1193,7 @@ void DYNUS_NODE::publisCps()
 
     // Create a marker
     visualization_msgs::msg::Marker marker;
-    marker.header.frame_id = "map";
+    marker.header.frame_id = viz_frame_;
     marker.header.stamp = this->now();
     marker.ns = "cp";
     marker.id = seg;
@@ -1254,7 +1257,7 @@ void DYNUS_NODE::publishStaticPushPoints()
   // Create a marker array
   visualization_msgs::msg::MarkerArray marker_array;
   visualization_msgs::msg::Marker marker;
-  marker.header.frame_id = "map";
+  marker.header.frame_id = viz_frame_;
   marker.header.stamp = this->now();
   marker.ns = "static_push_points";
   marker.id = static_push_points_id_;
@@ -1487,7 +1490,7 @@ void DYNUS_NODE::publishCurrentState(const state &state) const
 void DYNUS_NODE::publishState(const state &data, const rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr &publisher) const
 {
   geometry_msgs::msg::PointStamped p;
-  p.header.frame_id = "map";
+  p.header.frame_id = viz_frame_;
   p.header.stamp = this->now();
   p.point = eigen2point(data.pos);
   publisher->publish(p);
@@ -1507,7 +1510,7 @@ void DYNUS_NODE::publishOwnTraj()
   // Create the message
   dynus_interfaces::msg::DynTraj msg;
   msg.header.stamp = this->now();
-  msg.header.frame_id = "map";
+  msg.header.frame_id = viz_frame_;
   msg.bbox.push_back(par_.drone_bbox[0]);
   msg.bbox.push_back(par_.drone_bbox[1]);
   msg.bbox.push_back(par_.drone_bbox[2]);
@@ -1631,7 +1634,7 @@ void DYNUS_NODE::publishActualTraj()
   // Usually not necessary because we reuse same ns+id and overwrite points.
   // {
   //   visualization_msgs::msg::Marker clear;
-  //   clear.header.frame_id = "map";
+  //   clear.header.frame_id = viz_frame_;
   //   clear.header.stamp = now;
   //   clear.action = visualization_msgs::msg::Marker::DELETEALL;
   //   ma.markers.push_back(clear);
@@ -1677,7 +1680,7 @@ void DYNUS_NODE::publishGoal()
     // Publish the goal (actual setpoint)
     dynus_interfaces::msg::Goal quadGoal;
     quadGoal.header.stamp = this->now();
-    quadGoal.header.frame_id = "map";
+    quadGoal.header.frame_id = viz_frame_;
     quadGoal.p = eigen2rosvector(next_goal.pos);
     quadGoal.v = eigen2rosvector(next_goal.vel);
     quadGoal.a = eigen2rosvector(next_goal.accel);
@@ -1712,7 +1715,7 @@ void DYNUS_NODE::publishPoly()
   {
     decomp_ros_msgs::msg::PolyhedronArray poly_whole_msg = DecompROS::polyhedron_array_to_ros(poly_whole_);
     poly_whole_msg.header.stamp = this->now();
-    poly_whole_msg.header.frame_id = "map";
+    poly_whole_msg.header.frame_id = viz_frame_;
     poly_whole_msg.lifetime = rclcpp::Duration::from_seconds(1.0);
     pub_poly_whole_->publish(poly_whole_msg);
   }
@@ -1722,7 +1725,7 @@ void DYNUS_NODE::publishPoly()
   {
     decomp_ros_msgs::msg::PolyhedronArray poly_safe_msg = DecompROS::polyhedron_array_to_ros(poly_safe_);
     poly_safe_msg.header.stamp = this->now();
-    poly_safe_msg.header.frame_id = "map";
+    poly_safe_msg.header.frame_id = viz_frame_;
     poly_safe_msg.lifetime = rclcpp::Duration::from_seconds(1.0);
     pub_poly_safe_->publish(poly_safe_msg);
   }
@@ -1741,7 +1744,7 @@ void DYNUS_NODE::publishTraj()
   {
     visualization_msgs::msg::MarkerArray clear_msg;
     visualization_msgs::msg::Marker clear_m;
-    clear_m.header.frame_id = "map";
+    clear_m.header.frame_id = viz_frame_;
     clear_m.header.stamp = now;
     clear_m.action = visualization_msgs::msg::Marker::DELETEALL;
     clear_msg.markers.push_back(clear_m);
@@ -1811,7 +1814,7 @@ void DYNUS_NODE::publishGlobalPath()
         /*line_width=*/0.03,   // meters
         /*dot_diameter=*/0.06, // meters
         /*base_id=*/50000,
-        /*frame_id=*/"map",
+        /*frame_id=*/viz_frame_,
         /*lifetime_sec=*/1.0);
 
     pub_dgp_path_marker_->publish(dgp_path_marker_);
@@ -1833,7 +1836,7 @@ void DYNUS_NODE::publishGlobalPath()
         /*line_width=*/0.03,   // meters
         /*dot_diameter=*/0.06, // meters
         /*base_id=*/60000,
-        /*frame_id=*/"map",
+        /*frame_id=*/viz_frame_,
         /*lifetime_sec=*/1.0);
 
     pub_original_dgp_path_marker_->publish(original_dgp_path_marker_);
@@ -1919,7 +1922,7 @@ void DYNUS_NODE::publishDynamicHeatCloud()
 
   // Build PointCloud2 message
   sensor_msgs::msg::PointCloud2 msg;
-  msg.header.frame_id = "map";
+  msg.header.frame_id = viz_frame_;
   msg.header.stamp = this->now();
 
   sensor_msgs::PointCloud2Modifier modifier(msg);
@@ -1999,7 +2002,7 @@ void DYNUS_NODE::publishOccupiedCloud()
 
 BUILD_OCC_MSG:
   sensor_msgs::msg::PointCloud2 msg;
-  msg.header.frame_id = "map";
+  msg.header.frame_id = viz_frame_;
   msg.header.stamp = this->now();
 
   sensor_msgs::PointCloud2Modifier modifier(msg);
@@ -2051,7 +2054,7 @@ void DYNUS_NODE::publishHoverAvoidanceViz()
     Eigen::Vector3d p_obs = trajs[i]->current_pos;
 
     visualization_msgs::msg::Marker sphere;
-    sphere.header.frame_id = "map";
+    sphere.header.frame_id = viz_frame_;
     sphere.header.stamp = this->now();
     sphere.ns = "danger_sphere";
     sphere.id = static_cast<int>(i);
@@ -2077,7 +2080,7 @@ void DYNUS_NODE::publishHoverAvoidanceViz()
   for (size_t i = trajs.size(); i < trajs.size() + 10; ++i)
   {
     visualization_msgs::msg::Marker del;
-    del.header.frame_id = "map";
+    del.header.frame_id = viz_frame_;
     del.header.stamp = this->now();
     del.ns = "danger_sphere";
     del.id = static_cast<int>(i);
@@ -2091,7 +2094,7 @@ void DYNUS_NODE::publishHoverAvoidanceViz()
   Eigen::Vector3d p_hover = dynus_ptr_->getHoverPos();
 
   visualization_msgs::msg::Marker hover_marker;
-  hover_marker.header.frame_id = "map";
+  hover_marker.header.frame_id = viz_frame_;
   hover_marker.header.stamp = this->now();
   hover_marker.ns = "hover_pos";
   hover_marker.id = 0;
@@ -2132,7 +2135,7 @@ void DYNUS_NODE::createMarkerArrayFromVec_Vec3f(
 {
 
   visualization_msgs::msg::Marker marker;
-  marker.header.frame_id = "map";
+  marker.header.frame_id = viz_frame_;
   marker.header.stamp = this->now();
   marker.ns = "namespace_" + std::to_string(namespace_id);
   marker.id = 0;

@@ -1206,7 +1206,7 @@ void DGPManager::updateMap(double wdx, double wdy, double wdz, const Vec3f &cent
     auto start_time = std::chrono::high_resolution_clock::now();
 
     mtx_map_util_.lock();
-    map_util_->readMap(pclptr, pclptr_unk, (int)wdx / res_, (int)wdy / res_, (int)wdz / res_, center_map, par_.z_min, par_.z_max, par_.inflation_dgp, obst_pos, obst_bbox, traj_max_time);
+    map_util_->readMap(pclptr, pclptr_unk, (int)(wdx / res_), (int)(wdy / res_), (int)(wdz / res_), center_map, par_.z_min, par_.z_max, par_.inflation_dgp, obst_pos, obst_bbox, traj_max_time);
     mtx_map_util_.unlock();
 
     // Get the elapsed time for reading the map

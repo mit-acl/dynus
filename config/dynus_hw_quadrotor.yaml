@@ -109,7 +109,7 @@ dynus_node:
         v_max: 1.0                                  # [m/s]  max velocity (conservative for hardware)
         a_max: 5.0                                  # [m/s2] max acceleration (conservative for hardware)
         j_max: 10.0                                 # [m/s3] max jerk (conservative for hardware)
-        drone_bbox: [0.6, 0.6, 0.6]              # [m] Size of the bounding box (real drone size)
+        drone_bbox: [0.9, 0.9, 0.5]              # [m] Size of the bounding box (real drone size)
         goal_radius: 0.5                           # [m] Radius of the goal
         goal_seen_radius: 2.0                       # [m] Radius of the goal that the drone can see and stop replanning. Note that if this number is too small, the trajectory planning becomes extremely difficult.
 

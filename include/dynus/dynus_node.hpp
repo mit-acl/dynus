@@ -317,6 +317,9 @@ namespace dynus
         bool use_benchmark_ = false;              // Use benchmark
         int last_subopt_count_{0}; // tracks how many subopt strips we drew last time
 
+        // Visualization frame: "map" in sim, "world" in hardware global-frame mode
+        std::string viz_frame_ = "map";
+
         // D435 parameters
         std::string d435_depth_frame_id_;
         std::string lidar_frame_id_;
