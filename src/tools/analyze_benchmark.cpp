@@ -929,7 +929,8 @@ static void save_statistics_csv(const Statistics& s, const fs::path& output_path
 // ============================================================================
 
 static std::string generate_dynus_row(const Statistics& s, const std::string& case_name,
-                                        const std::string& table_type) {
+                                        const std::string& table_type,
+                                        const std::string& algo_name = "DYNUS") {
   std::ostringstream oss;
   oss << std::fixed;
 
@@ -944,7 +945,7 @@ static std::string generate_dynus_row(const Statistics& s, const std::string& ca
   if (table_type == "static") {
     double total_opt_time = s.avg_local_traj_time_mean;
     double total_replan_time = s.avg_replanning_time_mean;
-    oss << "       & DYNUS & Hard & $L_\\infty$ & "
+    oss << "       & " << algo_name << " & Hard & $L_\\infty$ & "
         << std::setprecision(1) << "{" << success_rate << "} & "
         << "{" << total_opt_time << "} & "
         << "{" << total_replan_time << "} & "
@@ -984,7 +985,7 @@ static std::string generate_dynus_row(const Statistics& s, const std::string& ca
       min_dist_str = "N/A";
     }
 
-    oss << "      & \\multicolumn{2}{c}{DYNUS} & "
+    oss << "      & \\multicolumn{2}{c}{" << algo_name << "} & "
         << std::setprecision(1)
         << success_rate << " & " << per_opt_time << " & "
         << travel_time << " & " << path_length << " & "
@@ -1169,7 +1170,8 @@ static std::string generate_new_static_table(const std::string& case_name,
 static std::string update_existing_table(const fs::path& tex_path,
                                           const std::string& case_name,
                                           const std::string& dynus_row,
-                                          const std::string& table_type) {
+                                          const std::string& table_type,
+                                          const std::string& algo_name = "DYNUS") {
   std::ifstream f(tex_path);
   if (!f.is_open()) return "";
 
@@ -1199,14 +1201,14 @@ static std::string update_existing_table(const fs::path& tex_path,
       }
     }
 
-    // Case 1: DYNUS row on same line as multirow
-    if (line.find(case_name) != std::string::npos && line.find("DYNUS") != std::string::npos &&
+    // Case 1: algo_name row on same line as multirow
+    if (line.find(case_name) != std::string::npos && line.find(algo_name) != std::string::npos &&
         line.find("&") != std::string::npos && line.find("multirow") != std::string::npos) {
       updated_lines.push_back(dynus_row);
       row_updated = true;
     }
-    // Case 2: DYNUS row in separate line (static table)
-    else if (current_case == case_name && line.find("DYNUS") != std::string::npos &&
+    // Case 2: algo_name row in separate line (dynamic/static table)
+    else if (current_case == case_name && line.find(algo_name) != std::string::npos &&
              line.find("&") != std::string::npos && line.find("\\\\") != std::string::npos &&
              line.find("multirow") == std::string::npos) {
       updated_lines.push_back(dynus_row);
@@ -1224,15 +1226,57 @@ static std::string update_existing_table(const fs::path& tex_path,
   }
 
   if (!row_updated) {
-    std::cout << "  Warning: No matching " << case_name << " + DYNUS row found, appending before \\bottomrule...\n";
-    for (int i = static_cast<int>(updated_lines.size()) - 1; i >= 0; i--) {
-      if (updated_lines[i].find("\\bottomrule") != std::string::npos) {
-        updated_lines.insert(updated_lines.begin() + i, dynus_row);
-        break;
+    // Insert before the next \midrule or \bottomrule after the current case block
+    std::cout << "  No matching " << case_name << " + " << algo_name << " row found, inserting new row...\n";
+    bool inserted = false;
+    bool in_target_case = false;
+    for (size_t i = 0; i < updated_lines.size(); i++) {
+      // Detect case start via multirow
+      std::regex mr_re(R"(\\multirow\{(\d+)\}\{[^}]*\}\{(\w+)\})");
+      std::smatch mr_match;
+      if (std::regex_search(updated_lines[i], mr_match, mr_re)) {
+        std::string env = mr_match[2];
+        if (env == case_name) {
+          in_target_case = true;
+          // Increment multirow count
+          int old_count = std::stoi(mr_match[1]);
+          int new_count = old_count + 1;
+          std::string old_mr = "\\multirow{" + std::to_string(old_count) + "}";
+          std::string new_mr = "\\multirow{" + std::to_string(new_count) + "}";
+          size_t pos = updated_lines[i].find(old_mr);
+          if (pos != std::string::npos) {
+            updated_lines[i].replace(pos, old_mr.size(), new_mr);
+          }
+        } else if (in_target_case) {
+          // We've entered the next case — insert before this line
+          updated_lines.insert(updated_lines.begin() + static_cast<long>(i), dynus_row);
+          inserted = true;
+          break;
+        }
+      }
+      // If we're in target case and hit \midrule or \bottomrule, insert before it
+      if (in_target_case) {
+        std::string trimmed = updated_lines[i];
+        size_t ts = trimmed.find_first_not_of(" \t");
+        if (ts != std::string::npos) trimmed = trimmed.substr(ts);
+        if (trimmed.find("\\midrule") == 0 || trimmed.find("\\bottomrule") == 0) {
+          updated_lines.insert(updated_lines.begin() + static_cast<long>(i), dynus_row);
+          inserted = true;
+          break;
+        }
+      }
+    }
+    if (!inserted) {
+      // Fallback: insert before last \bottomrule
+      for (int i = static_cast<int>(updated_lines.size()) - 1; i >= 0; i--) {
+        if (updated_lines[i].find("\\bottomrule") != std::string::npos) {
+          updated_lines.insert(updated_lines.begin() + i, dynus_row);
+          break;
+        }
       }
     }
   } else {
-    std::cout << "  Updated " << case_name << " row\n";
+    std::cout << "  Updated " << case_name << " + " << algo_name << " row\n";
   }
 
   std::ostringstream result;
@@ -1245,13 +1289,14 @@ static std::string update_existing_table(const fs::path& tex_path,
 
 static std::string generate_latex_table(const Statistics& s, const std::string& case_name,
                                          const fs::path& existing_file,
-                                         const std::string& table_type) {
-  std::string dynus_row = generate_dynus_row(s, case_name, table_type);
+                                         const std::string& table_type,
+                                         const std::string& algo_name = "DYNUS") {
+  std::string dynus_row = generate_dynus_row(s, case_name, table_type, algo_name);
 
   // Try updating existing table
   if (fs::exists(existing_file)) {
-    std::cout << "  Found existing table, updating " << case_name << " row...\n";
-    std::string updated = update_existing_table(existing_file, case_name, dynus_row, table_type);
+    std::cout << "  Found existing table, updating " << case_name << " + " << algo_name << " row...\n";
+    std::string updated = update_existing_table(existing_file, case_name, dynus_row, table_type, algo_name);
     if (!updated.empty()) return updated;
   }
 
@@ -1285,15 +1330,16 @@ static std::string generate_latex_table(const Statistics& s, const std::string& 
 // Main analysis
 // ============================================================================
 
-static void analyze_single_case(const fs::path& data_dir, const std::string& output_name,
-                                  const fs::path& latex_output, const std::string& table_type,
-                                  Vec3 goal_pos) {
+static Statistics analyze_single_case(const fs::path& data_dir, const std::string& output_name,
+                                       const fs::path& latex_output, const std::string& table_type,
+                                       Vec3 goal_pos, const std::string& algo_name = "DYNUS",
+                                       bool skip_latex = false) {
   // Extract case name
   std::string dir_name = data_dir.filename().string();
   std::string case_name = "Unknown";
-  if (dir_name.find("easy_") == 0) case_name = "Easy";
-  else if (dir_name.find("medium_") == 0) case_name = "Medium";
-  else if (dir_name.find("hard_") == 0) case_name = "Hard";
+  if (dir_name == "easy" || dir_name.find("easy_") == 0) case_name = "Easy";
+  else if (dir_name == "medium" || dir_name.find("medium_") == 0) case_name = "Medium";
+  else if (dir_name == "hard" || dir_name.find("hard_") == 0) case_name = "Hard";
 
   std::string sep(80, '=');
   std::cout << sep << "\n";
@@ -1305,7 +1351,7 @@ static void analyze_single_case(const fs::path& data_dir, const std::string& out
   fs::path csv_path = find_most_recent_csv(data_dir);
   if (csv_path.empty()) {
     std::cerr << "ERROR: No benchmark CSV files found in " << data_dir << "\n";
-    return;
+    return Statistics{};
   }
   std::cout << "Loading: " << csv_path.filename().string() << "\n";
   auto trials = load_benchmark_csv(csv_path);
@@ -1426,18 +1472,607 @@ static void analyze_single_case(const fs::path& data_dir, const std::string& out
   fs::path csv_output = data_dir / (output_name + ".csv");
   save_statistics_csv(stats, csv_output);
 
-  // Generate LaTeX
-  std::cout << "\nUpdating LaTeX table...\n";
-  std::string latex = generate_latex_table(stats, case_name, latex_output, table_type);
-  fs::create_directories(latex_output.parent_path());
-  std::ofstream tex_file(latex_output);
-  tex_file << latex;
-  tex_file.close();
-  std::cout << "LaTeX table updated for " << case_name << " case\n";
+  if (!skip_latex) {
+    // Generate LaTeX
+    std::cout << "\nUpdating LaTeX table...\n";
+    std::string latex = generate_latex_table(stats, case_name, latex_output, table_type, algo_name);
+    fs::create_directories(latex_output.parent_path());
+    std::ofstream tex_file(latex_output);
+    tex_file << latex;
+    tex_file.close();
+    std::cout << "LaTeX table updated for " << case_name << " case\n";
+  }
 
   std::cout << "\n" << sep << "\n";
   std::cout << case_name << " CASE ANALYSIS COMPLETE\n";
   std::cout << sep << "\n\n";
+
+  return stats;
+}
+
+// ============================================================================
+// Unknown-dynamic batch mode (multi-config table with best/worst highlighting)
+// ============================================================================
+
+struct UnknownDynamicConfig {
+  std::string dir_name;
+  int heat_weight = 0;
+  int n_segments = 3;  // default N
+  bool unk_infl = false;
+};
+
+struct BatchRowData {
+  std::string case_name;
+  int heat_weight;
+  int n_segments = 3;
+  bool unk_infl;
+  Statistics stats;
+};
+
+static std::string extract_case_name(const fs::path& data_dir) {
+  std::string dir_name = data_dir.filename().string();
+  if (dir_name == "easy" || dir_name.find("easy_") == 0) return "Easy";
+  if (dir_name == "medium" || dir_name.find("medium_") == 0) return "Medium";
+  if (dir_name == "hard" || dir_name.find("hard_") == 0) return "Hard";
+  return "Unknown";
+}
+
+static std::vector<UnknownDynamicConfig> discover_unknown_dynamic_configs(const fs::path& base_dir) {
+  std::vector<UnknownDynamicConfig> configs;
+  if (!fs::exists(base_dir)) return configs;
+
+  // Match patterns like:
+  //   inflate_unknown_voxels_heat_w_5
+  //   inflate_unknown_voxels_heat_w_10
+  //   inflate_unknown_voxels_heat_w_10_N_2
+  //   no_inflate_unknown_voxels_heat_w_10
+  std::regex config_re(R"((no_?)?inflate_unknown_voxels_heat_w_(\d+)(?:_N_(\d+))?)");
+
+  for (auto& entry : fs::directory_iterator(base_dir)) {
+    if (!entry.is_directory()) continue;
+    std::string name = entry.path().filename().string();
+    std::smatch match;
+    if (std::regex_match(name, match, config_re)) {
+      UnknownDynamicConfig cfg;
+      cfg.dir_name = name;
+      cfg.unk_infl = match[1].str().empty(); // no "no_" prefix means inflate=yes
+      cfg.heat_weight = std::stoi(match[2]);
+      cfg.n_segments = match[3].matched ? std::stoi(match[3]) : 3; // default N=3
+      configs.push_back(cfg);
+    }
+  }
+
+  // Sort: by heat_weight, then n_segments, then unk_infl (Yes before No)
+  std::sort(configs.begin(), configs.end(), [](const auto& a, const auto& b) {
+    if (a.heat_weight != b.heat_weight) return a.heat_weight < b.heat_weight;
+    if (a.n_segments != b.n_segments) return a.n_segments < b.n_segments;
+    return a.unk_infl > b.unk_infl; // true (Yes) before false (No)
+  });
+
+  return configs;
+}
+
+static std::string format_with_best_worst(double val, double best, double worst, int prec) {
+  std::ostringstream oss;
+  oss << std::fixed << std::setprecision(prec) << val;
+  std::string formatted = oss.str();
+
+  double tol = std::pow(10.0, -prec) * 0.5;
+  if (std::abs(best - worst) < tol) return formatted; // all same, no highlighting
+  if (std::abs(val - best) < tol) return "\\best{" + formatted + "}";
+  if (std::abs(val - worst) < tol) return "\\worst{" + formatted + "}";
+  return formatted;
+}
+
+// Parse existing unknown_dynamic .tex table to extract BatchRowData entries
+static std::vector<BatchRowData> parse_unknown_dynamic_table(const std::string& tex_path) {
+  std::vector<BatchRowData> rows;
+  std::ifstream file(tex_path);
+  if (!file.is_open()) {
+    std::cerr << "WARNING: Could not open merge table: " << tex_path << "\n";
+    return rows;
+  }
+
+  std::string content((std::istreambuf_iterator<char>(file)),
+                       std::istreambuf_iterator<char>());
+  file.close();
+
+  // Helper to strip \best{...} and \worst{...} wrappers
+  auto strip_highlight = [](const std::string& s) -> std::string {
+    std::regex re(R"(\\(?:best|worst)\{([^}]*)\})");
+    return std::regex_replace(s, re, "$1");
+  };
+
+  // Find data rows between \midrule and \bottomrule
+  // Each row looks like: [multirow or empty] & w & N & v1 & v2 & ... & v9
+  std::string current_env;
+  std::regex row_re(R"(\\\\)");  // lines ending with backslash-backslash
+
+  std::istringstream stream(content);
+  std::string line;
+  bool in_data = false;
+
+  while (std::getline(stream, line)) {
+    // Trim
+    size_t start = line.find_first_not_of(" \t");
+    if (start == std::string::npos) continue;
+    std::string trimmed = line.substr(start);
+
+    // Start of data after first \midrule
+    if (trimmed.find("\\midrule") == 0) {
+      in_data = true;
+      continue;
+    }
+    if (trimmed.find("\\bottomrule") == 0) break;
+    if (!in_data) continue;
+
+    // Skip cmidrule lines
+    if (trimmed.find("\\cmidrule") == 0) continue;
+
+    // Must contain \\ to be a data row
+    if (trimmed.find("\\\\") == std::string::npos) continue;
+
+    // Remove trailing backslash-backslash
+    size_t bs_pos = trimmed.rfind("\\\\");
+    std::string row_content = trimmed.substr(0, bs_pos);
+
+    // Split by &
+    std::vector<std::string> cells;
+    std::istringstream cell_stream(row_content);
+    std::string cell;
+    while (std::getline(cell_stream, cell, '&')) {
+      // Trim cell
+      size_t cs = cell.find_first_not_of(" \t");
+      size_t ce = cell.find_last_not_of(" \t");
+      if (cs != std::string::npos)
+        cells.push_back(cell.substr(cs, ce - cs + 1));
+      else
+        cells.push_back("");
+    }
+
+    // Expect 12 cells (env, w, N, 9 metrics) but env may be empty or multirow
+    if (cells.size() < 12) continue;
+
+    // Extract env name from multirow or use current
+    std::string env_cell = cells[0];
+    std::smatch env_match;
+    std::regex multirow_re(R"(\\multirow\{\d+\}\{[^}]*\}\{(\w+)\})");
+    if (std::regex_search(env_cell, env_match, multirow_re)) {
+      current_env = env_match[1];
+    }
+    // If env_cell is empty, use current_env
+
+    BatchRowData row;
+    row.case_name = current_env;
+    row.heat_weight = std::stoi(strip_highlight(cells[1]));
+    row.n_segments = std::stoi(strip_highlight(cells[2]));
+    row.unk_infl = true;  // all current configs have inflate=true
+
+    // Parse metrics: cells[3..11]
+    auto parse_val = [&](const std::string& s) -> double {
+      std::string clean = strip_highlight(s);
+      if (clean == "N/A") return 0.0;
+      return std::stod(clean);
+    };
+
+    row.stats.success_rate = parse_val(cells[3]);
+    row.stats.avg_local_traj_time_mean = parse_val(cells[4]);
+    row.stats.flight_travel_time_mean = parse_val(cells[5]);
+    row.stats.path_length_mean = parse_val(cells[6]);
+    row.stats.jerk_integral_mean = parse_val(cells[7]);
+    double min_dist_val = parse_val(cells[8]);
+    if (strip_highlight(cells[8]) == "N/A") {
+      row.stats.has_min_distance = false;
+    } else {
+      row.stats.has_min_distance = true;
+      row.stats.min_distance_to_obstacles_mean = min_dist_val;
+    }
+    row.stats.vel_violation_rate = parse_val(cells[9]);
+    row.stats.acc_violation_rate = parse_val(cells[10]);
+    row.stats.jerk_violation_rate = parse_val(cells[11]);
+
+    rows.push_back(row);
+  }
+
+  return rows;
+}
+
+// Merge new DYNUS rows into existing dynamic table, replacing old DYNUS rows
+// and updating multirow counts. case_rows maps case_name -> dynus_row string.
+static std::string merge_dynamic_table(const std::string& tex_path,
+                                        const std::map<std::string, std::vector<std::string>>& case_rows) {
+  std::ifstream file(tex_path);
+  if (!file.is_open()) {
+    std::cerr << "WARNING: Could not open merge table: " << tex_path << "\n";
+    return "";
+  }
+  std::string content((std::istreambuf_iterator<char>(file)),
+                       std::istreambuf_iterator<char>());
+  file.close();
+
+  std::istringstream iss(content);
+  std::string line;
+  std::vector<std::string> lines;
+  while (std::getline(iss, line)) lines.push_back(line);
+
+  // Pass 1: Remove all old DYNUS rows and track which cases lost rows
+  std::map<std::string, int> rows_removed;
+  std::string current_case;
+  std::vector<std::string> filtered;
+
+  for (auto& l : lines) {
+    std::regex mr_re(R"(\\multirow\{\d+\}\{[^}]*\}\{(\w+)\})");
+    std::smatch mr_match;
+    if (std::regex_search(l, mr_match, mr_re)) {
+      std::string env = mr_match[1];
+      if (env == "Easy" || env == "Medium" || env == "Hard") {
+        current_case = env;
+      }
+    }
+
+    if (l.find("DYNUS") != std::string::npos && l.find("&") != std::string::npos &&
+        l.find("\\\\") != std::string::npos && l.find("caption") == std::string::npos) {
+      rows_removed[current_case]++;
+      continue;
+    }
+    filtered.push_back(l);
+  }
+
+  // Pass 2: Insert new DYNUS rows before midrule/bottomrule, update multirow counts
+  std::vector<std::string> result;
+  current_case.clear();
+  bool in_case = false;
+
+  for (size_t i = 0; i < filtered.size(); i++) {
+    auto& l = filtered[i];
+
+    std::regex mr_re(R"(\\multirow\{(\d+)\}\{[^}]*\}\{(\w+)\})");
+    std::smatch mr_match;
+    if (std::regex_search(l, mr_match, mr_re)) {
+      std::string env = mr_match[2];
+      if (env == "Easy" || env == "Medium" || env == "Hard") {
+        current_case = env;
+        in_case = true;
+
+        int old_count = std::stoi(mr_match[1]);
+        int removed = rows_removed.count(env) ? rows_removed[env] : 0;
+        int added = case_rows.count(env) ? (int)case_rows.at(env).size() : 0;
+        int new_count = old_count - removed + added;
+        if (new_count != old_count) {
+          std::string old_mr = "\\multirow{" + std::to_string(old_count) + "}";
+          std::string new_mr = "\\multirow{" + std::to_string(new_count) + "}";
+          size_t pos = l.find(old_mr);
+          if (pos != std::string::npos) {
+            l.replace(pos, old_mr.size(), new_mr);
+          }
+        }
+      }
+    }
+
+    std::string trimmed = l;
+    size_t ts = trimmed.find_first_not_of(" \t");
+    if (ts != std::string::npos) trimmed = trimmed.substr(ts);
+
+    if (in_case && (trimmed.find("\\midrule") == 0 || trimmed.find("\\bottomrule") == 0)) {
+      if (case_rows.count(current_case)) {
+        for (auto& row : case_rows.at(current_case)) {
+          result.push_back(row);
+        }
+      }
+      in_case = false;
+    }
+
+    result.push_back(l);
+  }
+
+  std::ostringstream oss;
+  for (size_t i = 0; i < result.size(); i++) {
+    oss << result[i];
+    if (i + 1 < result.size()) oss << "\n";
+  }
+  return oss.str();
+}
+
+static std::string generate_unknown_dynamic_batch_table(const std::vector<BatchRowData>& rows) {
+  std::vector<std::string> cases = {"Easy", "Medium", "Hard"};
+
+  // Metric definitions: id, higher_is_better, precision
+  // IDs: 0=success_rate, 1=per_opt_time, 2=travel_time, 3=path_length,
+  //      4=jerk_integral, 5=min_dist, 6=vel_viol, 7=acc_viol, 8=jerk_viol
+  struct MetricDef { int id; bool higher_is_better; int precision; };
+  std::vector<MetricDef> metrics = {
+    {0, true, 1}, {1, false, 1}, {2, false, 1}, {3, false, 1},
+    {4, false, 1}, {5, true, 3}, {6, false, 1}, {7, false, 1}, {8, false, 1}
+  };
+
+  auto get_metric = [](const Statistics& s, int id) -> double {
+    switch (id) {
+      case 0: return s.success_rate;
+      case 1: return s.avg_local_traj_time_mean;
+      case 2: return s.flight_travel_time_mean;
+      case 3: return s.path_length_mean;
+      case 4: return s.jerk_integral_mean;
+      case 5: return s.min_distance_to_obstacles_mean;
+      case 6: return s.vel_violation_rate;
+      case 7: return s.acc_violation_rate;
+      case 8: return s.jerk_violation_rate;
+      default: return 0.0;
+    }
+  };
+
+  std::ostringstream oss;
+  oss << "\\begin{table*}\n"
+      << "  \\caption{Benchmark results in unknown dynamic environments. "
+      << "DYNUS navigates using only pointcloud sensing (no ground truth obstacle trajectories). "
+      << "We compare different heat map weights ($w$) and trajectory segment counts ($N$). "
+      << "We highlight the \\best{best} and \\worst{worst} "
+      << "value for each environment.}\n"
+      << "  \\label{tab:unknown_dynamic_benchmark}\n"
+      << "  \\centering\n"
+      << "  \\renewcommand{\\arraystretch}{1.2}\n"
+      << "  \\resizebox{\\textwidth}{!}{\n"
+      << "    \\begin{tabular}{c c c c c c c c c c c c}\n"
+      << "      \\toprule\n"
+      << "      \\multirow{2}{*}[-0.4em]{\\textbf{Env}}\n"
+      << "      & \\multirow{2}{*}[-0.4em]{\\textbf{$w$}}\n"
+      << "      & \\multirow{2}{*}[-0.4em]{\\textbf{$N$}}\n"
+      << "      & \\multicolumn{1}{c}{\\textbf{Success}}\n"
+      << "      & \\multicolumn{1}{c}{\\textbf{Comp. Time}}\n"
+      << "      & \\multicolumn{3}{c}{\\textbf{Performance}}\n"
+      << "      & \\multicolumn{1}{c}{\\textbf{Safety}}\n"
+      << "      & \\multicolumn{3}{c}{\\textbf{Constraint Violation}}\n"
+      << "      \\\\\n"
+      << "      \\cmidrule(lr){4-4}\n"
+      << "      \\cmidrule(lr){5-5}\n"
+      << "      \\cmidrule(lr){6-8}\n"
+      << "      \\cmidrule(lr){9-9}\n"
+      << "      \\cmidrule(lr){10-12}\n"
+      << "      &&&\n"
+      << "      $R_{\\mathrm{succ}}$ [\\%] &\n"
+      << "      $T^{\\mathrm{per}}_{\\mathrm{opt}}$ [ms] &\n"
+      << "      $T_{\\mathrm{trav}}$ [s] &\n"
+      << "      $L_{\\mathrm{path}}$ [m] &\n"
+      << "      $S_{\\mathrm{jerk}}$ [m/s$^{2}$] &\n"
+      << "      $d_{\\mathrm{min}}$ [m] &\n"
+      << "      $\\rho_{\\mathrm{vel}}$ [\\%] &\n"
+      << "      $\\rho_{\\mathrm{acc}}$ [\\%] &\n"
+      << "      $\\rho_{\\mathrm{jerk}}$ [\\%]\n"
+      << "      \\\\\n"
+      << "      \\midrule\n";
+
+  for (size_t ci = 0; ci < cases.size(); ci++) {
+    const std::string& case_name = cases[ci];
+
+    // Collect rows for this case (preserve config ordering)
+    std::vector<const BatchRowData*> case_rows;
+    for (auto& r : rows) {
+      if (r.case_name == case_name) case_rows.push_back(&r);
+    }
+    if (case_rows.empty()) continue;
+
+    int n_case_rows = static_cast<int>(case_rows.size());
+
+    // Compute best/worst per metric for this case
+    std::vector<double> best_vals(metrics.size()), worst_vals(metrics.size());
+    for (size_t mi = 0; mi < metrics.size(); mi++) {
+      std::vector<double> vals;
+      for (auto* r : case_rows) {
+        // Skip N/A min_distance values
+        if (metrics[mi].id == 5 && !r->stats.has_min_distance) continue;
+        vals.push_back(get_metric(r->stats, metrics[mi].id));
+      }
+      if (vals.empty()) {
+        best_vals[mi] = 0.0;
+        worst_vals[mi] = 0.0;
+        continue;
+      }
+      if (metrics[mi].higher_is_better) {
+        best_vals[mi] = *std::max_element(vals.begin(), vals.end());
+        worst_vals[mi] = *std::min_element(vals.begin(), vals.end());
+      } else {
+        best_vals[mi] = *std::min_element(vals.begin(), vals.end());
+        worst_vals[mi] = *std::max_element(vals.begin(), vals.end());
+      }
+    }
+
+    // Emit rows
+    for (int ri = 0; ri < n_case_rows; ri++) {
+      const auto* r = case_rows[ri];
+
+      // Env cell (multirow on first row)
+      std::string env_cell;
+      if (ri == 0) {
+        env_cell = "\\multirow{" + std::to_string(n_case_rows) + "}{*}{" + case_name + "}";
+      }
+
+      // Heat weight and N segment cells
+      std::string hw_cell = std::to_string(r->heat_weight);
+      std::string n_cell = std::to_string(r->n_segments);
+
+      oss << "      " << env_cell << " & " << hw_cell << " & " << n_cell;
+
+      // Data cells with best/worst highlighting
+      for (size_t mi = 0; mi < metrics.size(); mi++) {
+        if (metrics[mi].id == 5 && !r->stats.has_min_distance) {
+          oss << " & N/A";
+        } else {
+          double val = get_metric(r->stats, metrics[mi].id);
+          oss << " & " << format_with_best_worst(val, best_vals[mi], worst_vals[mi], metrics[mi].precision);
+        }
+      }
+
+      oss << " \\\\\n";
+    }
+
+    // Midrule between cases (not after last)
+    if (ci < cases.size() - 1) {
+      oss << "      \\midrule\n";
+    }
+  }
+
+  oss << "      \\bottomrule\n"
+      << "    \\end{tabular}\n"
+      << "  }\n"
+      << "  \\vspace{-1.0em}\n"
+      << "\\end{table*}";
+
+  return oss.str();
+}
+
+// ============================================================================
+// Temporal Ablation Table
+// ============================================================================
+
+struct TemporalAblationRow {
+  std::string case_name;   // Easy, Medium, Hard
+  std::string sfc_mode;    // "Worst-Case" or "DYNUS2 (STSFC)"
+  int n_segments = 2;      // N value
+  Statistics stats;
+};
+
+static std::string generate_temporal_ablation_table(const std::vector<TemporalAblationRow>& rows) {
+  // Group rows by case
+  std::map<std::string, std::vector<const TemporalAblationRow*>> by_case;
+  for (auto& r : rows) by_case[r.case_name].push_back(&r);
+
+  // Metric extraction lambdas
+  auto get_metrics = [](const TemporalAblationRow* r) -> std::vector<double> {
+    const auto& s = r->stats;
+    return {
+      s.success_rate,
+      s.avg_local_traj_time_mean,
+      s.flight_travel_time_mean,
+      s.path_length_mean,
+      s.jerk_integral_mean,
+      s.has_min_distance ? s.min_distance_to_obstacles_mean : -1e18,
+      s.vel_violation_rate,
+      s.acc_violation_rate,
+      s.jerk_violation_rate
+    };
+  };
+
+  // higher_is_better: success_rate (idx 0), min_dist (idx 5)
+  // lower_is_better: comp_time (1), travel_time (2), path_length (3), jerk (4), vel_viol (6), acc_viol (7), jerk_viol (8)
+  auto is_higher_better = [](int idx) {
+    return idx == 0 || idx == 5;
+  };
+
+  // Build the table
+  std::ostringstream oss;
+  oss << std::fixed;
+
+  oss << "\\begin{table*}\n"
+      << "  \\caption{Ablation study: temporal safe flight corridor (SFC) vs worst-case SFC. "
+      << "The temporal approach uses per-layer obstacle inflation $r = v_{\\max}^{\\mathrm{obs}} \\times t_n$, "
+      << "while the worst-case baseline inflates all obstacles by the maximum time horizon. "
+      << "We highlight the \\best{better} and \\worst{worse} value for each case.}\n"
+      << "  \\label{tab:temporal_sfc_ablation}\n"
+      << "  \\centering\n"
+      << "  \\renewcommand{\\arraystretch}{1.2}\n"
+      << "  \\resizebox{\\textwidth}{!}{\n"
+      << "    \\begin{tabular}{c c c c c c c c c c c c}\n"
+      << "      \\toprule\n"
+      << "      \\multirow{2}{*}[-0.4em]{\\textbf{Case}}\n"
+      << "      & \\multirow{2}{*}[-0.4em]{\\textbf{SFC Mode}}\n"
+      << "      & \\multirow{2}{*}[-0.4em]{\\textbf{$N$}}\n"
+      << "      & \\multicolumn{1}{c}{\\textbf{Success}}\n"
+      << "      & \\multicolumn{1}{c}{\\textbf{Comp. Time}}\n"
+      << "      & \\multicolumn{3}{c}{\\textbf{Performance}}\n"
+      << "      & \\multicolumn{1}{c}{\\textbf{Safety}}\n"
+      << "      & \\multicolumn{3}{c}{\\textbf{Constraint Violation}}\n"
+      << "      \\\\\n"
+      << "      \\cmidrule(lr){4-4}\n"
+      << "      \\cmidrule(lr){5-5}\n"
+      << "      \\cmidrule(lr){6-8}\n"
+      << "      \\cmidrule(lr){9-9}\n"
+      << "      \\cmidrule(lr){10-12}\n"
+      << "      &&&\n"
+      << "      $R_{\\mathrm{succ}}$ [\\%] &\n"
+      << "      $T^{\\mathrm{per}}_{\\mathrm{opt}}$ [ms] &\n"
+      << "      $T_{\\mathrm{trav}}$ [s] &\n"
+      << "      $L_{\\mathrm{path}}$ [m] &\n"
+      << "      $S_{\\mathrm{jerk}}$ [m/s$^{2}$] &\n"
+      << "      $d_{\\mathrm{min}}$ [m] &\n"
+      << "      $\\rho_{\\mathrm{vel}}$ [\\%] &\n"
+      << "      $\\rho_{\\mathrm{acc}}$ [\\%] &\n"
+      << "      $\\rho_{\\mathrm{jerk}}$ [\\%]\n"
+      << "      \\\\\n";
+
+  std::vector<std::string> case_order = {"Easy", "Medium", "Hard"};
+
+  for (size_t ci = 0; ci < case_order.size(); ci++) {
+    const auto& cn = case_order[ci];
+    oss << "      \\midrule\n";
+
+    auto it = by_case.find(cn);
+    if (it == by_case.end()) continue;
+
+    auto& case_rows = it->second;
+
+    // Compute best/worst per metric for this case
+    int num_metrics = 9;
+    std::vector<double> best_val(num_metrics), worst_val(num_metrics);
+    for (int m = 0; m < num_metrics; m++) {
+      best_val[m] = is_higher_better(m) ? -1e18 : 1e18;
+      worst_val[m] = is_higher_better(m) ? 1e18 : -1e18;
+    }
+
+    std::vector<std::vector<double>> all_metrics;
+    for (auto* r : case_rows) {
+      auto metrics = get_metrics(r);
+      all_metrics.push_back(metrics);
+      for (int m = 0; m < num_metrics; m++) {
+        if (is_higher_better(m)) {
+          best_val[m] = std::max(best_val[m], metrics[m]);
+          worst_val[m] = std::min(worst_val[m], metrics[m]);
+        } else {
+          best_val[m] = std::min(best_val[m], metrics[m]);
+          worst_val[m] = std::max(worst_val[m], metrics[m]);
+        }
+      }
+    }
+
+    for (size_t ri = 0; ri < case_rows.size(); ri++) {
+      auto* r = case_rows[ri];
+      auto& metrics = all_metrics[ri];
+
+      if (ri == 0) {
+        oss << "      \\multirow{" << case_rows.size() << "}{*}{" << cn << "}";
+      } else {
+        oss << "      ";
+      }
+      oss << " & " << r->sfc_mode << " & " << r->n_segments << " & ";
+
+      // Format each metric with best/worst wrapping
+      std::vector<int> precisions = {1, 1, 1, 1, 1, 3, 1, 1, 1};
+      for (int m = 0; m < num_metrics; m++) {
+        std::ostringstream val;
+        val << std::fixed << std::setprecision(precisions[m]) << metrics[m];
+
+        bool all_equal = (std::abs(best_val[m] - worst_val[m]) < 1e-9);
+        if (all_equal) {
+          oss << "\\best{" << val.str() << "}";
+        } else if (std::abs(metrics[m] - best_val[m]) < 1e-9) {
+          oss << "\\best{" << val.str() << "}";
+        } else if (std::abs(metrics[m] - worst_val[m]) < 1e-9) {
+          oss << "\\worst{" << val.str() << "}";
+        } else {
+          oss << val.str();
+        }
+
+        if (m < num_metrics - 1) oss << " & ";
+      }
+      oss << " \\\\\n";
+    }
+  }
+
+  oss << "      \\bottomrule\n"
+      << "    \\end{tabular}\n"
+      << "  }\n"
+      << "  \\vspace{-1.0em}\n"
+      << "\\end{table*}";
+
+  return oss.str();
 }
 
 // ============================================================================
@@ -1452,6 +2087,10 @@ struct Args {
   bool all_cases = false;
   std::string table_type = "dynamic";
   Vec3 goal_pos = {105.0, 0.0, 2.0};
+  std::string algo_name = "DYNUS";
+  std::string single_config;   // process only this config subdir
+  std::string merge_table;     // path to existing .tex table to merge into
+  std::string data_dir2;       // second data directory (for temporal ablation)
 };
 
 static void print_usage() {
@@ -1461,8 +2100,12 @@ static void print_usage() {
             << "  --latex-name NAME     LaTeX table filename (default: dynamic_benchmark.tex)\n"
             << "  --config-name NAME    Configuration name (default: default)\n"
             << "  --all-cases           Analyze all cases (easy, medium, hard)\n"
-            << "  --table-type TYPE     Table format: dynamic, static, unknown_dynamic (default: dynamic)\n"
-            << "  --goal-pos X Y Z      Goal position (default: 105.0 0.0 2.0)\n";
+            << "  --table-type TYPE     Table format: dynamic, static, unknown_dynamic, temporal_ablation (default: dynamic)\n"
+            << "  --goal-pos X Y Z      Goal position (default: 105.0 0.0 2.0)\n"
+            << "  --algo-name NAME      Algorithm name in LaTeX table (default: DYNUS)\n"
+            << "  --single-config NAME  Process only this config subdir (e.g. inflate_unknown_voxels_heat_w_5_N_2)\n"
+            << "  --merge-table PATH    Merge new config into existing .tex table (recomputes best/worst)\n"
+            << "  --data-dir2 DIR       Second data directory (for temporal_ablation: STSFC data)\n";
 }
 
 static Args parse_args(int argc, char** argv) {
@@ -1475,6 +2118,10 @@ static Args parse_args(int argc, char** argv) {
     else if (arg == "--config-name" && i + 1 < argc) { args.config_name = argv[++i]; }
     else if (arg == "--all-cases") { args.all_cases = true; }
     else if (arg == "--table-type" && i + 1 < argc) { args.table_type = argv[++i]; }
+    else if (arg == "--algo-name" && i + 1 < argc) { args.algo_name = argv[++i]; }
+    else if (arg == "--single-config" && i + 1 < argc) { args.single_config = argv[++i]; }
+    else if (arg == "--merge-table" && i + 1 < argc) { args.merge_table = argv[++i]; }
+    else if (arg == "--data-dir2" && i + 1 < argc) { args.data_dir2 = argv[++i]; }
     else if (arg == "--goal-pos" && i + 3 < argc) {
       args.goal_pos.x = std::stod(argv[++i]);
       args.goal_pos.y = std::stod(argv[++i]);
@@ -1497,6 +2144,8 @@ static Args parse_args(int argc, char** argv) {
   // Auto-set latex-name
   if (args.table_type == "unknown_dynamic" && args.latex_name == "dynamic_benchmark.tex") {
     args.latex_name = "unknown_dynamic_sim.tex";
+  } else if (args.table_type == "temporal_ablation" && args.latex_name == "dynamic_benchmark.tex") {
+    args.latex_name = "temporal_sfc_ablation.tex";
   }
 
   return args;
@@ -1515,6 +2164,287 @@ int main(int argc, char** argv) {
       return 1;
     }
 
+    // Check for unknown_dynamic batch mode (data_dir contains config subdirs)
+    if (args.table_type == "unknown_dynamic") {
+      // Single-config + merge mode: process one config and merge into existing table
+      if (!args.single_config.empty() && !args.merge_table.empty()) {
+        std::string sep(80, '=');
+
+        // Parse the single config directory name
+        std::regex config_re(R"((no_?)?inflate_unknown_voxels_heat_w_(\d+)(?:_N_(\d+))?)");
+        std::smatch match;
+        if (!std::regex_match(args.single_config, match, config_re)) {
+          std::cerr << "ERROR: --single-config name doesn't match expected pattern: " << args.single_config << "\n";
+          return 1;
+        }
+        UnknownDynamicConfig cfg;
+        cfg.dir_name = args.single_config;
+        cfg.unk_infl = match[1].str().empty();
+        cfg.heat_weight = std::stoi(match[2]);
+        cfg.n_segments = match[3].matched ? std::stoi(match[3]) : 3;
+
+        std::cout << sep << "\n";
+        std::cout << "SINGLE CONFIG MODE: " << cfg.dir_name
+                  << " (w=" << cfg.heat_weight << ", N=" << cfg.n_segments << ")\n";
+        std::cout << "Merging into: " << args.merge_table << "\n";
+        std::cout << sep << "\n\n";
+
+        // Process only this config
+        std::vector<BatchRowData> new_rows;
+        fs::path cfg_dir = base_dir / cfg.dir_name;
+        if (!fs::exists(cfg_dir)) {
+          std::cerr << "ERROR: Config directory does not exist: " << cfg_dir << "\n";
+          return 1;
+        }
+
+        for (auto& pattern : {"easy_", "medium_", "hard_"}) {
+          std::vector<fs::path> matching;
+          for (auto& entry : fs::directory_iterator(cfg_dir)) {
+            if (entry.is_directory() && entry.path().filename().string().find(pattern) == 0) {
+              matching.push_back(entry.path());
+            }
+          }
+          if (!matching.empty()) {
+            std::sort(matching.begin(), matching.end());
+            fs::path case_dir = matching.back();
+
+            auto stats = analyze_single_case(case_dir, args.output_name, latex_output,
+                                              "unknown_dynamic", args.goal_pos, args.algo_name, true);
+
+            BatchRowData row;
+            row.case_name = extract_case_name(case_dir);
+            row.heat_weight = cfg.heat_weight;
+            row.n_segments = cfg.n_segments;
+            row.unk_infl = cfg.unk_infl;
+            row.stats = stats;
+            new_rows.push_back(row);
+          }
+        }
+
+        // Parse existing table
+        std::cout << "\nParsing existing table: " << args.merge_table << "\n";
+        auto existing_rows = parse_unknown_dynamic_table(args.merge_table);
+        std::cout << "  Found " << existing_rows.size() << " existing rows\n";
+
+        // Remove any existing rows with same (case_name, heat_weight, n_segments) to avoid duplicates
+        for (auto& nr : new_rows) {
+          existing_rows.erase(
+            std::remove_if(existing_rows.begin(), existing_rows.end(),
+              [&](const BatchRowData& er) {
+                return er.case_name == nr.case_name &&
+                       er.heat_weight == nr.heat_weight &&
+                       er.n_segments == nr.n_segments;
+              }),
+            existing_rows.end());
+        }
+
+        // Merge
+        std::vector<BatchRowData> all_rows;
+        all_rows.insert(all_rows.end(), existing_rows.begin(), existing_rows.end());
+        all_rows.insert(all_rows.end(), new_rows.begin(), new_rows.end());
+
+        // Sort: by case (Easy, Medium, Hard), then heat_weight, then n_segments
+        auto case_order = [](const std::string& c) {
+          if (c == "Easy") return 0;
+          if (c == "Medium") return 1;
+          if (c == "Hard") return 2;
+          return 3;
+        };
+        std::sort(all_rows.begin(), all_rows.end(), [&](const auto& a, const auto& b) {
+          int oa = case_order(a.case_name), ob = case_order(b.case_name);
+          if (oa != ob) return oa < ob;
+          if (a.heat_weight != b.heat_weight) return a.heat_weight < b.heat_weight;
+          return a.n_segments > b.n_segments; // N=3 before N=2
+        });
+
+        std::cout << "  Merged total: " << all_rows.size() << " rows\n";
+        for (auto& r : all_rows) {
+          std::cout << "    " << r.case_name << " w=" << r.heat_weight << " N=" << r.n_segments << "\n";
+        }
+
+        // Generate merged table with recomputed best/worst highlighting
+        std::string table = generate_unknown_dynamic_batch_table(all_rows);
+        fs::create_directories(latex_output.parent_path());
+        std::ofstream tex_file(latex_output);
+        tex_file << table;
+        tex_file.close();
+
+        std::cout << "\n" << sep << "\n";
+        std::cout << "MERGED TABLE GENERATED: " << latex_output << "\n";
+        std::cout << sep << "\n\n";
+        return 0;
+      }
+
+      auto ud_configs = discover_unknown_dynamic_configs(base_dir);
+      if (!ud_configs.empty()) {
+        std::string sep(80, '=');
+        std::cout << sep << "\n";
+        std::cout << "UNKNOWN DYNAMIC BATCH MODE - " << ud_configs.size() << " configurations\n";
+        std::cout << sep << "\n\n";
+
+        for (auto& cfg : ud_configs) {
+          std::cout << "  " << cfg.dir_name
+                    << " (w=" << cfg.heat_weight
+                    << ", N=" << cfg.n_segments << ")\n";
+        }
+        std::cout << "\n";
+
+        std::vector<BatchRowData> batch_rows;
+
+        for (auto& cfg : ud_configs) {
+          fs::path cfg_dir = base_dir / cfg.dir_name;
+          std::cout << sep << "\n";
+          std::cout << "CONFIG: " << cfg.dir_name << "\n";
+          std::cout << sep << "\n";
+
+          for (auto& pattern : {"easy_", "medium_", "hard_"}) {
+            std::vector<fs::path> matching;
+            for (auto& entry : fs::directory_iterator(cfg_dir)) {
+              if (entry.is_directory() && entry.path().filename().string().find(pattern) == 0) {
+                matching.push_back(entry.path());
+              }
+            }
+            if (!matching.empty()) {
+              std::sort(matching.begin(), matching.end());
+              fs::path case_dir = matching.back();
+
+              auto stats = analyze_single_case(case_dir, args.output_name, latex_output,
+                                                "unknown_dynamic", args.goal_pos, args.algo_name, true);
+
+              BatchRowData row;
+              row.case_name = extract_case_name(case_dir);
+              row.heat_weight = cfg.heat_weight;
+              row.n_segments = cfg.n_segments;
+              row.unk_infl = cfg.unk_infl;
+              row.stats = stats;
+              batch_rows.push_back(row);
+            }
+          }
+        }
+
+        // Generate batch table with best/worst highlighting
+        std::cout << "\nGenerating batch LaTeX table with best/worst highlighting...\n";
+        std::string table = generate_unknown_dynamic_batch_table(batch_rows);
+        fs::create_directories(latex_output.parent_path());
+        std::ofstream tex_file(latex_output);
+        tex_file << table;
+        tex_file.close();
+
+        std::cout << "\n" << sep << "\n";
+        std::cout << "BATCH TABLE GENERATED: " << latex_output << "\n";
+        std::cout << sep << "\n\n";
+        return 0;
+      }
+    }
+
+    // Temporal ablation mode
+    if (args.table_type == "temporal_ablation") {
+      std::string sep(80, '=');
+      std::cout << sep << "\n";
+      std::cout << "TEMPORAL ABLATION MODE\n";
+      std::cout << sep << "\n\n";
+
+      // data_dir  = worst-case SFC data (dynamic_worst_case)
+      // data_dir2 = STSFC data (dynamic)
+      std::vector<std::pair<fs::path, std::string>> source_dirs = {
+        {base_dir, "Worst-Case"}
+      };
+      if (!args.data_dir2.empty()) {
+        source_dirs.push_back({fs::path(args.data_dir2), "DYNUS2 (STSFC)"});
+      }
+
+      std::vector<TemporalAblationRow> all_rows;
+
+      // Helper to process N_* subdirs or flat case dirs within a source
+      auto process_source = [&](const fs::path& src_dir, const std::string& mode_label) {
+        // Check for N_* subdirs
+        std::vector<std::pair<int, fs::path>> n_dirs;
+        for (auto& entry : fs::directory_iterator(src_dir)) {
+          if (!entry.is_directory()) continue;
+          std::string name = entry.path().filename().string();
+          std::regex n_re(R"(N_(\d+))");
+          std::smatch m;
+          if (std::regex_match(name, m, n_re)) {
+            n_dirs.push_back({std::stoi(m[1]), entry.path()});
+          }
+        }
+        std::sort(n_dirs.begin(), n_dirs.end());
+
+        if (!n_dirs.empty()) {
+          for (auto& [n_val, n_dir] : n_dirs) {
+            std::cout << sep << "\n";
+            std::cout << "PROCESSING: " << mode_label << " N=" << n_val << " (" << n_dir << ")\n";
+            std::cout << sep << "\n";
+
+            for (auto& case_name : std::vector<std::string>{"easy", "medium", "hard"}) {
+              // Try exact name first, then prefix match
+              fs::path case_dir = n_dir / case_name;
+              if (!fs::exists(case_dir)) {
+                // Try prefix match (easy_*)
+                std::vector<fs::path> matching;
+                for (auto& e : fs::directory_iterator(n_dir)) {
+                  if (e.is_directory() && e.path().filename().string().find(case_name + "_") == 0) {
+                    matching.push_back(e.path());
+                  }
+                }
+                if (!matching.empty()) {
+                  std::sort(matching.begin(), matching.end());
+                  case_dir = matching.back();
+                } else {
+                  std::cerr << "Warning: no " << case_name << " dir in " << n_dir << ", skipping\n";
+                  continue;
+                }
+              }
+
+              auto stats = analyze_single_case(case_dir, args.output_name, latex_output,
+                                                "dynamic", args.goal_pos, args.algo_name, true);
+
+              TemporalAblationRow row;
+              row.case_name = extract_case_name(case_dir);
+              row.sfc_mode = mode_label;
+              row.n_segments = n_val;
+              row.stats = stats;
+              all_rows.push_back(row);
+            }
+          }
+        } else {
+          // Flat structure: temporal/ and worst_case/ subdirs (legacy)
+          for (auto& case_name : std::vector<std::string>{"easy", "medium", "hard"}) {
+            fs::path case_dir = src_dir / case_name;
+            if (!fs::exists(case_dir)) {
+              std::cerr << "Warning: " << case_dir << " not found, skipping\n";
+              continue;
+            }
+
+            auto stats = analyze_single_case(case_dir, args.output_name, latex_output,
+                                              "dynamic", args.goal_pos, args.algo_name, true);
+
+            TemporalAblationRow row;
+            row.case_name = extract_case_name(case_dir);
+            row.sfc_mode = mode_label;
+            row.n_segments = 2;
+            row.stats = stats;
+            all_rows.push_back(row);
+          }
+        }
+      };
+
+      for (auto& [src_dir, mode_label] : source_dirs) {
+        process_source(src_dir, mode_label);
+      }
+
+      std::string table = generate_temporal_ablation_table(all_rows);
+      fs::create_directories(latex_output.parent_path());
+      std::ofstream tex_file(latex_output);
+      tex_file << table;
+      tex_file.close();
+
+      std::cout << "\n" << sep << "\n";
+      std::cout << "TEMPORAL ABLATION TABLE GENERATED: " << latex_output << "\n";
+      std::cout << sep << "\n\n";
+      return 0;
+    }
+
     // Find case directories
     std::vector<fs::path> case_dirs;
     for (auto& pattern : {"easy_", "medium_", "hard_"}) {
@@ -1528,6 +2458,83 @@ int main(int argc, char** argv) {
         std::sort(matching.begin(), matching.end());
         case_dirs.push_back(matching.back()); // Most recent
       }
+    }
+
+    // Dynamic merge-table mode: process cases, then merge into existing table
+    if (args.table_type == "dynamic" && !args.merge_table.empty()) {
+      std::string sep(80, '=');
+      // Check for N_* subdirectories (multiple DYNUS variants)
+      std::vector<std::pair<std::string, fs::path>> n_configs; // (label_suffix, dir)
+      for (auto& entry : fs::directory_iterator(base_dir)) {
+        if (!entry.is_directory()) continue;
+        std::string name = entry.path().filename().string();
+        std::regex n_re(R"(N_(\d+))");
+        std::smatch m;
+        if (std::regex_match(name, m, n_re)) {
+          n_configs.push_back({name, entry.path()});
+        }
+      }
+      std::sort(n_configs.begin(), n_configs.end());
+
+      std::map<std::string, std::vector<std::string>> dynus_rows;
+
+      if (!n_configs.empty()) {
+        // Multiple DYNUS variants (N_2, N_3, etc.)
+        for (auto& [n_label, n_dir] : n_configs) {
+          std::string n_val = n_label.substr(2); // "2" from "N_2"
+          std::string algo = "DYNUS ($N$=" + n_val + ")";
+
+          std::cout << "\n" << sep << "\n";
+          std::cout << "PROCESSING: " << n_label << " -> " << algo << "\n";
+          std::cout << sep << "\n";
+
+          // Find case dirs within this N_* subdir
+          for (auto& pattern : {"easy_", "medium_", "hard_"}) {
+            std::vector<fs::path> matching;
+            for (auto& e : fs::directory_iterator(n_dir)) {
+              if (e.is_directory() && e.path().filename().string().find(pattern) == 0) {
+                matching.push_back(e.path());
+              }
+            }
+            if (!matching.empty()) {
+              std::sort(matching.begin(), matching.end());
+              fs::path case_dir = matching.back();
+              auto stats = analyze_single_case(case_dir, args.output_name, latex_output,
+                                                args.table_type, args.goal_pos, algo, true);
+              std::string case_name = extract_case_name(case_dir);
+              std::string row = generate_dynus_row(stats, case_name, args.table_type, algo);
+              dynus_rows[case_name].push_back(row);
+              std::cout << "  " << case_name << " row: " << row << "\n\n";
+            }
+          }
+        }
+      } else {
+        // Single DYNUS variant (flat structure)
+        for (auto& case_dir : case_dirs) {
+          auto stats = analyze_single_case(case_dir, args.output_name, latex_output,
+                                            args.table_type, args.goal_pos, args.algo_name, true);
+          std::string case_name = extract_case_name(case_dir);
+          std::string row = generate_dynus_row(stats, case_name, args.table_type, args.algo_name);
+          dynus_rows[case_name].push_back(row);
+          std::cout << "  " << case_name << " row: " << row << "\n\n";
+        }
+      }
+
+      std::cout << "Merging into: " << args.merge_table << "\n";
+      std::string merged = merge_dynamic_table(args.merge_table, dynus_rows);
+      if (!merged.empty()) {
+        fs::create_directories(latex_output.parent_path());
+        std::ofstream tex_file(latex_output);
+        tex_file << merged;
+        tex_file.close();
+        std::cout << "\n" << sep << "\n";
+        std::cout << "MERGED TABLE GENERATED: " << latex_output << "\n";
+        std::cout << sep << "\n\n";
+      } else {
+        std::cerr << "ERROR: Failed to merge table\n";
+        return 1;
+      }
+      return 0;
     }
 
     if (case_dirs.empty()) {
@@ -1544,7 +2551,7 @@ int main(int argc, char** argv) {
     std::cout << "\n";
 
     for (auto& case_dir : case_dirs) {
-      analyze_single_case(case_dir, args.output_name, latex_output, args.table_type, args.goal_pos);
+      analyze_single_case(case_dir, args.output_name, latex_output, args.table_type, args.goal_pos, args.algo_name);
     }
 
     std::cout << "\n" << sep << "\n";
@@ -1557,7 +2564,7 @@ int main(int argc, char** argv) {
       std::cerr << "ERROR: Directory does not exist: " << single_dir << "\n";
       return 1;
     }
-    analyze_single_case(single_dir, args.output_name, latex_output, args.table_type, args.goal_pos);
+    analyze_single_case(single_dir, args.output_name, latex_output, args.table_type, args.goal_pos, args.algo_name);
   }
 
   return 0;

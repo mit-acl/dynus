@@ -1123,6 +1123,16 @@ void SolverGurobi::createSafeCorridorConstraintsForPolytopeAtleastOne(int t)
         Eigen::MatrixXd A1 = poly.A();
         auto bb = poly.b();
 
+        // Empty polytope (invalid decomposition): disable this binary so the
+        // solver cannot assign the trajectory to a non-existent corridor.
+        if (bb.rows() == 0)
+        {
+            at_least_1_pol_cons_.push_back(
+                m_.addConstr(b_[t][p] == 0,
+                             "empty_poly_t" + std::to_string(t) + "_p" + std::to_string(p)));
+            continue;
+        }
+
         std::vector<std::vector<double>> A1std = eigenMatrix2std(A1);
         std::vector<GRBLinExpr> Acp0 = MatrixMultiply(A1std, cp0);
         std::vector<GRBLinExpr> Acp1 = MatrixMultiply(A1std, cp1);

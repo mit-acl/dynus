@@ -1,25 +1,24 @@
 #!/usr/bin/env python3
 """
-Generate LaTeX ablation table: Temporal SFC vs Worst-Case SFC
+Generate LaTeX table: Unknown Dynamic benchmark with Heat Weight and N ablation.
 
-Compares the layered temporal safe flight corridor approach (environment_assumption="dynamic")
-against the worst-case conservative baseline (environment_assumption="dynamic_worst_case").
+Compares multiple configurations (heat weight, number of segments N) across
+easy/medium/hard environments in unknown dynamic obstacle scenarios.
 
-Uses the same analysis pipeline as analyze_dynamic_benchmark.py (including rosbag collision
-analysis, computation data merging, etc.) to ensure consistent results.
+Uses the same analysis pipeline as analyze_dynamic_benchmark.py (including rosbag
+collision analysis, computation data merging, etc.) to ensure consistent results.
 
 Usage:
-    # Default paths (temporal and worst-case auto-detected)
-    python3 generate_temporal_sfc_ablation_table.py
+    # Default paths
+    python3 generate_unknown_dynamic_table.py
 
-    # Custom directories
-    python3 generate_temporal_sfc_ablation_table.py \
-        --temporal-dir benchmark_data/dynamic_worst_case/temporal \
-        --worst-case-dir benchmark_data/dynamic_worst_case/worst_case
+    # Custom base directory
+    python3 generate_unknown_dynamic_table.py \
+        --base-dir /media/kkondo/kota_elements/dynus_2nd_paper/dynus/benchmark_data/unknown_dynamic
 
     # Specify output location
-    python3 generate_temporal_sfc_ablation_table.py \
-        --output /home/kkondo/paper_writing/DYNUS_v3/tables/temporal_sfc_ablation.tex
+    python3 generate_unknown_dynamic_table.py \
+        --output /home/kkondo/paper_writing/DYNUS_v3/tables/unknown_dynamic_sim.tex
 """
 
 import argparse
@@ -32,7 +31,6 @@ import numpy as np
 import pandas as pd
 
 # Import analysis functions from analyze_dynamic_benchmark.py
-# so we use the exact same pipeline (rosbag collision analysis, computation data, etc.)
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 from analyze_dynamic_benchmark import (
@@ -40,40 +38,44 @@ from analyze_dynamic_benchmark import (
     load_computation_data,
     merge_computation_data,
     compute_statistics,
-    analyze_collision_from_bag,
+    analyze_collision_from_trajs_bag,
     recompute_violations_from_bag,
+    recompute_metrics_from_bag,
     HAS_ROSBAG,
 )
 
 # --------------------------------------------------------------------------
 # Default paths
 # --------------------------------------------------------------------------
-BENCHMARK_ROOT = Path(__file__).resolve().parent.parent / "benchmark_data"
-TEMPORAL_DIR = BENCHMARK_ROOT / "dynamic_worst_case" / "temporal"
-WORST_CASE_DIR = BENCHMARK_ROOT / "dynamic_worst_case" / "worst_case"
-OUTPUT_FILE = Path("/home/kkondo/paper_writing/DYNUS_v3/tables/temporal_sfc_ablation.tex")
+BASE_DIR = Path("/media/kkondo/kota_elements/dynus_2nd_paper/dynus/benchmark_data/unknown_dynamic")
+OUTPUT_FILE = Path("/home/kkondo/paper_writing/DYNUS_v3/tables/unknown_dynamic_sim.tex")
+
+# Configuration directories and their (heat_weight, N) parameters
+CONFIGS = [
+    ("inflate_unknown_voxels_heat_w_5",        5,  3),
+    ("inflate_unknown_voxels_heat_w_10_N_2",  10,  2),
+    ("inflate_unknown_voxels_heat_w_10",      10,  3),
+]
 
 # Cases in display order
 CASES = ["easy", "medium", "hard"]
 CASE_LABELS = {"easy": "Easy", "medium": "Medium", "hard": "Hard"}
 
-# Default drone bounding box half-extents (same as analyze_dynamic_benchmark.py)
+# Default drone bounding box half-extents
 DRONE_BBOX = (0.1, 0.1, 0.1)
 
+# Goal position for path length recomputation
+GOAL_POS = (105.0, 0.0, 2.0)
+
 
 # --------------------------------------------------------------------------
-# Data loading — delegates to analyze_dynamic_benchmark functions
+# Data loading
 # --------------------------------------------------------------------------
 def find_case_dir(base_dir: Path, case: str) -> Optional[Path]:
-    """Find the directory for a given case.
-
-    Checks for exact match first (e.g. 'easy'), then glob pattern (e.g. 'easy_*').
-    """
-    # Exact match
+    """Find the directory for a given case (exact match or glob)."""
     exact = base_dir / case
     if exact.exists():
         return exact
-    # Glob pattern (e.g. easy_20260303)
     matching = sorted(base_dir.glob(f"{case}_*"))
     if matching:
         return matching[-1]
@@ -81,20 +83,13 @@ def find_case_dir(base_dir: Path, case: str) -> Optional[Path]:
 
 
 def analyze_case(case_dir: Path, case_label: str) -> Optional[dict]:
-    """Run the full analysis pipeline for a single case directory.
-
-    This matches what analyze_dynamic_benchmark.py does:
-    1. Load benchmark CSV (most recent)
-    2. Load and merge computation data from csv/num_*.csv
-    3. Analyze collisions from rosbags
-    4. Compute statistics
-    """
+    """Run the full analysis pipeline for a single case directory."""
     print(f"  Loading {case_label} from {case_dir.name}...")
 
-    # 1. Load benchmark CSV
+    # 1. Load benchmark data
     df = load_benchmark_data(str(case_dir))
     if df is None or df.empty:
-        print(f"    Warning: No benchmark CSV found in {case_dir}")
+        print(f"    Warning: No benchmark data found in {case_dir}")
         return None
 
     # 2. Load and merge computation data
@@ -107,16 +102,30 @@ def analyze_case(case_dir: Path, case_label: str) -> Optional[dict]:
         else:
             print("    No computation data found (num_*.csv files)")
 
-    # 3. Analyze collisions from rosbags
+    # 3. Recompute path length from rosbags
     if case_dir.is_dir():
         bags_dir = case_dir / "bags"
         if bags_dir.exists() and HAS_ROSBAG:
-            print("    Analyzing collisions from rosbags...")
+            print("    Recomputing path length from rosbags...")
             for idx, row in df.iterrows():
                 trial_id = row['trial_id']
                 bag_path = bags_dir / f"trial_{trial_id}"
                 if bag_path.exists():
-                    collision_result = analyze_collision_from_bag(bag_path, DRONE_BBOX)
+                    metrics = recompute_metrics_from_bag(bag_path, GOAL_POS)
+                    if metrics['path_length'] is not None:
+                        df.at[idx, 'path_length'] = metrics['path_length']
+
+    # 4. Analyze collisions from rosbags (unknown dynamic uses trajs_ground_truth)
+    if case_dir.is_dir():
+        bags_dir = case_dir / "bags"
+        if bags_dir.exists() and HAS_ROSBAG:
+            print("    Analyzing collisions from rosbags (trajs_ground_truth)...")
+            for idx, row in df.iterrows():
+                trial_id = row['trial_id']
+                bag_path = bags_dir / f"trial_{trial_id}"
+                if bag_path.exists():
+                    collision_result = analyze_collision_from_trajs_bag(
+                        bag_path, DRONE_BBOX, trajs_topic='/trajs_ground_truth')
                     df.at[idx, 'collision_count'] = collision_result['collision_count']
                     df.at[idx, 'min_distance_to_obstacles'] = collision_result['min_distance']
                     df.at[idx, 'collision_free_ratio'] = collision_result['collision_free_ratio']
@@ -127,7 +136,7 @@ def analyze_case(case_dir: Path, case_label: str) -> Optional[dict]:
         elif bags_dir.exists() and not HAS_ROSBAG:
             print("    Warning: Bags found but rosbag2_py not available, skipping collision analysis")
 
-    # 3b. Recompute constraint violations from rosbags
+    # 5. Recompute constraint violations from rosbags
     if case_dir.is_dir():
         bags_dir = case_dir / "bags"
         if bags_dir.exists() and HAS_ROSBAG:
@@ -147,8 +156,8 @@ def analyze_case(case_dir: Path, case_label: str) -> Optional[dict]:
                     print(f"      Warning: Bag not found for trial {trial_id}")
             print("    Constraint violation analysis complete")
 
-    # 4. Compute statistics
-    stats = compute_statistics(df)
+    # 6. Compute statistics
+    stats = compute_statistics(df, require_collision_free=True)
     print(f"    {stats.get('total_trials', 0)} trials, {stats.get('success_rate', 0):.1f}% success")
 
     return stats
@@ -192,8 +201,10 @@ def format_val(val, best, worst, precision):
     """Format a cell value with \\best / \\worst highlighting."""
     if val is None or (isinstance(val, float) and math.isnan(val)):
         return "{-}"
+    if isinstance(val, str):
+        return val
     formatted = f"{val:.{precision}f}"
-    tol = 10 ** (-precision) * 0.5  # half of the last displayed digit
+    tol = 10 ** (-precision) * 0.5
     if best is not None and abs(val - best) < tol:
         return rf"\best{{{formatted}}}"
     if worst is not None and abs(val - worst) < tol:
@@ -201,15 +212,15 @@ def format_val(val, best, worst, precision):
     return formatted
 
 
-# Each row is: (case_key, case_label, sfc_mode, stats_dict)
-RowTuple = Tuple[str, str, str, dict]
+# Each row is: (case_key, case_label, heat_w, n_seg, stats_dict)
+RowTuple = Tuple[str, str, int, int, dict]
 
 
 def generate_latex(rows: list) -> str:
-    """Generate the full LaTeX table with Case + SFC Mode columns (no Unk Infl.).
+    """Generate the full LaTeX table.
 
     Args:
-        rows: list of (case_key, case_label, sfc_mode, stats_dict) tuples.
+        rows: list of (case_key, case_label, heat_w, n_seg, stats_dict) tuples.
     """
 
     if not rows:
@@ -221,8 +232,8 @@ def generate_latex(rows: list) -> str:
         case_rows = [r for r in rows if r[0] == case]
         bw = {}
         for col_key, _, higher_better, _ in COLUMNS:
-            vals = [r[3].get(col_key) for r in case_rows]
-            vals = [v for v in vals if v is not None and not (isinstance(v, float) and math.isnan(v))]
+            vals = [r[4].get(col_key) for r in case_rows]
+            vals = [v for v in vals if v is not None and not isinstance(v, str) and not (isinstance(v, float) and math.isnan(v))]
             if len(vals) < 2:
                 bw[col_key] = (None, None)
             elif higher_better:
@@ -234,24 +245,25 @@ def generate_latex(rows: list) -> str:
     # Build LaTeX
     lines = []
     lines.append(r"\begin{table*}")
-    lines.append(r"  \caption{Ablation study: temporal safe flight corridor (SFC) vs worst-case SFC. "
-                 r"The temporal approach uses per-layer obstacle inflation $r = v_{\max}^{\mathrm{obs}} \times t_n$, "
-                 r"while the worst-case baseline inflates all obstacles by the maximum time horizon. "
-                 r"We highlight the \best{better} and \worst{worse} value for each case.}")
-    lines.append(r"  \label{tab:temporal_sfc_ablation}")
+    lines.append(r"  \caption{Benchmark results in unknown dynamic environments. "
+                 r"DYNUS navigates using only pointcloud sensing (no ground truth obstacle trajectories). "
+                 r"We compare different heat map weights ($w$) and trajectory segment counts ($N$). "
+                 r"We highlight the \best{best} and \worst{worst} value for each environment.}")
+    lines.append(r"  \label{tab:unknown_dynamic_benchmark}")
     lines.append(r"  \centering")
     lines.append(r"  \renewcommand{\arraystretch}{1.2}")
     lines.append(r"  \resizebox{\textwidth}{!}{")
 
     n_data_cols = len(COLUMNS)
-    # Columns: Case | SFC Mode | data columns...
-    col_spec = "c c " + " ".join(["c"] * n_data_cols)
+    # Columns: Env | Heat Weight | N | data columns...
+    col_spec = "c c c " + " ".join(["c"] * n_data_cols)
     lines.append(f"    \\begin{{tabular}}{{{col_spec}}}")
     lines.append(r"      \toprule")
 
     # Header row 1: grouped
-    lines.append(r"      \multirow{2}{*}[-0.4em]{\textbf{Case}}")
-    lines.append(r"      & \multirow{2}{*}[-0.4em]{\textbf{SFC Mode}}")
+    lines.append(r"      \multirow{2}{*}[-0.4em]{\textbf{Env}}")
+    lines.append(r"      & \multirow{2}{*}[-0.4em]{\textbf{$w$}}")
+    lines.append(r"      & \multirow{2}{*}[-0.4em]{\textbf{$N$}}")
     lines.append(r"      & \multicolumn{1}{c}{\textbf{Success}}")
     lines.append(r"      & \multicolumn{1}{c}{\textbf{Comp. Time}}")
     lines.append(r"      & \multicolumn{3}{c}{\textbf{Performance}}")
@@ -259,15 +271,15 @@ def generate_latex(rows: list) -> str:
     lines.append(r"      & \multicolumn{3}{c}{\textbf{Constraint Violation}}")
     lines.append(r"      \\")
 
-    # cmidrules (column indices: 1=Case, 2=SFC Mode, 3..11=data)
-    lines.append(r"      \cmidrule(lr){3-3}")
+    # cmidrules (column indices: 1=Env, 2=w, 3=N, 4..12=data)
     lines.append(r"      \cmidrule(lr){4-4}")
-    lines.append(r"      \cmidrule(lr){5-7}")
-    lines.append(r"      \cmidrule(lr){8-8}")
-    lines.append(r"      \cmidrule(lr){9-11}")
+    lines.append(r"      \cmidrule(lr){5-5}")
+    lines.append(r"      \cmidrule(lr){6-8}")
+    lines.append(r"      \cmidrule(lr){9-9}")
+    lines.append(r"      \cmidrule(lr){10-12}")
 
     # Header row 2: individual column names
-    header_parts = ["      &&"]
+    header_parts = ["      &&&"]
     for i, (_, latex_hdr, _, _) in enumerate(COLUMNS):
         sep = " &" if i < len(COLUMNS) - 1 else ""
         header_parts.append(f"\n      {latex_hdr}{sep}")
@@ -280,14 +292,14 @@ def generate_latex(rows: list) -> str:
         case_rows = [r for r in rows if r[0] == case]
         n_rows_in_case = len(case_rows)
 
-        for ri, (_, label, sfc_mode, stats) in enumerate(case_rows):
-            # Case cell (multirow on first row of this case)
+        for ri, (_, label, heat_w, n_seg, stats) in enumerate(case_rows):
+            # Env cell (multirow on first row of this case)
             if ri == 0:
                 case_cell = rf"\multirow{{{n_rows_in_case}}}{{*}}{{{label}}}"
             else:
                 case_cell = ""
 
-            parts = [f"      {case_cell} & {sfc_mode}"]
+            parts = [f"      {case_cell} & {heat_w} & {n_seg}"]
 
             bw = case_best_worst[case]
             for col_key, _, _, prec in COLUMNS:
@@ -315,21 +327,15 @@ def generate_latex(rows: list) -> str:
 # --------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate LaTeX ablation table: Temporal SFC vs Worst-Case SFC",
+        description="Generate LaTeX table: Unknown Dynamic benchmark with Heat Weight and N ablation",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
     parser.add_argument(
-        "--temporal-dir",
+        "--base-dir",
         type=str,
-        default=str(TEMPORAL_DIR),
-        help=f"Directory with temporal SFC benchmark data (default: {TEMPORAL_DIR})",
-    )
-    parser.add_argument(
-        "--worst-case-dir",
-        type=str,
-        default=str(WORST_CASE_DIR),
-        help=f"Directory with worst-case SFC benchmark data (default: {WORST_CASE_DIR})",
+        default=str(BASE_DIR),
+        help=f"Base directory containing config subdirectories (default: {BASE_DIR})",
     )
     parser.add_argument(
         "--output", "-o",
@@ -339,48 +345,39 @@ def main():
     )
     args = parser.parse_args()
 
-    temporal_dir = Path(args.temporal_dir)
-    worst_case_dir = Path(args.worst_case_dir)
+    base_dir = Path(args.base_dir)
     output_file = Path(args.output)
 
     print("=" * 80)
-    print("TEMPORAL SFC ABLATION TABLE GENERATOR")
+    print("UNKNOWN DYNAMIC BENCHMARK TABLE GENERATOR")
     print("=" * 80)
 
-    # (sfc_mode_label, data_dir)
-    config_entries = []
+    # Load data for each configuration
+    # all_config_data: list of (heat_w, n_seg, case_data_dict)
+    all_config_data = []
 
-    for sfc_label, base_dir in [("Worst-Case", worst_case_dir), ("Temporal", temporal_dir)]:
-        if not base_dir.exists():
-            print(f"\n  WARNING: Directory not found: {base_dir}")
+    for step, (subdir_name, heat_w, n_seg) in enumerate(CONFIGS, 1):
+        config_dir = base_dir / subdir_name
+        if not config_dir.exists():
+            print(f"\n  WARNING: Directory not found: {config_dir}")
             continue
-        config_entries.append((sfc_label, base_dir))
 
-    if not config_entries:
-        print("\nERROR: No data directories found.")
-        sys.exit(1)
-
-    # Load data for each config entry
-    # all_case_data: list of (sfc_label, case_data_dict)
-    all_case_data = []
-
-    for step, (sfc_label, data_dir) in enumerate(config_entries, 1):
-        print(f"\n[{step}/{len(config_entries)}] Loading {sfc_label} from: {data_dir}")
-        case_data = load_all_cases(data_dir)
+        print(f"\n[{step}/{len(CONFIGS)}] Loading w={heat_w}, N={n_seg} from: {config_dir.name}")
+        case_data = load_all_cases(config_dir)
         if case_data:
-            all_case_data.append((sfc_label, case_data))
+            all_config_data.append((heat_w, n_seg, case_data))
 
-    if not all_case_data:
+    if not all_config_data:
         print("\nERROR: No data loaded for any configuration.")
         sys.exit(1)
 
-    # Build row tuples: (case_key, case_label, sfc_mode, stats)
+    # Build row tuples: (case_key, case_label, heat_w, n_seg, stats)
     rows = []
     for case in CASES:
         label = CASE_LABELS[case]
-        for sfc_label, case_data in all_case_data:
+        for heat_w, n_seg, case_data in all_config_data:
             if case in case_data:
-                rows.append((case, label, sfc_label, case_data[case]))
+                rows.append((case, label, heat_w, n_seg, case_data[case]))
 
     # Generate LaTeX
     print("\nGenerating LaTeX table...")
@@ -400,10 +397,10 @@ def main():
     for case in CASES:
         label = CASE_LABELS[case]
         print(f"  {label}:")
-        for sfc_label, case_data in all_case_data:
+        for heat_w, n_seg, case_data in all_config_data:
             sr = case_data.get(case, {}).get("success_rate", "N/A")
             sr_str = f"{sr:.1f}%" if isinstance(sr, (int, float)) else sr
-            print(f"    {sfc_label:12s}  Success: {sr_str}")
+            print(f"    w={heat_w:2d}, N={n_seg}  Success: {sr_str}")
     print(f"{'=' * 80}\n")
 
 
