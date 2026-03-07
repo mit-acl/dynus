@@ -154,6 +154,7 @@ dynus_node:
         # Hover avoidance parameters
         ignore_other_trajs: false              # [-] Ignore shared trajectories from /trajs (useful for adversarial chaser agent)
         hover_avoidance_enabled: true           # [-] Enable hover obstacle repulsion
+        hover_avoidance_2d: true               # [-] Keep current altitude during avoidance (no vertical push)
         hover_avoidance_d_trigger: 4.0          # [m] Distance threshold to trigger avoidance
         hover_avoidance_h: 3.0                  # [m] Evasion distance from hover position
         hover_avoidance_min_repulsion_norm: 0.01 # [-] Minimum repulsion vector norm to trigger

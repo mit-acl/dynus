@@ -32,7 +32,7 @@ dynus_node:
 
         # Benchmark parameters
         environment_assumption: "dynamic"            # ["static", "dynamic", "dynamic_worst_case"] Environment assumption for convex decomposition
-        use_only_curr_pos_for_dynamic_obst: true   # [-] Use only current position (no future trajectory prediction) for fair comparison
+        use_only_curr_pos_for_dynamic_obst: false   # [-] Use only current position (no future trajectory prediction) for fair comparison
 
         # Gloabl planner parameters
         global_planner: "astar_heat"                                # ["sjps", "sastar", "astar_heat"]
@@ -42,8 +42,8 @@ dynus_node:
         x_max: 20.0                                             # [m] x_max of the map
         y_min: -5.0                                             # [m] y_min of the map
         y_max: 5.0                                              # [m] y_max of the map
-        z_min: 0.5                                              # [m] points below this are considered ground
-        z_max: 4.0                                              # [m] DGP is run with resolution=factor_dgp*(resolution of the map)
+        z_min: 0.3                                              # [m] points below this are considered ground
+        z_max: 1.5                                              # [m] DGP is run with resolution=factor_dgp*(resolution of the map)
         dgp_timeout_duration_ms: 1000                           # [ms] Timeout duration for the DGP
         max_num_expansion: 100000                                # [-] Maximum number of node expansions allowed
         use_free_start: true                                    # [-] Use free start for the DGP
@@ -51,7 +51,7 @@ dynus_node:
         use_free_goal: false                                    # [-] Use free goal for the DGP
         free_goal_factor: 2.0                                   # [-] Factor for the free goal
         global_planner_huristic_weight: 2.0         # [-] Weight for the heuristic in the global planner
-        heat_weight: 5.0                           # [-] Weight for the heat in the global planner
+        heat_weight: 10.0                           # [-] Weight for the heat in the global planner
         max_dist_vertexes: 1.0                      # [m] Maximum distance between two consecutive vertexes
         w_unknown: 0.0                              # [-] Weight for the unknown cells in the global planner
         w_align: 0.0                               # [-] Weight for the alignment with the initial velocity in the global planner
@@ -62,18 +62,33 @@ dynus_node:
         use_heat_map: true                          # [-] Enable heat map
 
         # Dynamic obstacle heat (time-varying soft costs)
+        # dynamic_heat_enabled: true                  # [-] Enable dynamic heat computation
+        # dynamic_as_occupied_current: true           # [-] Mark current position as hard occupied
+        # dynamic_as_occupied_future: false           # [-] Mark future positions as hard occupied
+        # heat_alpha0: 0.2                            # [-] Reachability blob weight
+        # heat_alpha1: 1.0                            # [-] Trajectory tube weight
+        # heat_p: 2                                   # [-] Reachability falloff power
+        # heat_q: 2                                   # [-] Tube falloff power
+        # heat_tau_ratio: 0.5                         # [-] Time decay ratio
+        # heat_gamma: 0.0                             # [m/s] Tube radius growth rate
+        # heat_Hmax: 2.0                             # [-] Maximum heat value cap
+        # dyn_base_inflation_m: 0.1                   # [m] Base inflation for dynamic obstacles
+        # dyn_heat_tube_radius_m: 0.5                 # [m] Radius of heat corridor
+        # heat_num_samples: 15                        # [-] Number of samples for heat computation
+
+        # single obst on the west side.
         dynamic_heat_enabled: true                  # [-] Enable dynamic heat computation
         dynamic_as_occupied_current: true           # [-] Mark current position as hard occupied
         dynamic_as_occupied_future: false           # [-] Mark future positions as hard occupied
-        heat_alpha0: 0.2                            # [-] Reachability blob weight
+        heat_alpha0: 1.0                            # [-] Reachability blob weight
         heat_alpha1: 1.0                            # [-] Trajectory tube weight
-        heat_p: 2                                   # [-] Reachability falloff power
+        heat_p: 1                                   # [-] Reachability falloff power
         heat_q: 2                                   # [-] Tube falloff power
         heat_tau_ratio: 0.5                         # [-] Time decay ratio
         heat_gamma: 0.0                             # [m/s] Tube radius growth rate
-        heat_Hmax: 2.0                             # [-] Maximum heat value cap
-        dyn_base_inflation_m: 0.1                   # [m] Base inflation for dynamic obstacles
-        dyn_heat_tube_radius_m: 0.5                 # [m] Radius of heat corridor
+        heat_Hmax: 20.0                               # [-] Maximum heat value cap 
+        dyn_base_inflation_m: 0.2                   # [m] Base inflation for dynamic obstacles
+        dyn_heat_tube_radius_m: 3.0                 # [m] Radius of heat corridor
         heat_num_samples: 15                        # [-] Number of samples for heat computation
 
         # Static obstacle heat (boundary halo)
@@ -97,7 +112,7 @@ dynus_node:
         min_turn: 0.0                           # [deg] minimum turn angle for the post global path smoothing
 
         # Decomposition module parameters
-        local_box_size: [3.0, 3.0, 3.0]         # [m] Size of the local box (smaller, faster)
+        local_box_size: [1.5, 1.5, 1.5]         # [m] Size of the local box (smaller, faster)
         min_dist_from_agent_to_traj: 10.0        # [m] Minimum distance from the agent to the trajectory
         use_shrinked_box: false                 # [-] Use shrinked box for the convex decomposition
         shrinked_box_size: 0.0                  # [m] Size of the shrinked box
@@ -106,15 +121,15 @@ dynus_node:
         horizon: 15.0                               # [m] Horizon
         dc: 0.01                                    # [s] Duration for the interpolation=Value of the timer pubGoal
         dynamic_constraint_type: "Linf"               # [-] Constraint type: "Linf" (per-axis |v|≤vmax), "L2" (||v||₂≤vmax), "L1" (||v||₁≤vmax)
-        v_max: 1.0                                  # [m/s]  max velocity (conservative for hardware)
+        v_max: 2.0                                  # [m/s]  max velocity (conservative for hardware)
         a_max: 5.0                                  # [m/s2] max acceleration (conservative for hardware)
-        j_max: 10.0                                 # [m/s3] max jerk (conservative for hardware)
+        j_max: 7.5                                 # [m/s3] max jerk (conservative for hardware)
         drone_bbox: [0.9, 0.9, 0.5]              # [m] Size of the bounding box (real drone size)
-        goal_radius: 0.5                           # [m] Radius of the goal
+        goal_radius: 0.35                           # [m] Radius of the goal
         goal_seen_radius: 2.0                       # [m] Radius of the goal that the drone can see and stop replanning. Note that if this number is too small, the trajectory planning becomes extremely difficult.
 
         # DYNUS specific parameters
-        num_P: 3                                    # [-] Number of polytopes (num_P <= num_N)
+        num_P: 2                                    # [-] Number of polytopes (num_P <= num_N)
         num_N: 5                                    # [-] Number of trajectory pieces
         use_dynamic_factor: true                  # [-] Use dynamic factor for the trajectory time allocation
         dynamic_factor_k_radius: 0.4              # [-] the factors are [prev_successful_factor - k_radius, prev_successful_factor - k_radius + factor_constant_step_size, ..., prev_successful_factor, ... prev_successful_factor + k_radius]
@@ -145,13 +160,14 @@ dynus_node:
         yaw_spinning_dyaw: 1.0                  # [rd/s] Spinning dyaw
 
         # Simulation env parameters
-        force_goal_z: true                    # [-] Do not force goal z on hardware (use the actual goal z)
+        force_goal_z: false                    # [-] Do not force goal z on hardware (use the actual goal z)
         default_goal_z: 1.5                     # [m] Default goal height
 
         # Hover avoidance parameters
         ignore_other_trajs: false              # [-] Ignore shared trajectories from /trajs (useful for adversarial chaser agent)
         hover_avoidance_enabled: false           # [-] Enable hover obstacle repulsion
-        hover_avoidance_d_trigger: 2.0          # [m] Distance threshold to trigger avoidance
+        hover_avoidance_2d: true               # [-] Keep current altitude during avoidance (no vertical push)
+        hover_avoidance_d_trigger: 3.0          # [m] Distance threshold to trigger avoidance
         hover_avoidance_h: 2.0                  # [m] Evasion distance from hover position
         hover_avoidance_min_repulsion_norm: 0.01 # [-] Minimum repulsion vector norm to trigger
 
@@ -164,11 +180,11 @@ dynus_node:
         # Map parameters
         map_buffer: 1.0                         # [m] buffer for goal & A point
         center_shift_factor: 0.5                # [-] Factor for the center shift
-        initial_wdx: 15.0                       # [m] Width of the map (should be the same as wdy assumed in trajCallback)
-        initial_wdy: 15.0                       # [m] Depth of the map (should be the same as wdx assumed in trajCallback)
+        initial_wdx: 20.0                       # [m] Width of the map (should be the same as wdy assumed in trajCallback)
+        initial_wdy: 10.0                       # [m] Depth of the map (should be the same as wdx assumed in trajCallback)
         initial_wdz: 4.0                       # [m] Height of the map
-        min_wdx: 15.0                           # [m] Minimum width of the map
-        min_wdy: 15.0                           # [m] Minimum depth of the map
+        min_wdx: 20.0                           # [m] Minimum width of the map
+        min_wdy: 10.0                           # [m] Minimum depth of the map
         min_wdz: 4.0                           # [m] Minimum height of the map
         dynus_map_res: 0.3              # [m] Resolution of the map
 

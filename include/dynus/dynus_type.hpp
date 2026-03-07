@@ -198,6 +198,7 @@ struct parameters
   // Hover avoidance parameters
   bool ignore_other_trajs = false;
   bool hover_avoidance_enabled = false;
+  bool hover_avoidance_2d = true;
   double hover_avoidance_d_trigger = 4.0;
   double hover_avoidance_h = 3.0;
   double hover_avoidance_min_repulsion_norm = 0.01;

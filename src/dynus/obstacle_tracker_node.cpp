@@ -45,7 +45,7 @@ void aekf_update(EKFState &ekf_state, const Eigen::VectorXd &z, double alpha, do
     }
     else
     {
-        ekf_state.R = Eigen::MatrixXd::Identity(3, 3) * 0.1;
+        ekf_state.R = Eigen::MatrixXd::Identity(3, 3) * 0.01;
         ekf_state.Q = Eigen::MatrixXd::Identity(9, 9) * 0.01;
     }
 
@@ -351,7 +351,7 @@ void ObstacleTrackerNode::calculateAverageQandR(Eigen::MatrixXd &Q_avg, Eigen::M
     {
         // If there are no EKF states, initialize Q and R to default values
         Q_avg = Eigen::MatrixXd::Identity(9, 9) * 0.01;
-        R_avg = Eigen::MatrixXd::Identity(3, 3) * 0.1;
+        R_avg = Eigen::MatrixXd::Identity(3, 3) * 0.01;
     }
 }
 
@@ -386,25 +386,40 @@ void ObstacleTrackerNode::getCentroidsAndSizesOfClusters(const pcl::PointCloud<p
 void ObstacleTrackerNode::publishBoxes(const std::vector<Cluster> &clusters)
 {
 
-    // printf("publishBoxes called with %zu clusters\n", clusters.size());
-
     visualization_msgs::msg::MarkerArray cluster_markers;
     visualization_msgs::msg::MarkerArray unc_sphere_markers;
+
+    // Marker lifetime so stale markers auto-expire when tracking is lost
+    auto marker_lifetime = rclcpp::Duration::from_seconds(0.5);
+
+    // Delete all previous markers first to avoid stale leftovers
+    visualization_msgs::msg::Marker delete_all;
+    delete_all.action = visualization_msgs::msg::Marker::DELETEALL;
+
+    // Delete old bounding boxes
+    delete_all.header.frame_id = frame_id_;
+    delete_all.header.stamp = this->now();
+    delete_all.ns = "cluster_bounding_box";
+    cluster_markers.markers.push_back(delete_all);
+
+    // Delete old uncertainty spheres
+    delete_all.ns = "uncertainty_sphere";
+    unc_sphere_markers.markers.push_back(delete_all);
 
     // Set the max scale to avoid very large spheres
     double max_scale = 2.5;
 
     // Create and add new markers & Get the min/max values for each cluster
+    int box_id = 0;
     for (auto &cluster : clusters)
     {
         // Create a CUBE marker to visualize the bounding box
         visualization_msgs::msg::Marker marker;
-        if (use_life_time_for_box_visualization_)
-            marker.lifetime = rclcpp::Duration::from_seconds(box_visualization_duration_);
+        marker.lifetime = marker_lifetime;
         marker.header.frame_id = frame_id_;
-        marker.header.stamp = this->now(); // Ensure timestamp consistency
+        marker.header.stamp = this->now();
         marker.ns = "cluster_bounding_box";
-        marker.id = marker_id_++; // Ensure unique IDs for new markers
+        marker.id = box_id;
         marker.type = visualization_msgs::msg::Marker::CUBE;
         marker.action = visualization_msgs::msg::Marker::ADD;
 
@@ -429,11 +444,11 @@ void ObstacleTrackerNode::publishBoxes(const std::vector<Cluster> &clusters)
 
         // Create a SPHERE marker to visualize the uncertainty
         visualization_msgs::msg::Marker unc_sphere_marker;
-        // if (use_life_time_for_box_visualization_) unc_sphere_marker.lifetime = rclcpp::Duration::from_seconds(box_visualization_duration_);
+        unc_sphere_marker.lifetime = marker_lifetime;
         unc_sphere_marker.header.frame_id = frame_id_;
-        unc_sphere_marker.header.stamp = this->now(); // Ensure timestamp consistency
+        unc_sphere_marker.header.stamp = this->now();
         unc_sphere_marker.ns = "uncertainty_sphere";
-        unc_sphere_marker.id = 0; // Not unique IDs so that only one sphere is visualized
+        unc_sphere_marker.id = box_id; // Unique ID per cluster so all spheres are visible
         unc_sphere_marker.type = visualization_msgs::msg::Marker::SPHERE;
         unc_sphere_marker.action = visualization_msgs::msg::Marker::ADD;
 
@@ -450,22 +465,17 @@ void ObstacleTrackerNode::publishBoxes(const std::vector<Cluster> &clusters)
         // Set the color
         unc_sphere_marker.color = cluster.ekf_state.color;
 
-        // If you want to set a specific color
-        // unc_sphere_marker.color.r = 255.0 / 255.0;
-        // unc_sphere_marker.color.g = 51.0 / 255.0;
-        // unc_sphere_marker.color.b = 153.0 / 255.0;
-
         // Set alpha (transparency)
         unc_sphere_marker.color.a = 0.6;
 
         // Add the uncertainty sphere marker to the marker array
         unc_sphere_markers.markers.push_back(unc_sphere_marker);
+
+        ++box_id;
     }
 
-    // Step 3: Publish the marker array to visualize clusters
+    // Publish marker arrays
     pub_bboxes_->publish(cluster_markers);
-
-    // Step 4: Publish the marker array to visualize uncertainty spheres
     pub_unc_sphere_->publish(unc_sphere_markers);
 }
 
@@ -476,6 +486,13 @@ void ObstacleTrackerNode::publishPredictions(const std::vector<Cluster> &cluster
     visualization_msgs::msg::MarkerArray markers;
     int id = 0;
     int num_steps = static_cast<int>(prediction_horizon_ / prediction_dt_); // Number of steps
+
+    // Delete all previous prediction markers to avoid stale arrows
+    visualization_msgs::msg::Marker delete_all;
+    delete_all.action = visualization_msgs::msg::Marker::DELETEALL;
+    delete_all.header.frame_id = frame_id_;
+    delete_all.header.stamp = this->now();
+    markers.markers.push_back(delete_all);
 
     // Initialize knots and positions
     std::vector<double> t_values;
@@ -544,7 +561,9 @@ void ObstacleTrackerNode::publishPredictions(const std::vector<Cluster> &cluster
 
             // Create a marker to visualize the predicted position at this time step
             visualization_msgs::msg::Marker marker;
-            marker.header.frame_id = frame_id_; // Ensure it's the correct frame
+            marker.header.frame_id = frame_id_;
+            marker.header.stamp = this->now();
+            marker.lifetime = rclcpp::Duration::from_seconds(0.5);
             marker.id = id++;
             marker.type = visualization_msgs::msg::Marker::ARROW;
             marker.action = visualization_msgs::msg::Marker::ADD;

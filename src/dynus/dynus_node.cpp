@@ -380,6 +380,7 @@ void DYNUS_NODE::declareParameters()
 
   // Hover avoidance parameters
   this->declare_parameter("hover_avoidance_enabled", false);
+  this->declare_parameter("hover_avoidance_2d", true);
   this->declare_parameter("hover_avoidance_d_trigger", 4.0);
   this->declare_parameter("hover_avoidance_h", 3.0);
   this->declare_parameter("hover_avoidance_min_repulsion_norm", 0.01);
@@ -586,6 +587,7 @@ void DYNUS_NODE::setParameters()
 
   // Hover avoidance parameters
   par_.hover_avoidance_enabled = this->get_parameter("hover_avoidance_enabled").as_bool();
+  par_.hover_avoidance_2d = this->get_parameter("hover_avoidance_2d").as_bool();
   par_.hover_avoidance_d_trigger = this->get_parameter("hover_avoidance_d_trigger").as_double();
   par_.hover_avoidance_h = this->get_parameter("hover_avoidance_h").as_double();
   par_.hover_avoidance_min_repulsion_norm = this->get_parameter("hover_avoidance_min_repulsion_norm").as_double();

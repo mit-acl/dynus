@@ -915,6 +915,23 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
     dgp_manager_.getVecOccupied(base_map);
   }
 
+  // Filter out floor voxels at z_min from base_map before corridor decomposition.
+  // The floor is already enforced by the solver's z_min constraint and the
+  // ellipsoid decomp's set_z_min_and_max(). Including floor voxels in the obstacle
+  // set causes the ellipsoid to shrink in all axes (ellipsoidal coupling), producing
+  // unnecessarily skinny corridors.
+  {
+    const float z_floor_thresh = static_cast<float>(par_.z_min) + static_cast<float>(par_.res);
+    const size_t before = base_map.size();
+    base_map.erase(
+        std::remove_if(base_map.begin(), base_map.end(),
+                        [z_floor_thresh](const Vec3f &pt) { return pt.z() <= z_floor_thresh; }),
+        base_map.end());
+    if (par_.debug_verbose && base_map.size() != before)
+      std::cout << "[replan] Filtered " << (before - base_map.size())
+                << " floor voxels (z<=" << z_floor_thresh << ") from base_map" << std::endl;
+  }
+
   // Get obst_pos and obst_bbox
   vec_Vecf<3> obst_pos;
   vec_Vecf<3> obst_bbox;
@@ -1782,7 +1799,8 @@ bool DYNUS::getNextGoal(state &next_goal)
   {
     // Get the desired yaw
     // If the planner keeps failing, just keep spinning
-    if (replanning_failure_count_ > par_.yaw_spinning_threshold)
+    if (replanning_failure_count_ > par_.yaw_spinning_threshold &&
+        drone_status_ != DroneStatus::HOVER_AVOIDING)
     {
       next_goal.yaw = previous_yaw_ + par_.yaw_spinning_dyaw * par_.dc;
       next_goal.dyaw = par_.yaw_spinning_dyaw;
@@ -1793,7 +1811,7 @@ bool DYNUS::getNextGoal(state &next_goal)
       // If the local_plan is small just use the previous yaw with no dyaw
       // Exception: during YAWING we always need to call getDesiredYaw (plan is
       // intentionally kept at 1 entry by updateState)
-      if (local_plan.size() < 5 && drone_status_ != DroneStatus::YAWING)
+      if (local_plan.size() < 5 && drone_status_ != DroneStatus::YAWING && drone_status_ != DroneStatus::HOVER_AVOIDING)
       {
         next_goal.yaw = previous_yaw_;
         next_goal.dyaw = 0.0;
@@ -1935,15 +1953,13 @@ void DYNUS::getDesiredYaw(state &next_goal)
   }
   else if (drone_status_ == DroneStatus::HOVER_AVOIDING)
   {
-    // Closed-loop yaw toward hover position.
-    state local_state;
-    getState(local_state);
-    double diff = desired_yaw - local_state.yaw;
-    dynus_utils::angle_wrap(diff);
-
-    double lookahead = std::copysign(std::min(std::fabs(diff), par_.w_max_yawing), diff);
-    next_goal.yaw = local_state.yaw + lookahead;
-    next_goal.dyaw = lookahead / par_.dc;
+    // Open-loop yaw toward hover position (same pattern as YAWING).
+    double diff_cmd = desired_yaw - previous_yaw_;
+    dynus_utils::angle_wrap(diff_cmd);
+    double max_step = par_.w_max_yawing * par_.dc;
+    double step = std::clamp(diff_cmd, -max_step, max_step);
+    next_goal.yaw = previous_yaw_ + step;
+    next_goal.dyaw = step / par_.dc;
     previous_yaw_ = next_goal.yaw;
   }
   else
@@ -2595,10 +2611,24 @@ bool DYNUS::checkHoverAvoidance(double current_time)
 
     // Compute evasion goal — push away from current position (not p_hover_)
     Eigen::Vector3d direction = n_total.normalized();
+
+    // 2D mode: zero out vertical component so avoidance stays at current altitude
+    if (par_.hover_avoidance_2d)
+      direction.z() = 0.0;
+
+    // Re-normalize after zeroing z (guard against degenerate case)
+    if (direction.norm() < 1e-6)
+      direction = Eigen::Vector3d(1.0, 0.0, 0.0);
+    else
+      direction.normalize();
+
     Eigen::Vector3d p_evasion = local_state.pos + par_.hover_avoidance_h * direction;
 
-    // Clamp z to safe altitude
-    p_evasion.z() = std::max(par_.z_min + 0.5, std::min(p_evasion.z(), par_.z_max - 0.5));
+    // In 2D mode keep the drone's current altitude; otherwise clamp to safe range
+    if (par_.hover_avoidance_2d)
+      p_evasion.z() = local_state.pos.z();
+    else
+      p_evasion.z() = std::max(par_.z_min + 0.5, std::min(p_evasion.z(), par_.z_max - 0.5));
 
     // Reject evasion goal if it's still inside an obstacle's d_trigger
     if (isPointThreatened(p_evasion, true))
@@ -2614,7 +2644,10 @@ bool DYNUS::checkHoverAvoidance(double current_time)
             direction.x() * sin_a + direction.y() * cos_a,
             direction.z());
         Eigen::Vector3d candidate = local_state.pos + par_.hover_avoidance_h * rotated_dir.normalized();
-        candidate.z() = std::max(par_.z_min + 0.5, std::min(candidate.z(), par_.z_max - 0.5));
+        if (par_.hover_avoidance_2d)
+          candidate.z() = local_state.pos.z();
+        else
+          candidate.z() = std::max(par_.z_min + 0.5, std::min(candidate.z(), par_.z_max - 0.5));
         if (!isPointThreatened(candidate, true) && !checkIfPointOccupied(Vec3f(candidate)))
         {
           p_evasion = candidate;
@@ -2639,7 +2672,10 @@ bool DYNUS::checkHoverAvoidance(double current_time)
             direction.x() * sin_a + direction.y() * cos_a,
             direction.z());
         Eigen::Vector3d candidate = local_state.pos + par_.hover_avoidance_h * rotated_dir.normalized();
-        candidate.z() = std::max(par_.z_min + 0.5, std::min(candidate.z(), par_.z_max - 0.5));
+        if (par_.hover_avoidance_2d)
+          candidate.z() = local_state.pos.z();
+        else
+          candidate.z() = std::max(par_.z_min + 0.5, std::min(candidate.z(), par_.z_max - 0.5));
         if (!checkIfPointOccupied(Vec3f(candidate)) && !isPointThreatened(candidate, true))
         {
           p_evasion = candidate;
