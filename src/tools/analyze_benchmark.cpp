@@ -25,6 +25,8 @@
 #include <tuple>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 // ROS2 bag reading
 #include <rosbag2_cpp/reader.hpp>
 #include <rosbag2_cpp/readers/sequential_reader.hpp>
@@ -119,6 +121,85 @@ struct Statistics {
   double jerk_violation_rate = 0.0;
   double sfc_violation_rate = 0.0;
 };
+
+// Global flag: when true, skip cached stats and recompute from bags
+static bool g_recompute = false;
+
+static void save_statistics_json(const Statistics& s, const fs::path& path) {
+  nlohmann::json j;
+  j["total_trials"] = s.total_trials;
+  j["n_successful"] = s.n_successful;
+  j["success_rate"] = s.success_rate;
+  j["timeout_rate"] = s.timeout_rate;
+  j["collision_rate"] = s.collision_rate;
+  j["collision_count_total"] = s.collision_count_total;
+  j["collision_count_mean"] = s.collision_count_mean;
+  j["collision_free_rate"] = s.collision_free_rate;
+  j["min_distance_to_obstacles_min"] = s.min_distance_to_obstacles_min;
+  j["min_distance_to_obstacles_max"] = s.min_distance_to_obstacles_max;
+  j["min_distance_to_obstacles_mean"] = s.min_distance_to_obstacles_mean;
+  j["min_distance_to_obstacles_std"] = s.min_distance_to_obstacles_std;
+  j["has_min_distance"] = s.has_min_distance;
+  j["avg_local_traj_time_mean"] = s.avg_local_traj_time_mean;
+  j["avg_replanning_time_mean"] = s.avg_replanning_time_mean;
+  j["avg_global_planning_time_mean"] = s.avg_global_planning_time_mean;
+  j["avg_sfc_corridor_time_mean"] = s.avg_sfc_corridor_time_mean;
+  j["num_replans_mean"] = s.num_replans_mean;
+  j["flight_travel_time_mean"] = s.flight_travel_time_mean;
+  j["flight_travel_time_std"] = s.flight_travel_time_std;
+  j["path_length_mean"] = s.path_length_mean;
+  j["path_length_std"] = s.path_length_std;
+  j["path_efficiency_mean"] = s.path_efficiency_mean;
+  j["jerk_rms_mean"] = s.jerk_rms_mean;
+  j["jerk_integral_mean"] = s.jerk_integral_mean;
+  j["vel_violation_rate"] = s.vel_violation_rate;
+  j["acc_violation_rate"] = s.acc_violation_rate;
+  j["jerk_violation_rate"] = s.jerk_violation_rate;
+  j["sfc_violation_rate"] = s.sfc_violation_rate;
+  std::ofstream f(path);
+  f << j.dump(2);
+}
+
+static bool load_statistics_json(const fs::path& path, Statistics& s) {
+  if (!fs::exists(path)) return false;
+  try {
+    std::ifstream f(path);
+    nlohmann::json j = nlohmann::json::parse(f);
+    s.total_trials = j.value("total_trials", 0);
+    s.n_successful = j.value("n_successful", 0);
+    s.success_rate = j.value("success_rate", 0.0);
+    s.timeout_rate = j.value("timeout_rate", 0.0);
+    s.collision_rate = j.value("collision_rate", 0.0);
+    s.collision_count_total = j.value("collision_count_total", 0);
+    s.collision_count_mean = j.value("collision_count_mean", 0.0);
+    s.collision_free_rate = j.value("collision_free_rate", 0.0);
+    s.min_distance_to_obstacles_min = j.value("min_distance_to_obstacles_min", 1e18);
+    s.min_distance_to_obstacles_max = j.value("min_distance_to_obstacles_max", -1e18);
+    s.min_distance_to_obstacles_mean = j.value("min_distance_to_obstacles_mean", 0.0);
+    s.min_distance_to_obstacles_std = j.value("min_distance_to_obstacles_std", 0.0);
+    s.has_min_distance = j.value("has_min_distance", false);
+    s.avg_local_traj_time_mean = j.value("avg_local_traj_time_mean", 0.0);
+    s.avg_replanning_time_mean = j.value("avg_replanning_time_mean", 0.0);
+    s.avg_global_planning_time_mean = j.value("avg_global_planning_time_mean", 0.0);
+    s.avg_sfc_corridor_time_mean = j.value("avg_sfc_corridor_time_mean", 0.0);
+    s.num_replans_mean = j.value("num_replans_mean", 0.0);
+    s.flight_travel_time_mean = j.value("flight_travel_time_mean", 0.0);
+    s.flight_travel_time_std = j.value("flight_travel_time_std", 0.0);
+    s.path_length_mean = j.value("path_length_mean", 0.0);
+    s.path_length_std = j.value("path_length_std", 0.0);
+    s.path_efficiency_mean = j.value("path_efficiency_mean", 0.0);
+    s.jerk_rms_mean = j.value("jerk_rms_mean", 0.0);
+    s.jerk_integral_mean = j.value("jerk_integral_mean", 0.0);
+    s.vel_violation_rate = j.value("vel_violation_rate", 0.0);
+    s.acc_violation_rate = j.value("acc_violation_rate", 0.0);
+    s.jerk_violation_rate = j.value("jerk_violation_rate", 0.0);
+    s.sfc_violation_rate = j.value("sfc_violation_rate", 0.0);
+    return true;
+  } catch (const std::exception& e) {
+    std::cerr << "Warning: Failed to load cached stats from " << path << ": " << e.what() << "\n";
+    return false;
+  }
+}
 
 struct Vec3 {
   double x = 0.0, y = 0.0, z = 0.0;
@@ -400,59 +481,63 @@ static BagData read_bag_single_pass(const fs::path& bag_path,
   rclcpp::Serialization<tf2_msgs::msg::TFMessage> tf_ser;
 
   while (reader.has_next()) {
-    auto msg = reader.read_next();
-    double timestamp = msg->time_stamp / 1e9;
+    try {
+      auto msg = reader.read_next();
+      double timestamp = msg->time_stamp / 1e9;
 
-    if (msg->topic_name == "/NX01/goal") {
-      dynus_interfaces::msg::Goal goal_msg;
-      rclcpp::SerializedMessage serialized(*msg->serialized_data);
-      goal_ser.deserialize_message(&serialized, &goal_msg);
+      if (msg->topic_name == "/NX01/goal") {
+        dynus_interfaces::msg::Goal goal_msg;
+        rclcpp::SerializedMessage serialized(*msg->serialized_data);
+        goal_ser.deserialize_message(&serialized, &goal_msg);
 
-      AgentSnapshot snap;
-      snap.time = timestamp;
-      snap.pos = {goal_msg.p.x, goal_msg.p.y, goal_msg.p.z};
-      snap.vel = {goal_msg.v.x, goal_msg.v.y, goal_msg.v.z};
-      snap.acc = {goal_msg.a.x, goal_msg.a.y, goal_msg.a.z};
-      snap.jerk = {goal_msg.j.x, goal_msg.j.y, goal_msg.j.z};
-      data.agent.push_back(snap);
-    }
-    else if (!trajs_topic.empty() && msg->topic_name == trajs_topic) {
-      dynus_interfaces::msg::DynTraj dyntraj_msg;
-      rclcpp::SerializedMessage serialized(*msg->serialized_data);
-      dyntraj_ser.deserialize_message(&serialized, &dyntraj_msg);
-
-      if (dyntraj_msg.is_agent) continue;
-
-      int obs_id = dyntraj_msg.id;
-      auto& track = data.obstacles[obs_id];
-      track.times.push_back(timestamp);
-      track.positions.push_back({dyntraj_msg.pos.x, dyntraj_msg.pos.y, dyntraj_msg.pos.z});
-
-      if (dyntraj_msg.bbox.size() >= 3) {
-        track.half_x = dyntraj_msg.bbox[0] / 2.0;
-        track.half_y = dyntraj_msg.bbox[1] / 2.0;
-        track.half_z = dyntraj_msg.bbox[2] / 2.0;
+        AgentSnapshot snap;
+        snap.time = timestamp;
+        snap.pos = {goal_msg.p.x, goal_msg.p.y, goal_msg.p.z};
+        snap.vel = {goal_msg.v.x, goal_msg.v.y, goal_msg.v.z};
+        snap.acc = {goal_msg.a.x, goal_msg.a.y, goal_msg.a.z};
+        snap.jerk = {goal_msg.j.x, goal_msg.j.y, goal_msg.j.z};
+        data.agent.push_back(snap);
       }
-    }
-    else if (read_tf && msg->topic_name == "/tf") {
-      tf2_msgs::msg::TFMessage tf_msg;
-      rclcpp::SerializedMessage serialized(*msg->serialized_data);
-      tf_ser.deserialize_message(&serialized, &tf_msg);
+      else if (!trajs_topic.empty() && msg->topic_name == trajs_topic) {
+        dynus_interfaces::msg::DynTraj dyntraj_msg;
+        rclcpp::SerializedMessage serialized(*msg->serialized_data);
+        dyntraj_ser.deserialize_message(&serialized, &dyntraj_msg);
 
-      for (auto& transform : tf_msg.transforms) {
-        std::string frame = transform.child_frame_id;
-        if (frame.find("obstacle") != std::string::npos || frame.find("obs_") == 0) {
-          // Use hash of frame name as id
-          int obs_id = static_cast<int>(std::hash<std::string>{}(frame) & 0x7FFFFFFF);
-          auto& track = data.obstacles[obs_id];
-          track.times.push_back(timestamp);
-          track.positions.push_back({
-            transform.transform.translation.x,
-            transform.transform.translation.y,
-            transform.transform.translation.z
-          });
+        if (dyntraj_msg.is_agent) continue;
+
+        int obs_id = dyntraj_msg.id;
+        auto& track = data.obstacles[obs_id];
+        track.times.push_back(timestamp);
+        track.positions.push_back({dyntraj_msg.pos.x, dyntraj_msg.pos.y, dyntraj_msg.pos.z});
+
+        if (dyntraj_msg.bbox.size() >= 3) {
+          track.half_x = dyntraj_msg.bbox[0] / 2.0;
+          track.half_y = dyntraj_msg.bbox[1] / 2.0;
+          track.half_z = dyntraj_msg.bbox[2] / 2.0;
         }
       }
+      else if (read_tf && msg->topic_name == "/tf") {
+        tf2_msgs::msg::TFMessage tf_msg;
+        rclcpp::SerializedMessage serialized(*msg->serialized_data);
+        tf_ser.deserialize_message(&serialized, &tf_msg);
+
+        for (auto& transform : tf_msg.transforms) {
+          std::string frame = transform.child_frame_id;
+          if (frame.find("obstacle") != std::string::npos || frame.find("obs_") == 0) {
+            int obs_id = static_cast<int>(std::hash<std::string>{}(frame) & 0x7FFFFFFF);
+            auto& track = data.obstacles[obs_id];
+            track.times.push_back(timestamp);
+            track.positions.push_back({
+              transform.transform.translation.x,
+              transform.transform.translation.y,
+              transform.transform.translation.z
+            });
+          }
+        }
+      }
+    } catch (const std::exception& e) {
+      std::cerr << "    Warning: skipping corrupted message in bag: " << e.what() << "\n";
+      continue;
     }
   }
 
@@ -913,10 +998,10 @@ static void save_statistics_csv(const Statistics& s, const fs::path& output_path
     << std::setprecision(1) << s.collision_free_rate << ","
     << std::setprecision(2) << s.avg_local_traj_time_mean << ","
     << s.avg_replanning_time_mean << ","
-    << s.flight_travel_time_mean << "," << s.flight_travel_time_std << ","
+    << std::setprecision(6) << s.flight_travel_time_mean << "," << s.flight_travel_time_std << ","
     << s.path_length_mean << "," << s.path_length_std << ","
     << s.jerk_integral_mean << "," << s.jerk_rms_mean << ","
-    << std::setprecision(3) << s.min_distance_to_obstacles_mean << ","
+    << s.min_distance_to_obstacles_mean << ","
     << s.min_distance_to_obstacles_std << ","
     << std::setprecision(1) << s.vel_violation_rate << ","
     << s.acc_violation_rate << "," << s.jerk_violation_rate << "\n";
@@ -957,6 +1042,8 @@ static std::string generate_dynus_row(const Statistics& s, const std::string& ca
         << "{" << jerk_viol << "} \\\\";
   } else if (table_type == "unknown_dynamic") {
     double per_opt_time = s.avg_local_traj_time_mean;
+    double total_replan_time = s.avg_replanning_time_mean;
+    double cvx_decomp_time = s.avg_sfc_corridor_time_mean;
     std::string min_dist_str;
     if (s.has_min_distance) {
       std::ostringstream md;
@@ -969,6 +1056,7 @@ static std::string generate_dynus_row(const Statistics& s, const std::string& ca
     oss << "      " << case_name << " & "
         << std::setprecision(1)
         << success_rate << " & " << per_opt_time << " & "
+        << total_replan_time << " & " << cvx_decomp_time << " & "
         << travel_time << " & " << path_length << " & "
         << jerk_integral << " & " << min_dist_str << " & "
         << vel_viol << " & " << acc_viol << " & "
@@ -999,7 +1087,7 @@ static std::string generate_dynus_row(const Statistics& s, const std::string& ca
 
 static std::string generate_new_unknown_dynamic_table(const std::string& case_name,
                                                        const std::string& dynus_row) {
-  std::string dashes = "{-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} \\\\";
+  std::string dashes = "{-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} \\\\";
   std::vector<std::string> cases = {"Easy", "Medium", "Hard"};
 
   std::ostringstream oss;
@@ -1012,23 +1100,25 @@ static std::string generate_new_unknown_dynamic_table(const std::string& case_na
       << "  \\centering\n"
       << "  \\renewcommand{\\arraystretch}{1.2}\n"
       << "  \\resizebox{\\textwidth}{!}{\n"
-      << "    \\begin{tabular}{c c c c c c c c c c}\n"
+      << "    \\begin{tabular}{c c c c c c c c c c c c}\n"
       << "      \\toprule\n"
       << "      \\multirow{2}{*}[-0.4em]{\\textbf{Env}}\n"
       << "      & \\multicolumn{1}{c}{\\textbf{Success}}\n"
-      << "      & \\multicolumn{1}{c}{\\textbf{Comp. Time}}\n"
+      << "      & \\multicolumn{3}{c}{\\textbf{Comp. Time}}\n"
       << "      & \\multicolumn{3}{c}{\\textbf{Performance}}\n"
       << "      & \\multicolumn{1}{c}{\\textbf{Safety}}\n"
       << "      & \\multicolumn{3}{c}{\\textbf{Constraint Violation}}\n"
       << "      \\\\\n"
       << "      \\cmidrule(lr){2-2}\n"
-      << "      \\cmidrule(lr){3-3}\n"
-      << "      \\cmidrule(lr){4-6}\n"
-      << "      \\cmidrule(lr){7-7}\n"
-      << "      \\cmidrule(lr){8-10}\n"
+      << "      \\cmidrule(lr){3-5}\n"
+      << "      \\cmidrule(lr){6-8}\n"
+      << "      \\cmidrule(lr){9-9}\n"
+      << "      \\cmidrule(lr){10-12}\n"
       << "      &\n"
       << "      $R_{\\mathrm{succ}}$ [\\%] &\n"
       << "      $T^{\\mathrm{per}}_{\\mathrm{opt}}$ [ms] &\n"
+      << "      $T_{\\mathrm{replan}}$ [ms] &\n"
+      << "      $T_{\\mathrm{STSFC}}$ [ms] &\n"
       << "      $T_{\\mathrm{trav}}$ [s] &\n"
       << "      $L_{\\mathrm{path}}$ [m] &\n"
       << "      $S_{\\mathrm{jerk}}$ [m/s$^{2}$] &\n"
@@ -1347,6 +1437,31 @@ static Statistics analyze_single_case(const fs::path& data_dir, const std::strin
   std::cout << sep << "\n";
   std::cout << "\nLoading data from: " << data_dir << "\n\n";
 
+  // Check for cached statistics
+  fs::path cache_path = data_dir / "stats_cache.json";
+  if (!g_recompute) {
+    Statistics cached;
+    if (load_statistics_json(cache_path, cached)) {
+      std::cout << "Using cached statistics from " << cache_path.filename() << "\n";
+      print_statistics(cached);
+
+      if (!skip_latex) {
+        std::cout << "\nUpdating LaTeX table...\n";
+        std::string latex = generate_latex_table(cached, case_name, latex_output, table_type, algo_name);
+        fs::create_directories(latex_output.parent_path());
+        std::ofstream tex_file(latex_output);
+        tex_file << latex;
+        tex_file.close();
+        std::cout << "LaTeX table updated for " << case_name << " case\n";
+      }
+
+      std::cout << "\n" << sep << "\n";
+      std::cout << case_name << " CASE ANALYSIS COMPLETE (cached)\n";
+      std::cout << sep << "\n\n";
+      return cached;
+    }
+  }
+
   // Load CSV
   fs::path csv_path = find_most_recent_csv(data_dir);
   if (csv_path.empty()) {
@@ -1468,6 +1583,10 @@ static Statistics analyze_single_case(const fs::path& data_dir, const std::strin
   auto stats = compute_statistics(trials);
   print_statistics(stats);
 
+  // Cache statistics as JSON for fast re-runs
+  save_statistics_json(stats, cache_path);
+  std::cout << "Cached statistics to " << cache_path.filename() << "\n";
+
   // Save CSV
   fs::path csv_output = data_dir / (output_name + ".csv");
   save_statistics_csv(stats, csv_output);
@@ -1558,7 +1677,7 @@ static std::string format_with_best_worst(double val, double best, double worst,
   std::string formatted = oss.str();
 
   double tol = std::pow(10.0, -prec) * 0.5;
-  if (std::abs(best - worst) < tol) return formatted; // all same, no highlighting
+  if (std::abs(best - worst) < tol) return "\\best{" + formatted + "}"; // all tied = all best
   if (std::abs(val - best) < tol) return "\\best{" + formatted + "}";
   if (std::abs(val - worst) < tol) return "\\worst{" + formatted + "}";
   return formatted;
@@ -1773,70 +1892,93 @@ static std::string merge_dynamic_table(const std::string& tex_path,
   return oss.str();
 }
 
-static std::string generate_unknown_dynamic_batch_table(const std::vector<BatchRowData>& rows) {
+static std::string generate_unknown_dynamic_batch_table(const std::vector<BatchRowData>& rows, bool use_p_label = false) {
   std::vector<std::string> cases = {"Easy", "Medium", "Hard"};
 
+  // Check if rows have multiple heat weights (ablation mode) or just N variants
+  std::set<int> heat_weights;
+  for (auto& r : rows) heat_weights.insert(r.heat_weight);
+  bool has_heat_weight_col = (heat_weights.size() > 1);
+
   // Metric definitions: id, higher_is_better, precision
-  // IDs: 0=success_rate, 1=per_opt_time, 2=travel_time, 3=path_length,
-  //      4=jerk_integral, 5=min_dist, 6=vel_viol, 7=acc_viol, 8=jerk_viol
+  // IDs: 0=success_rate, 1=per_opt_time, 2=total_replan_time, 3=cvx_decomp_time,
+  //      4=travel_time, 5=path_length, 6=jerk_integral, 7=constraint_violation
   struct MetricDef { int id; bool higher_is_better; int precision; };
   std::vector<MetricDef> metrics = {
     {0, true, 1}, {1, false, 1}, {2, false, 1}, {3, false, 1},
-    {4, false, 1}, {5, true, 3}, {6, false, 1}, {7, false, 1}, {8, false, 1}
+    {4, false, 1}, {5, false, 1}, {6, false, 1}, {7, false, 1}
   };
 
   auto get_metric = [](const Statistics& s, int id) -> double {
     switch (id) {
       case 0: return s.success_rate;
       case 1: return s.avg_local_traj_time_mean;
-      case 2: return s.flight_travel_time_mean;
-      case 3: return s.path_length_mean;
-      case 4: return s.jerk_integral_mean;
-      case 5: return s.min_distance_to_obstacles_mean;
-      case 6: return s.vel_violation_rate;
-      case 7: return s.acc_violation_rate;
-      case 8: return s.jerk_violation_rate;
+      case 2: return s.avg_replanning_time_mean;
+      case 3: return s.avg_sfc_corridor_time_mean;
+      case 4: return s.flight_travel_time_mean;
+      case 5: return s.path_length_mean;
+      case 6: return s.jerk_integral_mean;
+      case 7: return std::max({s.vel_violation_rate, s.acc_violation_rate, s.jerk_violation_rate});
       default: return 0.0;
     }
   };
 
+  // Column count: Env + (optional w) + N + 8 metrics
+  int n_cols = (has_heat_weight_col ? 3 : 2) + static_cast<int>(metrics.size());
+
   std::ostringstream oss;
   oss << "\\begin{table*}\n"
       << "  \\caption{Benchmark results in unknown dynamic environments. "
-      << "DYNUS navigates using only pointcloud sensing (no ground truth obstacle trajectories). "
-      << "We compare different heat map weights ($w$) and trajectory segment counts ($N$). "
-      << "We highlight the \\best{best} and \\worst{worst} "
+      << "DYNUS navigates using only pointcloud sensing (no ground truth obstacle trajectories).";
+  std::string segment_label = use_p_label ? "$P$" : "$N$";
+  if (has_heat_weight_col) {
+    oss << " We compare different heat map weights ($w$) and trajectory segment counts (" << segment_label << ").";
+  }
+  oss << " We highlight the \\best{best} and \\worst{worst} "
       << "value for each environment.}\n"
       << "  \\label{tab:unknown_dynamic_benchmark}\n"
       << "  \\centering\n"
       << "  \\renewcommand{\\arraystretch}{1.2}\n"
       << "  \\resizebox{\\textwidth}{!}{\n"
-      << "    \\begin{tabular}{c c c c c c c c c c c c}\n"
-      << "      \\toprule\n"
-      << "      \\multirow{2}{*}[-0.4em]{\\textbf{Env}}\n"
-      << "      & \\multirow{2}{*}[-0.4em]{\\textbf{$w$}}\n"
-      << "      & \\multirow{2}{*}[-0.4em]{\\textbf{$N$}}\n"
+      << "    \\begin{tabular}{";
+  for (int i = 0; i < n_cols; i++) {
+    if (i > 0) oss << " ";
+    oss << "c";
+  }
+  oss << "}\n"
+      << "      \\toprule\n";
+
+  // Two-row grouped header
+  // prefix_cols = Env + (optional w) + N
+  int prefix_cols = has_heat_weight_col ? 3 : 2;
+  // Metric groups: Success(1), Comp. Time(3), Performance(3), Constraint Violation(1)
+  // Column offsets (1-based): prefix_cols+1 .. prefix_cols+8
+
+  oss << "      \\multirow{2}{*}[-0.4ex]{\\textbf{Env}}\n";
+  if (has_heat_weight_col) {
+    oss << "      & \\multirow{2}{*}[-0.4ex]{\\textbf{$w$}}\n";
+  }
+  oss << "      & \\multirow{2}{*}[-0.4ex]{\\textbf{" << segment_label << "}}\n"
       << "      & \\multicolumn{1}{c}{\\textbf{Success}}\n"
-      << "      & \\multicolumn{1}{c}{\\textbf{Comp. Time}}\n"
+      << "      & \\multicolumn{3}{c}{\\textbf{Comp.\\ Time}}\n"
       << "      & \\multicolumn{3}{c}{\\textbf{Performance}}\n"
-      << "      & \\multicolumn{1}{c}{\\textbf{Safety}}\n"
-      << "      & \\multicolumn{3}{c}{\\textbf{Constraint Violation}}\n"
+      << "      & \\multicolumn{1}{c}{\\textbf{Constr.\\ Viol.}}\n"
       << "      \\\\\n"
-      << "      \\cmidrule(lr){4-4}\n"
-      << "      \\cmidrule(lr){5-5}\n"
-      << "      \\cmidrule(lr){6-8}\n"
-      << "      \\cmidrule(lr){9-9}\n"
-      << "      \\cmidrule(lr){10-12}\n"
-      << "      &&&\n"
-      << "      $R_{\\mathrm{succ}}$ [\\%] &\n"
-      << "      $T^{\\mathrm{per}}_{\\mathrm{opt}}$ [ms] &\n"
-      << "      $T_{\\mathrm{trav}}$ [s] &\n"
-      << "      $L_{\\mathrm{path}}$ [m] &\n"
-      << "      $S_{\\mathrm{jerk}}$ [m/s$^{2}$] &\n"
-      << "      $d_{\\mathrm{min}}$ [m] &\n"
-      << "      $\\rho_{\\mathrm{vel}}$ [\\%] &\n"
-      << "      $\\rho_{\\mathrm{acc}}$ [\\%] &\n"
-      << "      $\\rho_{\\mathrm{jerk}}$ [\\%]\n"
+      << "      \\cmidrule(lr){" << prefix_cols+1 << "-" << prefix_cols+1 << "}\n"
+      << "      \\cmidrule(lr){" << prefix_cols+2 << "-" << prefix_cols+4 << "}\n"
+      << "      \\cmidrule(lr){" << prefix_cols+5 << "-" << prefix_cols+7 << "}\n"
+      << "      \\cmidrule(lr){" << prefix_cols+8 << "-" << prefix_cols+8 << "}\n"
+      << "      ";
+  for (int i = 0; i < prefix_cols; i++) oss << "&";
+  oss << "\n"
+      << "      $R_{\\mathrm{succ}}$ [\\%]\n"
+      << "      & $T^{\\mathrm{per}}_{\\mathrm{opt}}$ [ms]\n"
+      << "      & $T_{\\mathrm{replan}}$ [ms]\n"
+      << "      & $T_{\\mathrm{STSFC}}$ [ms]\n"
+      << "      & $T_{\\mathrm{trav}}$ [s]\n"
+      << "      & $L_{\\mathrm{path}}$ [m]\n"
+      << "      & $S_{\\mathrm{jerk}}$ [m/s$^{2}$]\n"
+      << "      & $\\rho_{\\mathrm{cv}}$ [\\%]\n"
       << "      \\\\\n"
       << "      \\midrule\n";
 
@@ -1857,8 +1999,6 @@ static std::string generate_unknown_dynamic_batch_table(const std::vector<BatchR
     for (size_t mi = 0; mi < metrics.size(); mi++) {
       std::vector<double> vals;
       for (auto* r : case_rows) {
-        // Skip N/A min_distance values
-        if (metrics[mi].id == 5 && !r->stats.has_min_distance) continue;
         vals.push_back(get_metric(r->stats, metrics[mi].id));
       }
       if (vals.empty()) {
@@ -1885,20 +2025,16 @@ static std::string generate_unknown_dynamic_batch_table(const std::vector<BatchR
         env_cell = "\\multirow{" + std::to_string(n_case_rows) + "}{*}{" + case_name + "}";
       }
 
-      // Heat weight and N segment cells
-      std::string hw_cell = std::to_string(r->heat_weight);
-      std::string n_cell = std::to_string(r->n_segments);
-
-      oss << "      " << env_cell << " & " << hw_cell << " & " << n_cell;
+      oss << "      " << env_cell;
+      if (has_heat_weight_col) {
+        oss << " & " << r->heat_weight;
+      }
+      oss << " & " << r->n_segments;
 
       // Data cells with best/worst highlighting
       for (size_t mi = 0; mi < metrics.size(); mi++) {
-        if (metrics[mi].id == 5 && !r->stats.has_min_distance) {
-          oss << " & N/A";
-        } else {
-          double val = get_metric(r->stats, metrics[mi].id);
-          oss << " & " << format_with_best_worst(val, best_vals[mi], worst_vals[mi], metrics[mi].precision);
-        }
+        double val = get_metric(r->stats, metrics[mi].id);
+        oss << " & " << format_with_best_worst(val, best_vals[mi], worst_vals[mi], metrics[mi].precision);
       }
 
       oss << " \\\\\n";
@@ -2105,7 +2241,8 @@ static void print_usage() {
             << "  --algo-name NAME      Algorithm name in LaTeX table (default: DYNUS)\n"
             << "  --single-config NAME  Process only this config subdir (e.g. inflate_unknown_voxels_heat_w_5_N_2)\n"
             << "  --merge-table PATH    Merge new config into existing .tex table (recomputes best/worst)\n"
-            << "  --data-dir2 DIR       Second data directory (for temporal_ablation: STSFC data)\n";
+            << "  --data-dir2 DIR       Second data directory (for temporal_ablation: STSFC data)\n"
+            << "  --recompute           Force recompute from bags (ignore cached stats_cache.json)\n";
 }
 
 static Args parse_args(int argc, char** argv) {
@@ -2122,6 +2259,7 @@ static Args parse_args(int argc, char** argv) {
     else if (arg == "--single-config" && i + 1 < argc) { args.single_config = argv[++i]; }
     else if (arg == "--merge-table" && i + 1 < argc) { args.merge_table = argv[++i]; }
     else if (arg == "--data-dir2" && i + 1 < argc) { args.data_dir2 = argv[++i]; }
+    else if (arg == "--recompute") { g_recompute = true; }
     else if (arg == "--goal-pos" && i + 3 < argc) {
       args.goal_pos.x = std::stod(argv[++i]);
       args.goal_pos.y = std::stod(argv[++i]);
@@ -2254,7 +2392,7 @@ int main(int argc, char** argv) {
           int oa = case_order(a.case_name), ob = case_order(b.case_name);
           if (oa != ob) return oa < ob;
           if (a.heat_weight != b.heat_weight) return a.heat_weight < b.heat_weight;
-          return a.n_segments > b.n_segments; // N=3 before N=2
+          return a.n_segments < b.n_segments; // N=2 before N=3
         });
 
         std::cout << "  Merged total: " << all_rows.size() << " rows\n";
@@ -2275,6 +2413,93 @@ int main(int argc, char** argv) {
         return 0;
       }
 
+      // Check for simple N_* or P_* subdirectories (e.g., N_2, N_3, P_2, P_3)
+      {
+        std::vector<std::pair<int, fs::path>> n_dirs;
+        std::regex np_re(R"([NP]_(\d+))");
+        bool use_p_label = true;  // always use $P$ in the table header
+        for (auto& entry : fs::directory_iterator(base_dir)) {
+          if (!entry.is_directory()) continue;
+          std::string name = entry.path().filename().string();
+          std::smatch m;
+          if (std::regex_match(name, m, np_re)) {
+            n_dirs.push_back({std::stoi(m[1]), entry.path()});
+          }
+        }
+        std::sort(n_dirs.begin(), n_dirs.end());
+
+        if (!n_dirs.empty()) {
+          std::string label = use_p_label ? "P" : "N";
+          std::string sep(80, '=');
+          std::cout << sep << "\n";
+          std::cout << "UNKNOWN DYNAMIC " << label << "-COMPARISON MODE - " << n_dirs.size() << " " << label << " values\n";
+          std::cout << sep << "\n\n";
+
+          for (auto& [n_val, n_dir] : n_dirs) {
+            std::cout << "  " << label << "=" << n_val << " (" << n_dir << ")\n";
+          }
+          std::cout << "\n";
+
+          std::vector<BatchRowData> batch_rows;
+
+          for (auto& [n_val, n_dir] : n_dirs) {
+            std::cout << sep << "\n";
+            std::cout << "PROCESSING: " << label << "=" << n_val << "\n";
+            std::cout << sep << "\n";
+
+            for (auto& pattern : {"easy_", "medium_", "hard_"}) {
+              std::vector<fs::path> matching;
+              for (auto& entry : fs::directory_iterator(n_dir)) {
+                if (entry.is_directory() && entry.path().filename().string().find(pattern) == 0) {
+                  matching.push_back(entry.path());
+                }
+              }
+              if (!matching.empty()) {
+                std::sort(matching.begin(), matching.end());
+                fs::path case_dir = matching.back();
+
+                auto stats = analyze_single_case(case_dir, args.output_name, latex_output,
+                                                  "unknown_dynamic", args.goal_pos, args.algo_name, true);
+
+                BatchRowData row;
+                row.case_name = extract_case_name(case_dir);
+                row.heat_weight = 0;
+                row.n_segments = n_val;
+                row.unk_infl = true;
+                row.stats = stats;
+                batch_rows.push_back(row);
+              }
+            }
+          }
+
+          // Sort: by case (Easy, Medium, Hard), then N/P (descending: 3 before 2)
+          auto case_order = [](const std::string& c) {
+            if (c == "Easy") return 0;
+            if (c == "Medium") return 1;
+            if (c == "Hard") return 2;
+            return 3;
+          };
+          std::sort(batch_rows.begin(), batch_rows.end(), [&](const auto& a, const auto& b) {
+            int oa = case_order(a.case_name), ob = case_order(b.case_name);
+            if (oa != ob) return oa < ob;
+            return a.n_segments < b.n_segments;
+          });
+
+          std::cout << "\nGenerating batch LaTeX table...\n";
+          std::string table = generate_unknown_dynamic_batch_table(batch_rows, use_p_label);
+          fs::create_directories(latex_output.parent_path());
+          std::ofstream tex_file(latex_output);
+          tex_file << table;
+          tex_file.close();
+
+          std::cout << "\n" << sep << "\n";
+          std::cout << "BATCH TABLE GENERATED: " << latex_output << "\n";
+          std::cout << sep << "\n\n";
+          return 0;
+        }
+      }
+
+      // Check for inflate_unknown_voxels_* config subdirectories (ablation mode)
       auto ud_configs = discover_unknown_dynamic_configs(base_dir);
       if (!ud_configs.empty()) {
         std::string sep(80, '=');

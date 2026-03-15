@@ -11,7 +11,7 @@ windows:
       - shell_command:
         - ros2 launch dynus simulator.launch.py
 
-      # run benchmark (dynus, dynus_star, faster)
+      # run benchmark (dynus2, faster)
       - shell_command:
         - sleep 5
         - ros2 launch dynus local_traj_benchmark.launch.py

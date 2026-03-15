@@ -5,8 +5,8 @@ Runs analyze_benchmark on 4 data directories (2 velocities x 2 SFC modes)
 and produces a LaTeX table with best/worst highlighting per velocity group.
 """
 
+import csv
 import subprocess
-import re
 import sys
 import os
 
@@ -29,49 +29,12 @@ OUTPUT_TEX = os.path.expanduser(
     "~/paper_writing/DYNUS_v3/tables/sfc_ablation.tex")
 
 
-def parse_output(text):
-    """Parse analyze_benchmark stdout to extract statistics."""
-    stats = {}
-
-    # Success rate
-    m = re.search(r'Success rate:\s+([\d.]+)%', text)
-    stats['success_rate'] = float(m.group(1)) if m else 0.0
-
-    # Computation time (local traj)
-    m = re.search(r'Local Traj Time:\s+([\d.]+)\s*ms', text)
-    stats['comp_time'] = float(m.group(1)) if m else 0.0
-
-    # Travel time
-    m = re.search(r'Travel Time:\s+([\d.]+)\s*\+/-', text)
-    stats['travel_time'] = float(m.group(1)) if m else 0.0
-
-    # Path length
-    m = re.search(r'Path Length:\s+([\d.]+)\s*\+/-', text)
-    stats['path_length'] = float(m.group(1)) if m else 0.0
-
-    # Jerk integral
-    m = re.search(r'Jerk Integral:\s+([\d.]+)', text)
-    stats['jerk_integral'] = float(m.group(1)) if m else 0.0
-
-    # Min distance (minimum across all trials, from "MIN DISTANCE" section)
-    m = re.search(r'MIN DISTANCE.*?\n\s*Min:\s+([\d.]+)\s*m', text, re.DOTALL)
-    stats['min_dist'] = float(m.group(1)) if m else 0.0
-
-    # Violation rates
-    for key, pattern in [
-        ('vel_viol', r'VEL Violation Rate:\s+([\d.]+)%'),
-        ('acc_viol', r'ACC Violation Rate:\s+([\d.]+)%'),
-        ('jerk_viol', r'JERK Violation Rate:\s+([\d.]+)%'),
-    ]:
-        m = re.search(pattern, text)
-        stats[key] = float(m.group(1)) if m else 0.0
-
-    return stats
-
-
 def run_analysis(data_dir):
-    """Run analyze_benchmark and return parsed stats."""
-    # Source setup.bash via bash to get ROS environment
+    """Run analyze_benchmark and read stats from benchmark_summary.csv.
+
+    analyze_benchmark writes full-precision values to benchmark_summary.csv.
+    Reading from that avoids double-rounding errors from parsing text output.
+    """
     cmd = (
         f"source {os.path.expanduser('~/code/dynus_ws/install/setup.bash')} && "
         f"{ANALYZE_BIN} --data-dir {data_dir} --table-type dynamic"
@@ -84,7 +47,22 @@ def run_analysis(data_dir):
         print(f"ERROR running on {data_dir}:")
         print(result.stderr)
         sys.exit(1)
-    return parse_output(result.stdout)
+
+    summary_csv = os.path.join(data_dir, "benchmark_summary.csv")
+    with open(summary_csv) as f:
+        row = next(csv.DictReader(f))
+
+    return {
+        'success_rate': float(row['success_rate']),
+        'comp_time': float(row['avg_local_traj_time_mean']),
+        'travel_time': float(row['flight_travel_time_mean']),
+        'path_length': float(row['path_length_mean']),
+        'jerk_integral': float(row['jerk_integral_mean']),
+        'min_dist': float(row['min_distance_to_obstacles_mean']),
+        'vel_viol': float(row['vel_violation_rate']),
+        'acc_viol': float(row['acc_violation_rate']),
+        'jerk_viol': float(row['jerk_violation_rate']),
+    }
 
 
 def fmt(val, decimals=1):

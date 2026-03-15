@@ -12,8 +12,8 @@ python3 src/dynus/benchmarking/run_benchmark_suite.py
 ```
 
 This will automatically run:
-- **DYNUS multi-threaded** for N = 4, 5, 6
-- **DYNUS single-threaded** for N = 4, 5, 6
+- **DYNUS2 multi-threaded** for N = 4, 5, 6
+- **DYNUS2 single-threaded** for N = 4, 5, 6
 - **FASTER (original)** single-threaded for N = 6
 
 Results are saved to:
@@ -98,8 +98,8 @@ Edit `run_benchmark_suite.py` and modify the `BENCHMARK_CONFIGS` list:
 ```python
 BENCHMARK_CONFIGS = [
     # (use_single_threaded, planner_names, num_N_list, description)
-    (False, ["dynus"], [4, 5, 6], "DYNUS multi-threaded"),
-    (True, ["dynus"], [7, 8], "DYNUS single-threaded (N=7,8)"),
+    (False, ["dynus2"], [4, 5, 6], "DYNUS2 multi-threaded"),
+    (True, ["dynus2"], [7, 8], "DYNUS2 single-threaded (N=7,8)"),
     # Add more configurations...
 ]
 ```
@@ -147,8 +147,8 @@ Then include the table:
 
 For the paper table, you should see:
 - **Success rates** around 77-100%
-- **DYNUS multi** having lowest `total_opt_runtime_ms` (parallelization benefit)
-- **DYNUS single** having competitive `per_opt_runtime_ms`
+- **DYNUS2 multi** having lowest `total_opt_runtime_ms` (parallelization benefit)
+- **DYNUS2 single** having competitive `per_opt_runtime_ms`
 - **Zero violations** for DYNUS (safe corridor)
 - **Some velocity violations** for FASTER (original)
 

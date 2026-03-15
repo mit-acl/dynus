@@ -8,6 +8,9 @@
 
 #pragma once
 
+#include <atomic>
+#include <future>
+#include <thread>
 #include <pcl/kdtree/kdtree.h>
 #include <Eigen/StdVector>
 #include <stdio.h>

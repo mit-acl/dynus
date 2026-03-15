@@ -20,6 +20,7 @@
 #include "dgp/termcolor.hpp"
 #include "dynus/dynus_type.hpp"
 #include <dynus/utils.hpp>
+#include "dgp/utils.hpp"
 #include "dgp/dgp_manager.hpp"
 #include <dynus/gurobi_solver.hpp>
 #include <decomp_rviz_plugins/data_ros_utils.hpp>
@@ -190,7 +191,7 @@ public:
     CorridorGeneratorNode() : Node("corridor_generator_node")
     {
         declare_parameter<std::string>("map_topic", "/map_generator/global_cloud");
-        declare_parameter<std::vector<double>>("start", {-4.0, 0.0, 1.0});
+        declare_parameter<std::vector<double>>("start", {-3.0, 0.0, 1.0});
 
         // Map window to read into VoxelMapUtil (make this cover all your goals for fairness)
         declare_parameter<std::vector<double>>("map_center", {0.0, 0.0, 1.0});
@@ -220,10 +221,41 @@ public:
         declare_parameter<double>("j_max", 10.0);
 
         // Decomp tuning
-        declare_parameter<std::vector<double>>("local_box_size", {4.0, 4.0, 3.0});
+        declare_parameter<std::vector<double>>("local_box_size", {1.5, 1.5, 1.5});
         declare_parameter<bool>("use_shrinked_box", false);
         declare_parameter<double>("shrinked_box_size", 0.2);
         declare_parameter<double>("max_dist_vertexes", 10.0);
+        declare_parameter<int>("num_P", 3);  // max polytopes (same as live planner)
+
+        // Static heat map parameters (align with dynus.yaml defaults)
+        declare_parameter<bool>("static_heat_enabled", true);
+        declare_parameter<double>("static_heat_alpha", 1.0);
+        declare_parameter<int>("static_heat_p", 2);
+        declare_parameter<double>("static_heat_Hmax", 5.0);
+        declare_parameter<double>("static_heat_rmax_m", 1.0);
+        declare_parameter<double>("static_heat_default_radius_m", 0.5);
+        declare_parameter<bool>("static_heat_boundary_only", true);
+        declare_parameter<bool>("static_heat_apply_on_unknown", false);
+        declare_parameter<bool>("static_heat_exclude_dynamic", true);
+        declare_parameter<double>("heat_weight", 10.0);
+        declare_parameter<bool>("use_soft_cost_obstacles", false);
+        declare_parameter<double>("obstacle_soft_cost", 0.0);
+
+        // Heat kernel parameters (used by astar_heat even for static-only mode)
+        declare_parameter<double>("heat_alpha0", 1.0);
+        declare_parameter<double>("heat_alpha1", 2.0);
+        declare_parameter<int>("heat_p", 2);
+        declare_parameter<int>("heat_q", 2);
+        declare_parameter<double>("heat_tau_ratio", 0.5);
+        declare_parameter<double>("heat_gamma", 0.0);
+        declare_parameter<double>("heat_Hmax", 10.0);
+        declare_parameter<double>("dyn_base_inflation_m", 0.5);
+        declare_parameter<double>("dyn_heat_tube_radius_m", 2.0);
+
+        // Dynamic heat (disabled for benchmark — no dynamic obstacles)
+        declare_parameter<bool>("dynamic_heat_enabled", false);
+        declare_parameter<bool>("dynamic_as_occupied_current", false);
+        declare_parameter<bool>("dynamic_as_occupied_future", false);
 
         // Map bounds for VoxelMapUtil ctor
         declare_parameter<double>("x_min", -100.0);
@@ -249,9 +281,9 @@ public:
 
         start_ = vec3FromStd(get_parameter("start").as_double_array(), "start");
         goals_.clear();
-        for (double y = -5.0; y <= 5.0 + 1e-3; y += 0.1)
+        for (double y = -3.0; y <= 3.0 + 1e-3; y += 0.1)
         {
-            goals_.emplace_back(4.0, y, 1.0);
+            goals_.emplace_back(3.5, y, 1.0);
         }
         if (goals_.empty())
         {
@@ -276,6 +308,7 @@ public:
         par_.use_shrinked_box = get_parameter("use_shrinked_box").as_bool();
         par_.shrinked_box_size = get_parameter("shrinked_box_size").as_double();
         par_.max_dist_vertexes = get_parameter("max_dist_vertexes").as_double();
+        num_P_ = get_parameter("num_P").as_int();
 
         par_.x_min = get_parameter("x_min").as_double();
         par_.x_max = get_parameter("x_max").as_double();
@@ -292,6 +325,36 @@ public:
         v_max_ = get_parameter("v_max").as_double();
         a_max_ = get_parameter("a_max").as_double();
         j_max_ = get_parameter("j_max").as_double();
+
+        // Static heat map parameters
+        par_.static_heat_enabled = get_parameter("static_heat_enabled").as_bool();
+        par_.static_heat_alpha = get_parameter("static_heat_alpha").as_double();
+        par_.static_heat_p = get_parameter("static_heat_p").as_int();
+        par_.static_heat_Hmax = get_parameter("static_heat_Hmax").as_double();
+        par_.static_heat_rmax_m = get_parameter("static_heat_rmax_m").as_double();
+        par_.static_heat_default_radius_m = get_parameter("static_heat_default_radius_m").as_double();
+        par_.static_heat_boundary_only = get_parameter("static_heat_boundary_only").as_bool();
+        par_.static_heat_apply_on_unknown = get_parameter("static_heat_apply_on_unknown").as_bool();
+        par_.static_heat_exclude_dynamic = get_parameter("static_heat_exclude_dynamic").as_bool();
+        par_.heat_weight = get_parameter("heat_weight").as_double();
+        par_.use_soft_cost_obstacles = get_parameter("use_soft_cost_obstacles").as_bool();
+        par_.obstacle_soft_cost = get_parameter("obstacle_soft_cost").as_double();
+
+        // Heat kernel parameters
+        par_.heat_alpha0 = get_parameter("heat_alpha0").as_double();
+        par_.heat_alpha1 = get_parameter("heat_alpha1").as_double();
+        par_.heat_p = get_parameter("heat_p").as_int();
+        par_.heat_q = get_parameter("heat_q").as_int();
+        par_.heat_tau_ratio = get_parameter("heat_tau_ratio").as_double();
+        par_.heat_gamma = get_parameter("heat_gamma").as_double();
+        par_.heat_Hmax = get_parameter("heat_Hmax").as_double();
+        par_.dyn_base_inflation_m = get_parameter("dyn_base_inflation_m").as_double();
+        par_.dyn_heat_tube_radius_m = get_parameter("dyn_heat_tube_radius_m").as_double();
+
+        // Dynamic heat (disabled for benchmark)
+        par_.dynamic_heat_enabled = get_parameter("dynamic_heat_enabled").as_bool();
+        par_.dynamic_as_occupied_current = get_parameter("dynamic_as_occupied_current").as_bool();
+        par_.dynamic_as_occupied_future = get_parameter("dynamic_as_occupied_future").as_bool();
 
         // Init DGPManager with parameters
         dgp_.setParameters(par_);
@@ -407,7 +470,7 @@ private:
             dgp_timeout_ms_,
             /*max_num_expansion*/ 10000,
             /*w_unknown*/ 0.0, /*w_align*/ 0.0, /*decay_len_cells*/ 100.0, /*w_side*/ 0.0,
-            /*los_cells*/ 0, /*min_len*/ 0.5, /*min_turn*/ 0.0);
+            /*los_cells*/ 0, /*min_len*/ 1.0, /*min_turn*/ 0.0);
 
         // Base obstacle set for decomposition: occupied (or unknown+occupied if you maintain it)
         vec_Vec3f base_uo;
@@ -440,6 +503,41 @@ private:
                 continue;
             }
 
+            // Snap endpoints to exact start/goal (undo voxel discretization)
+            path.front() = start_;
+            path.back() = goal;
+
+            // Trim global path to at most (num_P + 1) waypoints, but always
+            // keep the goal as the last point so the corridor reaches it.
+            if (num_P_ > 0 && path.size() > static_cast<size_t>(num_P_ + 1))
+            {
+                path.resize(num_P_ + 1);
+                path.back() = goal;
+            }
+
+            // Remove any interior waypoint whose adjacent segment is shorter
+            // than 2m. This eliminates tiny degenerate corridors anywhere in
+            // the path (not just at the tail).
+            {
+                const double min_seg_len = 1.5;
+                bool changed = true;
+                while (changed && path.size() > 2)
+                {
+                    changed = false;
+                    for (size_t i = 1; i + 1 < path.size(); ++i)
+                    {
+                        double seg_before = (path[i] - path[i - 1]).norm();
+                        double seg_after  = (path[i + 1] - path[i]).norm();
+                        if (seg_before < min_seg_len || seg_after < min_seg_len)
+                        {
+                            path.erase(path.begin() + static_cast<long>(i));
+                            changed = true;
+                            break; // restart scan
+                        }
+                    }
+                }
+            }
+
             // Segment end times for per-segment dynamic inflation
             const auto seg_end_times = computeSegEndTimesFromPath(path, corridor_nominal_speed_);
 
@@ -467,7 +565,15 @@ private:
 
             saveCorridorBinary(out, start_, goal, path, seg_end_times, l_constraints);
 
-            RCLCPP_INFO(get_logger(), "Saved goal %zu corridor (segments=%zu)", gi, l_constraints.size());
+            // Print segment details
+            std::string seg_info;
+            for (size_t s = 0; s + 1 < path.size(); ++s)
+            {
+                double len = (path[s + 1] - path[s]).norm();
+                seg_info += std::to_string(len).substr(0, 4) + "m";
+                if (s + 2 < path.size()) seg_info += ", ";
+            }
+            RCLCPP_INFO(get_logger(), "Goal %zu: %zu segments [%s]", gi, l_constraints.size(), seg_info.c_str());
         }
     }
 
@@ -484,60 +590,38 @@ private:
         const vec_E<Polyhedron<3>> &poly_out,
         const EllipsoidDecomp3D &ellip)
     {
-        // 1) Path
+        // 1) Path — use pathLineDotsToMarkerArray (same as live planner)
+        //    Use unique base_id per goal so markers accumulate in RViz.
         visualization_msgs::msg::MarkerArray path_msg;
-        geometry_msgs::msg::Point last_point;
-        last_point.x = path[0].x();
-        last_point.y = path[0].y();
-        last_point.z = path[0].z();
-
-        for (size_t i = 1; i < path.size(); ++i)
-        {
-            visualization_msgs::msg::Marker marker;
-            marker.header.stamp = now();
-            marker.header.frame_id = frame_id_;
-            marker.ns = "dgp_path";
-            marker.id = static_cast<int>(i);
-            marker.type = visualization_msgs::msg::Marker::ARROW;
-            marker.action = visualization_msgs::msg::Marker::ADD;
-            marker.points.push_back(last_point);
-            geometry_msgs::msg::Point curr_point;
-            curr_point.x = path[i].x();
-            curr_point.y = path[i].y();
-            curr_point.z = path[i].z();
-            marker.points.push_back(curr_point);
-            last_point = curr_point;
-            marker.pose.orientation.w = 1.0;
-            marker.scale.x = 0.2;
-            marker.scale.y = 0.2;
-            marker.scale.z = 0.2;
-            marker.color.r = 0.0f;
-            marker.color.g = 1.0f;
-            marker.color.b = 0.0f;
-            marker.color.a = 1.0f;
-
-            path_msg.markers.push_back(marker);
-        }
+        pathLineDotsToMarkerArray(
+            path,
+            &path_msg,
+            color(RED),
+            /*line_width=*/0.03,
+            /*dot_diameter=*/0.06,
+            /*base_id=*/static_cast<int>(goal_idx) * 1000,
+            /*frame_id=*/frame_id_,
+            /*lifetime_sec=*/0.0); // 0 = forever
 
         // 2) Polyhedra corridor (decomp_rviz_plugins-compatible)
         decomp_ros_msgs::msg::PolyhedronArray poly_msg = DecompROS::polyhedron_array_to_ros(poly_out);
         poly_msg.header.stamp = now();
         poly_msg.header.frame_id = frame_id_;
-        poly_msg.lifetime = rclcpp::Duration::from_seconds(1.0); // infinite
+        poly_msg.lifetime = rclcpp::Duration::from_seconds(0.0); // forever
 
-        // Publish
+        // Publish immediately
         pub_path_->publish(path_msg);
         pub_poly_->publish(poly_msg);
 
-        // Cache for periodic republish
-        cached_path_msg_ = path_msg;
-        cached_poly_msg_ = poly_msg;
+        // Accumulate into cached messages for periodic republish
+        for (const auto &m : path_msg.markers)
+            cached_path_msg_.markers.push_back(m);
+        for (const auto &p : poly_msg.polyhedrons)
+            cached_poly_msg_.polyhedrons.push_back(p);
+        cached_poly_msg_.header = poly_msg.header;
+        cached_poly_msg_.lifetime = poly_msg.lifetime;
         have_cached_path_ = true;
         have_cached_poly_ = true;
-
-        // RCLCPP_INFO(get_logger(),
-        //             "Published corridor+path for goal %zu: path_pts=%zu polys=%zu",
-        //             goal_idx, path.size(), poly_out.size());
     }
 
     void republishCachedMsgs()
@@ -574,6 +658,7 @@ private:
     double wdx_{200.0}, wdy_{200.0}, wdz_{10.0};
 
     double corridor_nominal_speed_{2.0};
+    int num_P_{3};  // max number of polytopes (matches live planner)
 
     // Planner config
     parameters par_;

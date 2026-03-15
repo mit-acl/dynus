@@ -1168,10 +1168,12 @@ def generate_latex_table(stats: dict, config_name: str = "default", case_name: s
     elif table_type == 'unknown_dynamic':
         # Unknown dynamic table: no Algorithm column, just Env | data...
         per_opt_time = stats.get('avg_local_traj_time_mean', 0)
+        total_replan_time = stats.get('avg_replanning_time_mean', 0)
+        cvx_decomp_time = stats.get('avg_sfc_corridor_time_mean', 0)
         min_distance = stats.get('min_distance_to_obstacles_mean', 0)
         min_dist_str = min_distance if isinstance(min_distance, str) else f"{min_distance:.2f}"
 
-        data_values = (f"{success_rate:.1f} & {per_opt_time:.1f} & "
+        data_values = (f"{success_rate:.1f} & {per_opt_time:.1f} & {total_replan_time:.1f} & {cvx_decomp_time:.1f} & "
                        f"{travel_time:.1f} & {path_length:.1f} & {jerk_integral:.1f} & {min_dist_str} & "
                        f"{vel_viol:.1f} & {acc_viol:.1f} & {jerk_viol:.1f} \\\\")
 
@@ -1378,11 +1380,11 @@ def _generate_new_dynamic_table(case_name: str, dynus_row: str, data_values: str
 def _generate_new_unknown_dynamic_table(case_name: str, dynus_row: str, data_values: str) -> str:
     """Generate a new unknown dynamic obstacle benchmark LaTeX table.
 
-    Same columns as dynamic table minus Algorithm:
-    Env | R_succ | T_per_opt | T_trav | L_path | S_jerk | d_min | rho_vel | rho_acc | rho_jerk
+    Columns:
+    Env | R_succ | T_per_opt | T_replan | T_cvx | T_trav | L_path | S_jerk | d_min | rho_vel | rho_acc | rho_jerk
     """
 
-    dashes = "{-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} \\\\"
+    dashes = "{-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} \\\\"
 
     cases = ['Easy', 'Medium', 'Hard']
     latex = []
@@ -1394,26 +1396,28 @@ def _generate_new_unknown_dynamic_table(case_name: str, dynus_row: str, data_val
     latex.append("  \\centering")
     latex.append("  \\renewcommand{\\arraystretch}{1.2}")
     latex.append("  \\resizebox{\\textwidth}{!}{")
-    latex.append("    \\begin{tabular}{c c c c c c c c c c}")
+    latex.append("    \\begin{tabular}{c c c c c c c c c c c c}")
     latex.append("      \\toprule")
 
     latex.append("      \\multirow{2}{*}[-0.4em]{\\textbf{Env}}")
     latex.append("      & \\multicolumn{1}{c}{\\textbf{Success}}")
-    latex.append("      & \\multicolumn{1}{c}{\\textbf{Comp. Time}}")
+    latex.append("      & \\multicolumn{3}{c}{\\textbf{Comp. Time}}")
     latex.append("      & \\multicolumn{3}{c}{\\textbf{Performance}}")
     latex.append("      & \\multicolumn{1}{c}{\\textbf{Safety}}")
     latex.append("      & \\multicolumn{3}{c}{\\textbf{Constraint Violation}}")
     latex.append("      \\\\")
 
     latex.append("      \\cmidrule(lr){2-2}")
-    latex.append("      \\cmidrule(lr){3-3}")
-    latex.append("      \\cmidrule(lr){4-6}")
-    latex.append("      \\cmidrule(lr){7-7}")
-    latex.append("      \\cmidrule(lr){8-10}")
+    latex.append("      \\cmidrule(lr){3-5}")
+    latex.append("      \\cmidrule(lr){6-8}")
+    latex.append("      \\cmidrule(lr){9-9}")
+    latex.append("      \\cmidrule(lr){10-12}")
 
     latex.append("      &")
     latex.append("      $R_{\\mathrm{succ}}$ [\\%] &")
     latex.append("      $T^{\\mathrm{per}}_{\\mathrm{opt}}$ [ms] &")
+    latex.append("      $T_{\\mathrm{replan}}$ [ms] &")
+    latex.append("      $T_{\\mathrm{STSFC}}$ [ms] &")
     latex.append("      $T_{\\mathrm{trav}}$ [s] &")
     latex.append("      $L_{\\mathrm{path}}$ [m] &")
     latex.append("      $S_{\\mathrm{jerk}}$ [m/s$^{2}$] &")

@@ -166,6 +166,11 @@ find_package(rosbag2_cpp REQUIRED)
 find_package(rosbag2_storage REQUIRED)
 add_executable(analyze_benchmark src/tools/analyze_benchmark.cpp)
 ament_target_dependencies(analyze_benchmark rclcpp dynus_interfaces tf2_msgs rosbag2_cpp rosbag2_storage)
+target_link_libraries(analyze_benchmark nlohmann_json::nlohmann_json)
+
+# Bag converter tool (lifetime adjustment + pointcloud z-filter)
+add_executable(convert_bag src/tools/convert_bag.cpp)
+ament_target_dependencies(convert_bag rclcpp visualization_msgs sensor_msgs decomp_ros_msgs rosbag2_cpp rosbag2_storage)
 
 # install for launch and config files
 install(DIRECTORY
@@ -194,6 +199,7 @@ install(TARGETS
   visualize_local_trajs_node
   temporal_layered_corridor_test_node
   analyze_benchmark
+  convert_bag
   DESTINATION lib/${PROJECT_NAME}
 )
 

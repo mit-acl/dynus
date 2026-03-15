@@ -15,6 +15,9 @@
 #include <tuple>
 #include <type_traits>
 #include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <optional>
 #include <cctype>
 
 #include "timer.hpp"
@@ -40,6 +43,25 @@ using namespace dynus;
 
 using Vec3d = Eigen::Vector3d;
 using Vec3f = Eigen::Matrix<double, 3, 1>;
+
+struct DynFactorCaseRecord
+{
+    size_t case_idx{0};
+    bool success{false};
+    double factor_used{0.0};
+    double window_lo{0.0};
+    double window_hi{0.0};
+};
+
+struct DynFactorConfigReport
+{
+    std::string planner_name;
+    int num_N{0};
+    double initial_window_lo{0.0};
+    double initial_window_hi{0.0};
+    std::string csv_out;
+    std::vector<DynFactorCaseRecord> records;
+};
 
 struct BenchResult
 {
@@ -752,6 +774,7 @@ public:
         declare_parameter<double>("v_max", 1.0);
         declare_parameter<double>("a_max", 2.0);
         declare_parameter<double>("j_max", 3.0);
+        declare_parameter<std::string>("dynamic_constraint_type", "Linf");
 
         declare_parameter<double>("factor_constant_step_size", 0.1);
 
@@ -770,6 +793,10 @@ public:
         declare_parameter<std::vector<int64_t>>("num_N_list", std::vector<int64_t>{});
         declare_parameter<std::vector<double>>("factor_initial_list", std::vector<double>{2.0, 1.0, 1.0});
         declare_parameter<std::vector<double>>("factor_final_list", std::vector<double>{4.0, 3.0, 2.0});
+
+        declare_parameter<bool>("use_dynamic_factor", false);
+        declare_parameter<std::vector<double>>("dynamic_factor_initial_mean_list", std::vector<double>{1.5, 1.5, 1.5});
+        declare_parameter<double>("dynamic_factor_k_radius", 0.4);
 
         declare_parameter<std::string>("planner_name", "DYNUS");
         declare_parameter<bool>("use_single_threaded", false);
@@ -795,6 +822,10 @@ public:
 
         std::vector<double> factor_initial_list = this->get_parameter("factor_initial_list").as_double_array();
         std::vector<double> factor_final_list = this->get_parameter("factor_final_list").as_double_array();
+
+        use_dynamic_factor_ = this->get_parameter("use_dynamic_factor").as_bool();
+        std::vector<double> dynamic_factor_initial_mean_list = this->get_parameter("dynamic_factor_initial_mean_list").as_double_array();
+        dynamic_factor_k_radius_ = this->get_parameter("dynamic_factor_k_radius").as_double();
 
         use_single_threaded_ = get_parameter("use_single_threaded").as_bool();
         sfc_dir_ = get_parameter("sfc_dir").as_string();
@@ -830,6 +861,7 @@ public:
         par_.v_max = get_parameter("v_max").as_double();
         par_.a_max = get_parameter("a_max").as_double();
         par_.j_max = get_parameter("j_max").as_double();
+        par_.dynamic_constraint_type = get_parameter("dynamic_constraint_type").as_string();
 
         par_.factor_constant_step_size = get_parameter("factor_constant_step_size").as_double();
 
@@ -849,6 +881,8 @@ public:
 
         for (const auto &planner_name : planner_names)
         {
+            dyn_factor_reports_.clear();
+
             for (int idx = 0; idx < (int)num_N_list.size(); ++idx)
             {
                 int num_N = num_N_list[idx];
@@ -856,11 +890,30 @@ public:
                 par_.factor_final = factor_final_list[idx];
 
                 factors_.clear();
-                for (double f = par_.factor_initial;
-                     f <= par_.factor_final + 1e-6;
-                     f += par_.factor_constant_step_size)
+                dynamic_factor_initial_success_ = false;
+
+                if (use_dynamic_factor_)
                 {
-                    factors_.push_back(f);
+                    // Dynamic k-factor window approach
+                    double initial_mean = dynamic_factor_initial_mean_list[idx];
+                    dynamic_factor_initial_mean_ = initial_mean;
+                    int num_factors = static_cast<int>((2 * dynamic_factor_k_radius_) / par_.factor_constant_step_size) + 1;
+                    for (int i = 0; i < num_factors; i++)
+                    {
+                        double f = initial_mean - dynamic_factor_k_radius_ + i * par_.factor_constant_step_size;
+                        if (f >= 1.0)
+                            factors_.push_back(f);
+                    }
+                }
+                else
+                {
+                    // Fixed factor range
+                    for (double f = par_.factor_initial;
+                         f <= par_.factor_final + 1e-6;
+                         f += par_.factor_constant_step_size)
+                    {
+                        factors_.push_back(f);
+                    }
                 }
 
                 planner_name_ = planner_name;
@@ -886,6 +939,15 @@ public:
 
                 csv_out_ = base_dir + "/" + planner_name_ + "_" + std::to_string(par_.num_N) +
                           filename_suffix + "_benchmark.csv";
+
+                // Timing profiling log (only for multi-threaded)
+                timing_log_path_ = base_dir + "/" + planner_name_ + "_" + std::to_string(par_.num_N) +
+                                   filename_suffix + "_timing_log.csv";
+                // Clear previous log
+                if (!use_single_threaded_)
+                {
+                    std::ofstream(timing_log_path_, std::ios::trunc);
+                }
 
                 // NEW: derive dump directory for this run
                 if (traj_dump_enable_)
@@ -916,24 +978,46 @@ public:
                     traj_dump_enable_this_run_ = false;
                 }
 
-                RCLCPP_INFO(get_logger(), "Benchmarking planner=%s num_N=%d factors=[%.2f .. %.2f] step=%.2f cases in %s (output %s) using %s",
+                RCLCPP_INFO(get_logger(), "Benchmarking planner=%s num_N=%d factors=[%.2f .. %.2f] step=%.2f (%s) cases in %s (output %s) using %s",
                             planner_name_.c_str(),
                             par_.num_N,
-                            par_.factor_initial,
-                            par_.factor_final,
+                            factors_.front(),
+                            factors_.back(),
                             par_.factor_constant_step_size,
+                            use_dynamic_factor_ ? "dynamic k-factor" : "fixed range",
                             sfc_dir_.c_str(),
                             csv_out_.c_str(),
                             use_single_threaded_ ? "single thread" : "multiple threads");
 
                 // Create one solver per factor (persistent, reused across cases)
+                // For dynamic factor mode, allocate for max possible window size
+                // (window may grow if factors shift above 1.0 after recentering)
+                size_t max_num_factors = factors_.size();
+                if (use_dynamic_factor_)
+                {
+                    max_num_factors = static_cast<size_t>((2 * dynamic_factor_k_radius_) / par_.factor_constant_step_size) + 1;
+                }
                 whole_traj_solver_ptrs_.clear();
-                whole_traj_solver_ptrs_.reserve(factors_.size());
+                whole_traj_solver_ptrs_.reserve(max_num_factors);
 
-                for (size_t i = 0; i < factors_.size(); ++i)
+                // Hybrid threading: distribute CPU cores across external factor
+                // threads so each Gurobi instance gets multiple internal threads.
+                // This avoids the pathology where each Gurobi model is limited to
+                // 1 thread while many factors compete for CPU resources.
+                const int num_cores = static_cast<int>(std::thread::hardware_concurrency());
+                const int grb_threads_per_solver = use_single_threaded_
+                    ? 0  // 0 = Gurobi auto (all cores)
+                    : std::max(1, num_cores / static_cast<int>(max_num_factors));
+
+                RCLCPP_INFO(get_logger(), "Hybrid threading: %d cores, %zu factors, %d Gurobi threads/solver",
+                            num_cores, max_num_factors, grb_threads_per_solver);
+
+                for (size_t i = 0; i < max_num_factors; ++i)
                 {
                     auto s = std::make_shared<SolverGurobi>();
                     s->setPlannerName(planner_name_);
+                    if (!use_single_threaded_)
+                        s->setGurobiThreads(grb_threads_per_solver);
                     s->initializeSolver(par_);
                     whole_traj_solver_ptrs_.push_back(s);
                 }
@@ -953,15 +1037,38 @@ public:
                 pub_dgp_path_marker_ = create_publisher<visualization_msgs::msg::MarkerArray>(
                     dgp_path_topic_, 10);
 
+                // Record initial window for dynamic factor report
+                dyn_factor_case_records_.clear();
+                double initial_window_lo = factors_.empty() ? 0.0 : factors_.front();
+                double initial_window_hi = factors_.empty() ? 0.0 : factors_.back();
+
                 // Load + solve
                 loadAll();
                 solveAll();
                 writeCsv();
 
+                // Finalize factor config report
+                {
+                    DynFactorConfigReport cfg_report;
+                    cfg_report.planner_name = planner_name_;
+                    cfg_report.num_N = par_.num_N;
+                    cfg_report.initial_window_lo = initial_window_lo;
+                    cfg_report.initial_window_hi = initial_window_hi;
+                    cfg_report.csv_out = csv_out_;
+                    cfg_report.records = dyn_factor_case_records_;
+                    dyn_factor_reports_.push_back(cfg_report);
+                }
+
                 RCLCPP_INFO(get_logger(), "========================================");
                 RCLCPP_INFO(get_logger(), "Config complete! Results saved to:");
                 RCLCPP_INFO(get_logger(), "  %s", csv_out_.c_str());
                 RCLCPP_INFO(get_logger(), "========================================");
+            }
+
+            // Write factor report for this planner (all N configs)
+            if (!dyn_factor_reports_.empty())
+            {
+                writeFactorReport();
             }
         }
 
@@ -1042,10 +1149,78 @@ private:
                             r.total_traj_time_sec);
     }
 
+    // Per-thread timing breakdown for profiling multi-threaded overhead
+    struct ThreadTiming
+    {
+        double thread_start_ms{0.0};    // time from cumul_t0 to thread body start
+        double setup_ms{0.0};           // setX0 + setXf + setInitialDt + setT0 + setPolytopes
+        double generate_ms{0.0};        // generateNewTrajectory total (constraint setup + Gurobi solve)
+        double gurobi_runtime_ms{0.0};  // Gurobi's internal solve time only
+        double thread_total_ms{0.0};    // total time inside thread body
+        double factor{0.0};
+        bool success{false};
+        std::string msg;
+        // Sub-step breakdown from inside generateNewTrajectory
+        double findDT_ms{0.0};
+        double setX_ms{0.0};
+        double polytopes_ms{0.0};
+        double dynamic_ms{0.0};
+        double objective_ms{0.0};
+        double mapsize_ms{0.0};
+        double callOptimizer_ms{0.0};
+        double postsolve_ms{0.0};
+    };
+
+    void writeTimingLog(const std::string &log_path,
+                        size_t case_idx,
+                        const std::string &planner_name,
+                        double cumul_total_ms,
+                        double poll_first_ready_ms,
+                        double poll_success_ms,
+                        const std::vector<ThreadTiming> &timings)
+    {
+        // Append mode — header written once
+        bool write_header = !fs::exists(log_path) || fs::file_size(log_path) == 0;
+        std::ofstream ofs(log_path, std::ios::app);
+        if (!ofs.is_open())
+            return;
+        if (write_header)
+        {
+            ofs << "case_idx,planner,factor,success,"
+                   "thread_start_ms,setup_ms,generate_ms,gurobi_runtime_ms,thread_total_ms,"
+                   "findDT_ms,setX_ms,polytopes_ms,dynamic_ms,objective_ms,mapsize_ms,callOptimizer_ms,postsolve_ms,"
+                   "poll_first_ready_ms,poll_success_ms,cumul_total_ms\n";
+        }
+        for (const auto &t : timings)
+        {
+            ofs << case_idx << ","
+                << planner_name << ","
+                << std::fixed << std::setprecision(3)
+                << t.factor << ","
+                << (t.success ? 1 : 0) << ","
+                << t.thread_start_ms << ","
+                << t.setup_ms << ","
+                << t.generate_ms << ","
+                << t.gurobi_runtime_ms << ","
+                << t.thread_total_ms << ","
+                << t.findDT_ms << ","
+                << t.setX_ms << ","
+                << t.polytopes_ms << ","
+                << t.dynamic_ms << ","
+                << t.objective_ms << ","
+                << t.mapsize_ms << ","
+                << t.callOptimizer_ms << ","
+                << t.postsolve_ms << ","
+                << poll_first_ready_ms << ","
+                << poll_success_ms << ","
+                << cumul_total_ms << "\n";
+        }
+    }
+
     void solveAll()
     {
-        using ThreadRet = std::tuple<bool, bool, double, double, std::string>;
-        // (success, gurobi_error, per_opt_runtime_ms, factor, msg)
+        using ThreadRet = std::tuple<bool, bool, double, double, std::string, ThreadTiming>;
+        // (success, gurobi_error, per_opt_runtime_ms, factor, msg, timing)
 
         auto maxViolation = [](const LinearConstraint3D &lc, const Vec3f &p) -> double
         {
@@ -1125,6 +1300,13 @@ private:
             auto &r = results_[case_idx];
             const std::string fname = fs::path(r.file).filename().string();
 
+            // Log factor window for this case
+            if (use_dynamic_factor_ && !factors_.empty())
+            {
+                // RCLCPP_INFO(get_logger(), "[Case %zu] Factor window: [%.2f .. %.2f] (%zu factors)",
+                //             case_idx, factors_.front(), factors_.back(), factors_.size());
+            }
+
             try
             {
                 Vec3d start, goal;
@@ -1200,6 +1382,19 @@ private:
                 for (auto &s : whole_traj_solver_ptrs_)
                     s->resetToNominalState();
 
+                // Reset factor window to initial for each case (independent benchmarking)
+                if (use_dynamic_factor_)
+                {
+                    factors_.clear();
+                    int num_factors = static_cast<int>((2 * dynamic_factor_k_radius_) / par_.factor_constant_step_size) + 1;
+                    for (int i = 0; i < num_factors; i++)
+                    {
+                        double f = dynamic_factor_initial_mean_ - dynamic_factor_k_radius_ + i * par_.factor_constant_step_size;
+                        if (f >= 1.0)
+                            factors_.push_back(f);
+                    }
+                }
+
                 // Setup states
                 state A, E;
                 fillStateFromPos(A, start);
@@ -1272,304 +1467,320 @@ private:
                 }
                 else
                 {
-                    // Launch async workers
-                    std::vector<std::future<ThreadRet>> futures;
-                    futures.reserve(whole_traj_solver_ptrs_.size());
+                    // Multi-threaded solve with retry on failure (expand window)
+                    const auto cumul_t0 = steady_clock::now();
+                    bool case_solved = false;
+                    bool case_timed_out = false;
+                    size_t last_error_count = 0;
+                    size_t last_non_error_fail_count = 0;
+                    std::string last_error_msg;
+                    std::string last_non_error_msg;
+                    double final_poll_success_ms = 0.0; // clocked at the moment a solution is found
 
-                    const auto t0 = steady_clock::now();
-
-                    for (size_t i = 0; i < whole_traj_solver_ptrs_.size(); ++i)
+                    while (!case_solved && !case_timed_out && !factors_.empty())
                     {
-                        const double factor = factors_[i];
-                        auto solver = whole_traj_solver_ptrs_[i];
-
-                        futures.push_back(std::async(std::launch::async,
-                                                     [solver, &l_constraints, A, E, initial_dt, factor]() -> ThreadRet
-                                                     {
-                                                         try
-                                                         {
-                                                             solver->setX0(A);
-                                                             solver->setXf(E);
-                                                             solver->setInitialDt(initial_dt);
-                                                             solver->setT0(0.0);
-                                                             solver->setPolytopes(l_constraints);
-
-                                                             bool gurobi_error = false;
-                                                             double per_opt_runtime_ms = 0.0;
-                                                             const bool ok = solver->generateNewTrajectory(gurobi_error, per_opt_runtime_ms, factor);
-                                                             const bool success = ok && (!gurobi_error);
-
-                                                             std::string msg = success ? "SUCCESS" : (gurobi_error ? "GRB_ERROR" : "NO_SOLUTION");
-                                                             return {success, gurobi_error, per_opt_runtime_ms, factor, msg};
-                                                         }
-                                                         catch (const std::exception &e)
-                                                         {
-                                                             return {false, true, 0.0, factor, std::string("EXCEPTION: ") + e.what()};
-                                                         }
-                                                         catch (...)
-                                                         {
-                                                             return {false, true, 0.0, factor, "UNKNOWN_EXCEPTION"};
-                                                         }
-                                                     }));
-                    }
-
-                    if (planner_name_ == "dynus" || planner_name_ == "faster")
-                    {
-
-                        // Stop-at-first-success mode
-                        int success_idx = -1;
-                        size_t error_count = 0;
-                        size_t non_error_fail_count = 0;
-                        std::string last_error_msg;
-                        std::string last_non_error_msg;
-
-                        std::vector<bool> got(futures.size(), false);
-                        size_t remaining = futures.size();
-                        bool timed_out = false;
-
-                        while (remaining > 0 && success_idx < 0)
+                        // Check cumulative timeout before launching a new attempt
                         {
-                            // Check for timeout
-                            const auto elapsed = duration<double>(steady_clock::now() - t0).count();
-                            if (elapsed > per_case_timeout_sec_)
+                            double elapsed_sec = duration<double>(steady_clock::now() - cumul_t0).count();
+                            if (elapsed_sec > per_case_timeout_sec_)
                             {
-                                RCLCPP_WARN(get_logger(), "Case timeout after %.3f seconds", elapsed);
-                                timed_out = true;
-                                break;  // Exit loop, will mark as timeout below
+                                case_timed_out = true;
+                                break;
                             }
-
-                            bool progressed = false;
-                            for (size_t i = 0; i < futures.size(); ++i)
-                            {
-                                if (got[i])
-                                    continue;
-                                if (futures[i].wait_for(0ms) == std::future_status::ready)
-                                {
-                                    progressed = true;
-                                    got[i] = true;
-                                    --remaining;
-
-                                    auto [succ, gurobi_error, gurobi_ms, factor, msg] = futures[i].get();
-                                    if (!succ)
-                                    {
-                                        if (gurobi_error)
-                                        {
-                                            ++error_count;
-                                            last_error_msg = msg;
-                                        }
-                                        else
-                                        {
-                                            ++non_error_fail_count;
-                                            last_non_error_msg = msg;
-                                        }
-                                    }
-
-                                    if (succ && success_idx < 0)
-                                    {
-                                        success_idx = (int)i;
-                                        r.per_opt_runtime_ms = gurobi_ms;
-                                        r.factor_used = factor;
-
-                                        for (size_t j = 0; j < whole_traj_solver_ptrs_.size(); ++j)
-                                        {
-                                            if ((int)j == success_idx)
-                                                continue;
-                                            try
-                                            {
-                                                whole_traj_solver_ptrs_[j]->stopExecution();
-                                            }
-                                            catch (...)
-                                            {
-                                            }
-                                        }
-                                        break;
-                                    }
-                                }
-                            }
-                            if (!progressed)
-                                std::this_thread::sleep_for(1ms);
                         }
 
-                        if (timed_out)
+                        // Reset solvers before each attempt
+                        for (size_t i = 0; i < factors_.size(); ++i)
+                            whole_traj_solver_ptrs_[i]->resetToNominalState();
+
+                        // Shared state for condition-variable-based notification
+                        std::mutex cv_mtx;
+                        std::condition_variable cv_done;
+                        // completed_results[i] is set once thread i finishes
+                        std::vector<std::optional<ThreadRet>> completed_results(factors_.size(), std::nullopt);
+                        std::atomic<size_t> num_completed{0};
+
+                        // Launch async workers with current factors_
+                        const auto opt_start = steady_clock::now(); // for fair total_opt timing
+                        std::vector<std::future<void>> futures;
+                        futures.reserve(factors_.size());
+
+                        for (size_t i = 0; i < factors_.size(); ++i)
                         {
-                            for (size_t j = 0; j < futures.size(); ++j)
+                            const double factor = factors_[i];
+                            auto solver = whole_traj_solver_ptrs_[i];
+
+                            futures.push_back(std::async(std::launch::async,
+                                                         [i, solver, &l_constraints, A, E, initial_dt, factor, cumul_t0,
+                                                          &cv_mtx, &cv_done, &completed_results, &num_completed]()
+                                                         {
+                                                             ThreadTiming tt;
+                                                             tt.factor = factor;
+                                                             const auto thr_start = steady_clock::now();
+                                                             tt.thread_start_ms = 1e3 * duration<double>(thr_start - cumul_t0).count();
+
+                                                             ThreadRet ret;
+                                                             try
+                                                             {
+                                                                 solver->setX0(A);
+                                                                 solver->setXf(E);
+                                                                 solver->setInitialDt(initial_dt);
+                                                                 solver->setT0(0.0);
+                                                                 solver->setPolytopes(l_constraints);
+
+                                                                 const auto after_setup = steady_clock::now();
+                                                                 tt.setup_ms = 1e3 * duration<double>(after_setup - thr_start).count();
+
+                                                                 bool gurobi_error = false;
+                                                                 double per_opt_runtime_ms = 0.0;
+                                                                 const bool ok = solver->generateNewTrajectory(gurobi_error, per_opt_runtime_ms, factor);
+                                                                 const bool success = ok && (!gurobi_error);
+
+                                                                 const auto after_gen = steady_clock::now();
+                                                                 tt.generate_ms = 1e3 * duration<double>(after_gen - after_setup).count();
+                                                                 tt.gurobi_runtime_ms = per_opt_runtime_ms;
+                                                                 tt.thread_total_ms = 1e3 * duration<double>(after_gen - thr_start).count();
+                                                                 tt.success = success;
+                                                                 tt.msg = success ? "SUCCESS" : (gurobi_error ? "GRB_ERROR" : "NO_SOLUTION");
+
+                                                                 // Copy solver sub-step breakdown
+                                                                 const auto &sb = solver->last_solve_timing_;
+                                                                 tt.findDT_ms = sb.findDT_ms;
+                                                                 tt.setX_ms = sb.setX_ms;
+                                                                 tt.polytopes_ms = sb.polytopes_ms;
+                                                                 tt.dynamic_ms = sb.dynamic_ms;
+                                                                 tt.objective_ms = sb.objective_ms;
+                                                                 tt.mapsize_ms = sb.mapsize_ms;
+                                                                 tt.callOptimizer_ms = sb.callOptimizer_ms;
+                                                                 tt.postsolve_ms = sb.postsolve_ms;
+
+                                                                 std::string msg = tt.msg;
+                                                                 ret = {success, gurobi_error, per_opt_runtime_ms, factor, msg, tt};
+                                                             }
+                                                             catch (const std::exception &e)
+                                                             {
+                                                                 tt.thread_total_ms = 1e3 * duration<double>(steady_clock::now() - thr_start).count();
+                                                                 tt.msg = std::string("EXCEPTION: ") + e.what();
+                                                                 ret = {false, true, 0.0, factor, tt.msg, tt};
+                                                             }
+                                                             catch (...)
+                                                             {
+                                                                 tt.thread_total_ms = 1e3 * duration<double>(steady_clock::now() - thr_start).count();
+                                                                 tt.msg = "UNKNOWN_EXCEPTION";
+                                                                 ret = {false, true, 0.0, factor, tt.msg, tt};
+                                                             }
+
+                                                             // Signal completion via condition variable
+                                                             {
+                                                                 std::lock_guard<std::mutex> lk(cv_mtx);
+                                                                 completed_results[i] = std::move(ret);
+                                                                 num_completed.fetch_add(1, std::memory_order_release);
+                                                             }
+                                                             cv_done.notify_one();
+                                                         }));
+                        }
+
+                        // Collect results + timing
+                        last_error_count = 0;
+                        last_non_error_fail_count = 0;
+                        last_error_msg.clear();
+                        last_non_error_msg.clear();
+                        std::vector<ThreadTiming> attempt_timings(futures.size());
+                        double poll_first_ready_ms = 0.0;
+                        double poll_success_ms = 0.0;
+                        bool poll_first_logged = false;
+
+                        if (planner_name_ == "dynus2" || planner_name_ == "faster_star")
+                        {
+                            // Iterate futures sequentially (lowest factor first).
+                            // On first success, stop all other solvers, then drain remaining futures.
+                            // This matches the dynus.cpp live-planner pattern.
+                            int best_idx = -1;
+
+                            for (size_t i = 0; i < futures.size(); ++i)
                             {
-                                if (got[j])
+                                // Wait for this thread to complete
+                                futures[i].get();
+
+                                // Result was stored via condition variable
+                                if (!completed_results[i].has_value())
                                     continue;
+
+                                auto &[succ, gurobi_error, gurobi_ms, factor, msg, tt] = completed_results[i].value();
+                                attempt_timings[i] = tt;
+
+                                if (!poll_first_logged)
+                                {
+                                    poll_first_ready_ms = 1e3 * duration<double>(steady_clock::now() - cumul_t0).count();
+                                    poll_first_logged = true;
+                                }
+
+                                if (!succ)
+                                {
+                                    if (gurobi_error)
+                                    {
+                                        ++last_error_count;
+                                        last_error_msg = msg;
+                                    }
+                                    else
+                                    {
+                                        ++last_non_error_fail_count;
+                                        last_non_error_msg = msg;
+                                    }
+                                    continue;
+                                }
+
+                                // First success — stop all other solvers
+                                best_idx = (int)i;
+                                r.per_opt_runtime_ms = gurobi_ms;
+                                r.factor_used = factor;
+                                poll_success_ms = 1e3 * duration<double>(steady_clock::now() - opt_start).count();
+
+                                for (size_t j = 0; j < factors_.size(); ++j)
+                                {
+                                    if (j == i)
+                                        continue;
+                                    try
+                                    {
+                                        whole_traj_solver_ptrs_[j]->stopExecution();
+                                    }
+                                    catch (...)
+                                    {
+                                    }
+                                }
+                                break;
+                            }
+
+                            // Drain remaining futures so solvers can be reused
+                            for (size_t i = 0; i < futures.size(); ++i)
+                            {
+                                if (attempt_timings[i].thread_total_ms > 0.0)
+                                    continue; // already consumed
                                 try
                                 {
-                                    whole_traj_solver_ptrs_[j]->stopExecution();
+                                    futures[i].get();
+                                    if (completed_results[i].has_value())
+                                        attempt_timings[i] = std::get<5>(completed_results[i].value());
                                 }
                                 catch (...)
                                 {
                                 }
                             }
-                        }
 
-                        const auto t1 = steady_clock::now();
-                        r.total_opt_runtime_ms = 1e3 * duration<double>(t1 - t0).count();
-                        if (!timed_out && r.total_opt_runtime_ms > per_case_timeout_sec_ * 1000.0)
-                            timed_out = true;
-
-                        if (success_idx < 0)
-                        {
-                            r.success = false;
-                            const bool any_non_error_fail = (non_error_fail_count > 0);
-                            const bool only_errors = (error_count > 0 && non_error_fail_count == 0);
-
-                            // Check if timeout occurred
-                            if (timed_out)
+                            if (best_idx >= 0)
                             {
-                                r.gurobi_error = only_errors;
-                                r.status = "TIMEOUT (exceeded " + std::to_string(per_case_timeout_sec_) + "s)";
-                            }
-                            else if (any_non_error_fail)
-                            {
+                                auto &solver = whole_traj_solver_ptrs_[best_idx];
+                                solver->getTotalTrajTime(r.total_traj_time_sec);
+                                solver->fillGoalSetPoints();
+
+                                std::vector<state> goal_setpoints;
+                                solver->getGoalSetpoints(goal_setpoints);
+
+                                const auto crep = analyzeConstraintsSampled(
+                                    goal_setpoints, l_constraints, par_.dc,
+                                    par_.v_max, par_.a_max, par_.j_max);
+                                applyConstraintReport(r, crep);
+
+                                r.opt_traj_ma = stateVector2ColoredMarkerArray(
+                                    goal_setpoints,
+                                    /*type=*/1,
+                                    par_.v_max,
+                                    this->now());
+                                RCLCPP_INFO(get_logger(), "Created opt_traj_ma with %zu markers from %zu goal_setpoints",
+                                            r.opt_traj_ma.markers.size(), goal_setpoints.size());
+
+                                r.success = true;
                                 r.gurobi_error = false;
-                                r.status = "NO_SOLUTION: " + (last_non_error_msg.empty() ? "NO_SOLUTION" : last_non_error_msg);
+                                r.cost_value = solver->getObjectiveValue();
+                                r.status = "OK (factor=" + std::to_string(r.factor_used) + ")";
+                                case_solved = true;
+                                final_poll_success_ms = poll_success_ms;
+
+                                maybeDumpTrajectory(fname, goal_setpoints, r);
                             }
-                            else
+
+                            // Check cumulative timeout
                             {
-                                r.gurobi_error = only_errors;
-                                r.status = only_errors
-                                               ? ("GRB_ERROR: " + (last_error_msg.empty() ? "GRB_ERROR" : last_error_msg))
-                                               : "NO_SOLUTION";
+                                double elapsed_sec = duration<double>(steady_clock::now() - cumul_t0).count();
+                                if (elapsed_sec > per_case_timeout_sec_)
+                                    case_timed_out = true;
                             }
                         }
-                        else
+
+                        // Write timing log for this attempt
                         {
-                            auto &solver = whole_traj_solver_ptrs_[success_idx];
-                            solver->getTotalTrajTime(r.total_traj_time_sec);
-                            solver->fillGoalSetPoints();
-
-                            std::vector<state> goal_setpoints;
-                            solver->getGoalSetpoints(goal_setpoints);
-
-                            const auto crep = analyzeConstraintsSampled(
-                                goal_setpoints, l_constraints, par_.dc,
-                                par_.v_max, par_.a_max, par_.j_max);
-                            applyConstraintReport(r, crep);
-
-                            r.opt_traj_ma = stateVector2ColoredMarkerArray(goal_setpoints, /*type=*/1, par_.v_max, this->now());
-                            RCLCPP_INFO(get_logger(), "Created opt_traj_ma with %zu markers from %zu goal_setpoints",
-                                        r.opt_traj_ma.markers.size(), goal_setpoints.size());
-                            r.success = true;
-                            r.gurobi_error = false;
-                            r.cost_value = solver->getObjectiveValue();
-                            r.status = "OK (factor=" + std::to_string(r.factor_used) + ")";
-
-                            // NEW: dump trajectory
-                            maybeDumpTrajectory(fname, goal_setpoints, r);
+                            double cumul_ms = 1e3 * duration<double>(steady_clock::now() - cumul_t0).count();
+                            writeTimingLog(timing_log_path_, case_idx, planner_name_,
+                                           cumul_ms, poll_first_ready_ms, poll_success_ms,
+                                           attempt_timings);
                         }
-                        // Ensure all futures complete before reusing solver objects (avoid cross-case races).
-                        for (size_t i = 0; i < futures.size(); ++i)
+
+                        // If this attempt failed and dynamic factor is enabled, shift window and retry
+                        if (!case_solved && !case_timed_out && use_dynamic_factor_)
                         {
-                            if (got[i])
-                                continue;
-                            try
+                            // Shift window up by one step
+                            double current_max = factors_.back();
+                            if (current_max + par_.factor_constant_step_size > par_.factor_final + 1e-9)
                             {
-                                futures[i].get();
+                                // Can't shift further — give up
+                                RCLCPP_WARN(get_logger(), "[Case %zu] All factor windows exhausted up to factor_final=%.2f",
+                                            case_idx, par_.factor_final);
+                                break;
                             }
-                            catch (...)
-                            {
-                                // Ignore cleanup failures; we already captured the outcome for this case.
-                            }
+
+                            for (auto &f : factors_)
+                                f += par_.factor_constant_step_size;
+                            // Remove factors that exceed factor_final
+                            factors_.erase(
+                                std::remove_if(factors_.begin(), factors_.end(),
+                                               [this](double f) { return f > par_.factor_final + 1e-9; }),
+                                factors_.end());
+
+                            if (factors_.empty())
+                                break;
+
+                            RCLCPP_INFO(get_logger(), "[Case %zu] Retry: shifted window to [%.2f .. %.2f] (%zu factors)",
+                                        case_idx, factors_.front(), factors_.back(), factors_.size());
                         }
-                    }
-                    else if (planner_name_ == "dynus_star" || planner_name_ == "faster_star")
+                        else if (!case_solved)
+                        {
+                            // No retry for fixed-range mode or timeout
+                            break;
+                        }
+                    } // end retry while loop
+
+                    // Compute total elapsed time:
+                    // For successful cases, use final_poll_success_ms (clocked at the
+                    // moment a solution was found) so post-processing / future-draining
+                    // overhead is excluded.  For failed cases, use wall-clock to capture
+                    // the full time spent attempting all factors.
+                    r.total_opt_runtime_ms = (case_solved && final_poll_success_ms > 0.0)
+                        ? final_poll_success_ms
+                        : 1e3 * duration<double>(steady_clock::now() - cumul_t0).count();
+
+                    if (!case_solved)
                     {
-                        // Wait-for-all then pick smallest factor among successes
-                        size_t error_count = 0;
-                        size_t non_error_fail_count = 0;
-                        std::string last_error_msg;
-                        std::string last_non_error_msg;
-                        int best_idx = -1;
-                        double best_factor = std::numeric_limits<double>::infinity();
+                        r.success = false;
+                        const bool any_non_error_fail = (last_non_error_fail_count > 0);
+                        const bool only_errors = (last_error_count > 0 && last_non_error_fail_count == 0);
 
-                        for (size_t i = 0; i < futures.size(); ++i)
+                        if (case_timed_out || r.total_opt_runtime_ms > per_case_timeout_sec_ * 1000.0)
                         {
-                            auto [succ, gurobi_error, gurobi_ms, factor, msg] = futures[i].get();
-                            if (!succ)
-                            {
-                                if (gurobi_error)
-                                {
-                                    ++error_count;
-                                    last_error_msg = msg;
-                                }
-                                else
-                                {
-                                    ++non_error_fail_count;
-                                    last_non_error_msg = msg;
-                                }
-                            }
-
-                            if (succ && factor < best_factor)
-                            {
-                                best_factor = factor;
-                                best_idx = (int)i;
-                                r.per_opt_runtime_ms = gurobi_ms;
-                                r.factor_used = factor;
-                            }
+                            RCLCPP_WARN(get_logger(), "Case timeout after %.3f seconds", r.total_opt_runtime_ms / 1000.0);
+                            r.gurobi_error = only_errors;
+                            r.status = "TIMEOUT (exceeded " + std::to_string(per_case_timeout_sec_) + "s)";
                         }
-
-                        const auto t1 = steady_clock::now();
-                        r.total_opt_runtime_ms = 1e3 * duration<double>(t1 - t0).count();
-
-                        if (best_idx < 0)
+                        else if (any_non_error_fail)
                         {
-                            r.success = false;
-                            const bool any_non_error_fail = (non_error_fail_count > 0);
-                            const bool only_errors = (error_count > 0 && non_error_fail_count == 0);
-
-                            // Check if timeout occurred
-                            if (r.total_opt_runtime_ms > per_case_timeout_sec_ * 1000.0)
-                            {
-                                RCLCPP_WARN(get_logger(), "Case timeout after %.3f seconds", r.total_opt_runtime_ms / 1000.0);
-                                r.gurobi_error = only_errors;
-                                r.status = "TIMEOUT (exceeded " + std::to_string(per_case_timeout_sec_) + "s)";
-                            }
-                            else if (any_non_error_fail)
-                            {
-                                r.gurobi_error = false;
-                                r.status = "NO_SOLUTION: " + (last_non_error_msg.empty() ? "NO_SOLUTION" : last_non_error_msg);
-                            }
-                            else
-                            {
-                                r.gurobi_error = only_errors;
-                                r.status = only_errors
-                                               ? ("GRB_ERROR: " + (last_error_msg.empty() ? "GRB_ERROR" : last_error_msg))
-                                               : "NO_SOLUTION";
-                            }
+                            r.gurobi_error = false;
+                            r.status = "NO_SOLUTION: " + (last_non_error_msg.empty() ? "NO_SOLUTION" : last_non_error_msg);
                         }
                         else
                         {
-                            auto &solver = whole_traj_solver_ptrs_[best_idx];
-                            solver->getTotalTrajTime(r.total_traj_time_sec);
-                            solver->fillGoalSetPoints();
-
-                            std::vector<state> goal_setpoints;
-                            solver->getGoalSetpoints(goal_setpoints);
-
-                            const auto crep = analyzeConstraintsSampled(
-                                goal_setpoints, l_constraints, par_.dc,
-                                par_.v_max, par_.a_max, par_.j_max);
-                            applyConstraintReport(r, crep);
-
-                            r.opt_traj_ma = stateVector2ColoredMarkerArray(
-                                goal_setpoints,
-                                /*type=*/1,
-                                par_.v_max,
-                                this->now());
-                            RCLCPP_INFO(get_logger(), "Created opt_traj_ma with %zu markers from %zu goal_setpoints",
-                                        r.opt_traj_ma.markers.size(), goal_setpoints.size());
-
-                            r.success = true;
-                            r.gurobi_error = false;
-                            r.cost_value = solver->getObjectiveValue();
-                            r.status = "OK (factor=" + std::to_string(r.factor_used) + ")";
-
-                            // NEW: dump trajectory
-                            maybeDumpTrajectory(fname, goal_setpoints, r);
+                            r.gurobi_error = only_errors;
+                            r.status = only_errors
+                                           ? ("GRB_ERROR: " + (last_error_msg.empty() ? "GRB_ERROR" : last_error_msg))
+                                           : "NO_SOLUTION";
                         }
                     }
                 }
@@ -1580,10 +1791,21 @@ private:
                 r.status = std::string("EXCEPTION: ") + e.what();
             }
 
+            // Record for factor report (always, not just dynamic factor mode)
+            {
+                DynFactorCaseRecord rec;
+                rec.case_idx = case_idx;
+                rec.success = r.success;
+                rec.factor_used = r.factor_used;
+                rec.window_lo = factors_.empty() ? 0.0 : factors_.front();
+                rec.window_hi = factors_.empty() ? 0.0 : factors_.back();
+                dyn_factor_case_records_.push_back(rec);
+            }
+
             // Publish visualization immediately if enabled
             if (visualize_)
             {
-                RCLCPP_INFO(get_logger(), "Publishing case %zu (visualize enabled)", case_idx);
+                // RCLCPP_INFO(get_logger(), "Publishing case %zu (visualize enabled)", case_idx);
                 publishCase(case_idx);
                 rclcpp::spin_some(this->get_node_base_interface());  // process callbacks
 
@@ -1594,10 +1816,10 @@ private:
                         std::chrono::duration<double>(solve_delay_sec_));
                 }
             }
-            else
-            {
-                RCLCPP_INFO(get_logger(), "Case %zu done (visualize disabled)", case_idx);
-            }
+            // else
+            // {
+            //     RCLCPP_INFO(get_logger(), "Case %zu done (visualize disabled)", case_idx);
+            // }
         }
     }
 
@@ -1667,6 +1889,91 @@ private:
 
         ofs.flush();
         RCLCPP_INFO(get_logger(), "Wrote CSV: %s", csv_out_.c_str());
+    }
+
+    void writeFactorReport() const
+    {
+        // Write to benchmark_data/<planner>_factor_report.txt
+        std::string report_path = "/home/kkondo/code/dynus_ws/src/dynus/benchmark_data/"
+                                  + dyn_factor_reports_.front().planner_name
+                                  + "_factor_report.txt";
+
+        std::ofstream ofs(report_path);
+        if (!ofs)
+        {
+            RCLCPP_WARN(get_logger(), "Failed to open factor report: %s", report_path.c_str());
+            return;
+        }
+
+        for (const auto &cfg : dyn_factor_reports_)
+        {
+            ofs << "=== " << cfg.planner_name << " N=" << cfg.num_N
+                << " (initial: [" << std::fixed << std::setprecision(2)
+                << cfg.initial_window_lo << " .. " << cfg.initial_window_hi
+                << "], output " << cfg.csv_out << ") ===\n";
+
+            if (use_dynamic_factor_)
+            {
+                ofs << "  Case    Result    Factor      Window After\n";
+            }
+            else
+            {
+                ofs << "  Case    Result    Factor\n";
+            }
+            ofs << "--------------------------------------------------\n";
+
+            int success_count = 0;
+            int fail_count = 0;
+            double factor_min = std::numeric_limits<double>::max();
+            double factor_max = 0.0;
+            double factor_sum = 0.0;
+
+            for (const auto &rec : cfg.records)
+            {
+                ofs << std::setw(6) << rec.case_idx << "   ";
+                if (rec.success)
+                {
+                    ofs << "SUCCESS   " << std::fixed << std::setprecision(2)
+                        << std::setw(8) << rec.factor_used;
+                    if (use_dynamic_factor_)
+                    {
+                        ofs << "  [" << rec.window_lo << " .. " << rec.window_hi << "]";
+                    }
+                    ofs << "\n";
+                    success_count++;
+                    factor_min = std::min(factor_min, rec.factor_used);
+                    factor_max = std::max(factor_max, rec.factor_used);
+                    factor_sum += rec.factor_used;
+                }
+                else
+                {
+                    ofs << "   FAIL      --";
+                    if (use_dynamic_factor_)
+                    {
+                        ofs << "    ["
+                            << std::fixed << std::setprecision(2)
+                            << rec.window_lo << " .. " << rec.window_hi << "]";
+                    }
+                    ofs << "\n";
+                    fail_count++;
+                }
+            }
+
+            int total = success_count + fail_count;
+            ofs << "\nTotal: " << total << " cases, "
+                << success_count << " success, " << fail_count << " fail\n";
+            if (success_count > 0)
+            {
+                ofs << "Factor range used: ["
+                    << std::fixed << std::setprecision(2)
+                    << factor_min << ", " << factor_max
+                    << "], mean=" << (factor_sum / success_count) << "\n";
+            }
+            ofs << "\n\n";
+        }
+
+        ofs.flush();
+        RCLCPP_INFO(get_logger(), "Wrote factor report: %s", report_path.c_str());
     }
 
     void publishCase(size_t idx)
@@ -1750,7 +2057,7 @@ private:
     }
 
 private:
-    std::string planner_name_{"dynus"};
+    std::string planner_name_{"dynus2"};
 
     // I/O
     std::string sfc_dir_;
@@ -1760,6 +2067,7 @@ private:
     std::string traj_committed_topic_;
     std::string dgp_path_topic_;
     std::string csv_out_;
+    std::string timing_log_path_;
 
     bool use_single_threaded_{false};
 
@@ -1778,6 +2086,15 @@ private:
 
     std::vector<double> factors_;
     std::vector<std::shared_ptr<SolverGurobi>> whole_traj_solver_ptrs_;
+
+    bool use_dynamic_factor_{false};
+    double dynamic_factor_k_radius_{0.4};
+    double dynamic_factor_initial_mean_{0.0};
+    bool dynamic_factor_initial_success_{false};
+
+    // Dynamic factor report accumulation (across N configs for same planner)
+    std::vector<DynFactorConfigReport> dyn_factor_reports_;
+    std::vector<DynFactorCaseRecord> dyn_factor_case_records_;
 
     double poly_seed_eps_{1e-6};
     bool debug_poly_check_{true};

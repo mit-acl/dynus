@@ -44,10 +44,25 @@ protected:
 class SolverGurobi
 {
 public:
+    // Sub-step timing breakdown from last generateNewTrajectory call (ms)
+    struct SolveTimingBreakdown
+    {
+        double findDT_ms{0.0};
+        double setX_ms{0.0};
+        double polytopes_ms{0.0};
+        double dynamic_ms{0.0};
+        double objective_ms{0.0};
+        double mapsize_ms{0.0};
+        double callOptimizer_ms{0.0};
+        double postsolve_ms{0.0};
+    };
+    SolveTimingBreakdown last_solve_timing_;
+
     SolverGurobi();
     ~SolverGurobi();
 
     void setPlannerName(const std::string &name);
+    void setGurobiThreads(int num_threads);
     void initializeSolver(const parameters &par);
     void setX0(const state &data);
     void setT0(double t0);
@@ -217,6 +232,7 @@ protected:
     void setXFaster_();
     void getCoefficientsDoubleFaster_();
     void setDynamicConstraintsFaster_();
+    void setDynamicConstraintsSafeFaster_();
     const LinearConstraint3D &polyAt_(int t, int p) const;
     bool hasPolytopes_() const;
     int numSpatialPolys_() const;
@@ -257,14 +273,20 @@ protected:
 
     int N_of_polytopes_ = 3;
 
-    GRBEnv *env = []() {
-      GRBEnv *e = new GRBEnv(true);   // start with empty env
-      e->set(GRB_IntParam_OutputFlag, 0);
-      e->set(GRB_IntParam_LogToConsole, 0);
-      e->start();                      // start env (suppresses license banner)
+    // Shared Gurobi environment (singleton) — avoids repeated license token
+    // acquisition when multiple SolverGurobi instances are created.
+    // Thread-safe initialization via C++11 static local.
+    static GRBEnv* getSharedEnv() {
+      static GRBEnv* e = []() {
+        GRBEnv* env = new GRBEnv(true);
+        env->set(GRB_IntParam_OutputFlag, 0);
+        env->set(GRB_IntParam_LogToConsole, 0);
+        env->start();
+        return env;
+      }();
       return e;
-    }();
-    GRBModel m_ = GRBModel(*env);
+    }
+    GRBModel m_ = GRBModel(*getSharedEnv());
 
     std::vector<GRBConstr> at_least_1_pol_cons_;    // Constraints at least in one polytope
     std::vector<GRBConstr> polytopes_cons_;         // for DYNUS

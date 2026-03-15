@@ -24,6 +24,8 @@ def generate_launch_description():
     c_num = LaunchConfiguration('c_num', default=0)
     p_num = LaunchConfiguration('p_num', default=10)
     min_dist = LaunchConfiguration('min_dist', default=2.0)
+    lower_rad = LaunchConfiguration('lower_rad', default=0.8)
+    upper_rad = LaunchConfiguration('upper_rad', default=0.8)
     odometry_topic = LaunchConfiguration('odometry_topic', default='visual_slam/odom')
 
     # DeclareLaunchArguments
@@ -37,6 +39,8 @@ def generate_launch_description():
     c_num_arg = DeclareLaunchArgument('c_num', default_value=c_num, description='Circle number')
     p_num_arg = DeclareLaunchArgument('p_num', default_value=p_num, description='Polygon number')
     min_dist_arg = DeclareLaunchArgument('min_dist', default_value=min_dist, description='Minimum distance')
+    lower_rad_arg = DeclareLaunchArgument('lower_rad', default_value=lower_rad, description='Obstacle lower radius')
+    upper_rad_arg = DeclareLaunchArgument('upper_rad', default_value=upper_rad, description='Obstacle upper radius')
     odometry_topic_arg = DeclareLaunchArgument('odometry_topic', default_value=odometry_topic, description='Odometry topic')
 
     # 地图属性以及是否使用动力学仿真
@@ -62,8 +66,8 @@ def generate_launch_description():
             {'map/resolution': 0.1},
             {'ObstacleShape/seed': 0},
             {'map/obs_num': p_num},
-            {'ObstacleShape/lower_rad': 0.8},
-            {'ObstacleShape/upper_rad': 0.8},
+            {'ObstacleShape/lower_rad': lower_rad},
+            {'ObstacleShape/upper_rad': upper_rad},
             {'ObstacleShape/lower_hei': 3.0},
             {'ObstacleShape/upper_hei': 3.0},
             {'map/circle_num': c_num},
@@ -121,6 +125,8 @@ def generate_launch_description():
     ld.add_action(c_num_arg)
     ld.add_action(p_num_arg)
     ld.add_action(min_dist_arg)
+    ld.add_action(lower_rad_arg)
+    ld.add_action(upper_rad_arg)
     ld.add_action(odometry_topic_arg)
     ld.add_action(use_mockamap_arg)
     ld.add_action(use_dynamic_arg)

@@ -4,14 +4,17 @@ windows:
     layout: tiled
     shell_command_before:
       - export ROS_DOMAIN_ID=20
-    
+
     panes:
-      # base station
-      # - shell_command:
+      # fixed obstacles publisher
       - shell_command:
-        - ros2 launch dynus simulator.launch.py
+        - python3 src/dynus/scripts/fixed_obstacles_publisher.py
+
+      # rviz
+      - shell_command:
+        - rviz2 -d src/dynus/rviz/dynus.rviz
 
       # run SFC generator
       - shell_command:
-        - sleep 5
-        - ros2 run dynus corridor_generator_node --ros-args -p max_dist_vertexes:=6.0
+        - sleep 3
+        - ros2 run dynus corridor_generator_node --ros-args -p max_dist_vertexes:=3.0 -p num_P:=3 -p global_planner:=astar_heat -p global_planner_huristic_weight:=2.0

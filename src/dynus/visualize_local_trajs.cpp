@@ -666,31 +666,35 @@ static bool parseTrajCsv(const fs::path &csv_path, TrajCsv &out)
 
 static inline std::string prettyPlannerName(const std::string &planner_key)
 {
-    // DYNUS
-    if (planner_key == "dynus_N4")
-        return "DYNUS(N=4)";
-    if (planner_key == "dynus_N5")
-        return "DYNUS(N=5)";
-    if (planner_key == "dynus_N6")
-        return "DYNUS(N=6)";
+    // DYNUS2
+    if (planner_key == "dynus_N4" || planner_key == "dynus2_N4")
+        return "DYNUS2(N=4)";
+    if (planner_key == "dynus_N5" || planner_key == "dynus2_N5")
+        return "DYNUS2(N=5)";
+    if (planner_key == "dynus_N6" || planner_key == "dynus2_N6")
+        return "DYNUS2(N=6)";
 
-    // FASTER (original)
+    // Orig. FASTER
     if (planner_key == "original_faster_N4")
-        return "FASTER(N=4)";
+        return "Orig.FASTER(N=4)";
     if (planner_key == "original_faster_N5")
-        return "FASTER(N=5)";
+        return "Orig.FASTER(N=5)";
     if (planner_key == "original_faster_N6")
-        return "FASTER(N=6)";
+        return "Orig.FASTER(N=6)";
 
     // SUPER
     if (planner_key == "super_l2")
         return "SUPER(L2)";
     if (planner_key == "super_linf")
-        return "SUPER(L-inf)";
+        return "SUPER";
 
-    // Skip safe_faster trajectories by returning empty string
-    if (planner_key.find("safe_faster") != std::string::npos)
-        return "";
+    // CP FASTER
+    if (planner_key == "safe_faster_N4")
+        return "CP-FASTER(N=4)";
+    if (planner_key == "safe_faster_N5")
+        return "CP-FASTER(N=5)";
+    if (planner_key == "safe_faster_N6")
+        return "CP-FASTER(N=6)";
 
     return planner_key;
 }
@@ -730,7 +734,7 @@ static void appendStartOnce(
         mk.scale.x = start_goal_point_scale * point_diam;
         mk.scale.y = start_goal_point_scale * point_diam;
         mk.scale.z = start_goal_point_scale * point_diam;
-        mk.color = makeColor(1.0f, 1.0f, 1.0f, 0.85f);
+        mk.color = makeColor(0.0f, 0.0f, 0.0f, 0.85f);
         arr.markers.push_back(mk);
     }
     // Start text
@@ -742,7 +746,7 @@ static void appendStartOnce(
         mk.pose.position.y = start_pt.y + start_text_dy;
         mk.pose.position.z = start_pt.z + start_text_dz + label_z_offset * 0.0; // keep same convention
         mk.scale.z = start_goal_text_scale * label_height;
-        mk.color = makeColor(1.0f, 1.0f, 1.0f, 1.0f);
+        mk.color = makeColor(0.0f, 0.0f, 0.0f, 1.0f);
         mk.text = "start";
         arr.markers.push_back(mk);
     }
@@ -911,8 +915,8 @@ static void appendTrajOverlayMarkers(
         const std::string base_ns = ns_prefix.empty() ? "start_goal" : (ns_prefix + "/start_goal");
         const std::string base_ns_text = ns_prefix.empty() ? "start_goal_text" : (ns_prefix + "/start_goal_text");
 
-        const auto col_sg_pt = makeColor(1.0f, 1.0f, 1.0f, 0.85f);
-        const auto col_sg_text = makeColor(1.0f, 1.0f, 1.0f, 1.0f);
+        const auto col_sg_pt = makeColor(0.0f, 0.0f, 0.0f, 0.85f);
+        const auto col_sg_text = makeColor(0.0f, 0.0f, 0.0f, 1.0f);
 
         // Start sphere
         {
@@ -947,8 +951,8 @@ static void appendTrajOverlayMarkers(
         const std::string base_ns = ns_prefix.empty() ? "goal" : (ns_prefix + "/goal");
         const std::string base_ns_text = ns_prefix.empty() ? "goal_text" : (ns_prefix + "/goal_text");
 
-        const auto col_pt = makeColor(1.0f, 1.0f, 1.0f, 0.85f);
-        const auto col_text = makeColor(1.0f, 1.0f, 1.0f, 1.0f);
+        const auto col_pt = makeColor(0.0f, 0.0f, 0.0f, 0.85f);
+        const auto col_text = makeColor(0.0f, 0.0f, 0.0f, 1.0f);
 
         // Goal sphere
         {
@@ -1172,9 +1176,10 @@ public:
         visualize_ = declare_parameter<bool>("visualize", true);
 
         // Mode
-        mode_ = toLower(declare_parameter<std::string>("mode", "loop")); // "loop" or "screenshot"
+        mode_ = toLower(declare_parameter<std::string>("mode", "loop")); // "loop", "screenshot", or "single"
         screenshot_stride_ = declare_parameter<int>("screenshot_stride", 10);
         screenshot_max_index_ = declare_parameter<int>("screenshot_max_index", 100);
+        single_case_index_ = declare_parameter<int>("single_case_index", 0);
 
         // What to show
         show_guide_path_ = declare_parameter<bool>("show_guide_path", true);
@@ -1264,11 +1269,37 @@ public:
         else if (mode_ == "screenshot")
         {
             RCLCPP_INFO(get_logger(), "Mode=screenshot. Publishing sampled cases overlay.");
-            publishScreenshotOverlay();
+            // Publish once after a short delay to let subscribers connect,
+            // then republish periodically so late-joining RViz still sees it.
+            screenshot_timer_ = create_wall_timer(std::chrono::seconds(2),
+                [this]()
+                {
+                    publishScreenshotOverlay();
+                    RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 10000,
+                                         "Screenshot overlay re-published.");
+                });
+        }
+        else if (mode_ == "single")
+        {
+            const size_t idx = static_cast<size_t>(std::max(0, single_case_index_));
+            if (idx >= cases_.size())
+            {
+                RCLCPP_ERROR(get_logger(), "single_case_index=%d but only %zu cases loaded.", single_case_index_, cases_.size());
+                return;
+            }
+            RCLCPP_INFO(get_logger(), "Mode=single. Publishing case %zu (%s).", idx, cases_[idx].case_file.c_str());
+            // Republish periodically so late-joining RViz sees it
+            screenshot_timer_ = create_wall_timer(std::chrono::seconds(2),
+                [this, idx]()
+                {
+                    publishCase(idx);
+                    RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 10000,
+                                         "Single case %zu re-published.", idx);
+                });
         }
         else
         {
-            RCLCPP_ERROR(get_logger(), "Unknown mode: '%s'. Use mode:=loop or mode:=screenshot", mode_.c_str());
+            RCLCPP_ERROR(get_logger(), "Unknown mode: '%s'. Use mode:=loop, screenshot, or single", mode_.c_str());
         }
     }
 
@@ -1713,6 +1744,7 @@ private:
     std::string mode_{"loop"};
     int screenshot_stride_{10};
     int screenshot_max_index_{100};
+    int single_case_index_{0};
 
     bool show_guide_path_{true};
     bool show_points_{true};
@@ -1742,6 +1774,7 @@ private:
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_traj_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_guide_path_;
     rclcpp::TimerBase::SharedPtr timer_;
+    rclcpp::TimerBase::SharedPtr screenshot_timer_;
 };
 
 int main(int argc, char **argv)

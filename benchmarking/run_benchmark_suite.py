@@ -10,9 +10,9 @@ This script:
 Usage:
     python3 run_benchmark_suite.py [--factor-determination] [--ve-comparison]
 
-    --factor-determination: Run DYNUS single-threaded with wide factor ranges
+    --factor-determination: Run DYNUS2 single-threaded with wide factor ranges
                            to determine optimal min/max factors for each N
-    --ve-comparison: Run multi-threaded DYNUS with and without variable elimination
+    --ve-comparison: Run multi-threaded DYNUS2 with and without variable elimination
                     to compare performance. Results saved to ve_benchmark/ folder.
 """
 
@@ -28,37 +28,52 @@ from pathlib import Path
 WORKSPACE_DIR = Path("/home/kkondo/code/dynus_ws")
 PACKAGE_NAME = "dynus"
 
-# Factor ranges for each N (normal mode)
-FACTOR_INITIAL = {4: 2.2, 5: 1.7, 6: 1.5}
-FACTOR_FINAL = {4: 3.8, 5: 2.2, 6: 1.9}
+# Factor ranges for each N (normal mode - fixed range)
+FACTOR_INITIAL = {4: 1.0, 5: 1.0, 6: 1.0}
+FACTOR_FINAL = {4: 5.0, 5: 5.0, 6: 5.0}
 
 # Wide factor ranges for determination mode
 FACTOR_INITIAL_WIDE = {4: 1.0, 5: 1.0, 6: 1.0}
 FACTOR_FINAL_WIDE = {4: 5.0, 5: 5.0, 6: 5.0}
 
+# Dynamic k-factor window parameters (for DYNUS2)
+DYNAMIC_FACTOR_INITIAL_MEAN = {4: 1.5, 5: 1.5, 6: 1.5}
+DYNAMIC_FACTOR_K_RADIUS = 0.4
 
-def get_benchmark_configs(factor_determination=False, ve_comparison=False):
+
+def get_benchmark_configs(factor_determination=False, ve_comparison=False, only_dynus2=False, only_dynus_single=False, safe_faster_only=False):
     """Get benchmark configurations based on mode
 
     Returns list of tuples: (use_single_threaded, planner_name, num_N_list, description, use_var_elim)
     """
-    if factor_determination:
-        # Only run DYNUS single-threaded for factor determination
+    if safe_faster_only:
         return [
-            (True, "dynus", [4, 5, 6], "DYNUS single-threaded (N=4,5,6) - Factor Determination", True),
+            (True, "safe_faster", [4, 5, 6], "Safe FASTER single-threaded (N=4,5,6)", False),
+        ]
+    elif only_dynus_single:
+        return [
+            (True, "dynus2", [4, 5, 6], "DYNUS2 single-threaded (N=4,5,6)", True),
+        ]
+    elif only_dynus2:
+        return [
+            (False, "dynus2", [4, 5, 6], "DYNUS2 multi-threaded (N=4,5,6)", True),
+        ]
+    elif factor_determination:
+        # Only run DYNUS2 single-threaded for factor determination
+        return [
+            (True, "dynus2", [4, 5, 6], "DYNUS2 single-threaded (N=4,5,6) - Factor Determination", True),
         ]
     elif ve_comparison:
-        # Variable elimination comparison mode - multi-threaded DYNUS only
+        # Variable elimination comparison mode - multi-threaded DYNUS2 only
         return [
-            (False, "dynus", [4, 5, 6], "DYNUS multi-threaded (N=4,5,6) WITH variable elimination", True),
-            (False, "dynus", [4, 5, 6], "DYNUS multi-threaded (N=4,5,6) WITHOUT variable elimination", False),
+            (False, "dynus2", [4, 5, 6], "DYNUS2 multi-threaded (N=4,5,6) WITH variable elimination", True),
+            (False, "dynus2", [4, 5, 6], "DYNUS2 multi-threaded (N=4,5,6) WITHOUT variable elimination", False),
         ]
     else:
         # Normal full benchmark suite
         return [
-            (False, "dynus", [4, 5, 6], "DYNUS multi-threaded (N=4,5,6)", True),
-            (True, "dynus", [4, 5, 6], "DYNUS single-threaded (N=4,5,6)", True),
-            (True, "faster", [4, 5, 6], "FASTER (safe) single-threaded (N=4,5,6)", False),
+            (False, "dynus2", [4, 5, 6], "DYNUS2 multi-threaded (N=4,5,6)", True),
+            (True, "dynus2", [4, 5, 6], "DYNUS2 single-threaded (N=4,5,6)", True),
             (True, "original_faster", [4, 5, 6], "FASTER (original) single-threaded (N=4,5,6)", False),
         ]
 
@@ -73,14 +88,22 @@ def source_workspace():
     return str(setup_file)
 
 
-def launch_simulator():
-    """Launch the simulator in the background"""
+def launch_simulator(visualize=False):
+    """Launch the fixed obstacles publisher (+ RViz if visualize=True) in the background"""
     print("\n" + "="*80)
-    print("Starting Simulator")
+    if visualize:
+        print("Starting Fixed Obstacles Publisher + RViz")
+    else:
+        print("Starting Fixed Obstacles Publisher")
     print("="*80)
 
     setup_file = source_workspace()
-    cmd = f"source {setup_file} && ros2 launch dynus simulator.launch.py"
+    obstacles_script = WORKSPACE_DIR / "src" / "dynus" / "scripts" / "fixed_obstacles_publisher.py"
+    cmd = f"source {setup_file} && python3 {obstacles_script} & "
+    if visualize:
+        rviz_config = WORKSPACE_DIR / "src" / "dynus" / "rviz" / "dynus.rviz"
+        cmd += f"rviz2 -d {rviz_config} & "
+    cmd += "wait"
 
     proc = subprocess.Popen(
         cmd,
@@ -92,7 +115,7 @@ def launch_simulator():
         preexec_fn=os.setsid
     )
 
-    print("Waiting for simulator to initialize...")
+    print("Waiting for obstacles publisher to initialize...")
     time.sleep(3)
 
     return proc
@@ -104,6 +127,9 @@ def run_benchmark(use_single_threaded, planner_name, num_N_list, description,
     print("\n" + "="*80)
     print(f"Running: {description}")
     print("="*80)
+
+    # Determine if this planner uses dynamic k-factor
+    use_dynamic_factor = planner_name in ("dynus2", "faster_star")
 
     # Choose factor ranges based on mode
     if factor_determination:
@@ -120,6 +146,7 @@ def run_benchmark(use_single_threaded, planner_name, num_N_list, description,
     print(f"\nPlanner: {planner_name}")
     print(f"  Variable elimination: {use_var_elim}")
     print(f"  Threading: {'single' if use_single_threaded else 'multi'}")
+    print(f"  Dynamic k-factor: {use_dynamic_factor}")
 
     # Build factor lists
     factor_initial_list = [factor_initial_dict[n] for n in num_N_list]
@@ -149,6 +176,11 @@ def run_benchmark(use_single_threaded, planner_name, num_N_list, description,
     else:
         output_dir_override = ""
 
+    # Build dynamic factor parameters
+    if use_dynamic_factor:
+        dynamic_initial_mean_list = [DYNAMIC_FACTOR_INITIAL_MEAN[n] for n in num_N_list]
+        dynamic_initial_mean_str = list_to_yaml(dynamic_initial_mean_list)
+
     cmd = [
         "ros2", "launch", PACKAGE_NAME, "local_traj_benchmark.launch.py",
         f"use_single_threaded:={str(use_single_threaded).lower()}",
@@ -157,13 +189,19 @@ def run_benchmark(use_single_threaded, planner_name, num_N_list, description,
         f"'factor_initial_list:={factor_initial_str}'",
         f"'factor_final_list:={factor_final_str}'",
         f"using_variable_elimination:={use_var_elim_str}",
-        "visualize:=true",
+        f"use_dynamic_factor:={str(use_dynamic_factor).lower()}",
+        "visualize:=false",
         "solve_delay_sec:=0.05",
         "playback_period_sec:=0.0",
         f"per_case_timeout_sec:={timeout_sec}",
-        "max_gurobi_comp_time_sec:=10.0",
+        "max_gurobi_comp_time_sec:=1.0",
         "factor_constant_step_size:=0.1",
     ]
+
+    # Add dynamic factor params when using dynamic k-factor
+    if use_dynamic_factor:
+        cmd.append(f"'dynamic_factor_initial_mean_list:={dynamic_initial_mean_str}'")
+        cmd.append(f"dynamic_factor_k_radius:={DYNAMIC_FACTOR_K_RADIUS}")
 
     # Add output directory override if specified
     if output_dir_override:
@@ -276,11 +314,18 @@ def main():
                        help='Run factor determination mode (DYNUS single-threaded with wide ranges)')
     parser.add_argument('--ve-comparison', action='store_true',
                        help='Run variable elimination comparison mode (DYNUS multi-threaded with/without VE)')
+    parser.add_argument('--only-dynus2', action='store_true',
+                       help='Run only DYNUS2 (dynamic k-factor) multi-threaded benchmark')
+    parser.add_argument('--only-dynus-single', action='store_true',
+                       help='Run only DYNUS2 single-threaded benchmark')
+    parser.add_argument('--safe-faster-only', action='store_true',
+                       help='Run only Safe FASTER single-threaded benchmark')
     args = parser.parse_args()
 
     # Check for conflicting modes
-    if args.factor_determination and args.ve_comparison:
-        print("ERROR: Cannot specify both --factor-determination and --ve-comparison")
+    mode_count = sum([args.factor_determination, args.ve_comparison, args.only_dynus2, args.only_dynus_single, args.safe_faster_only])
+    if mode_count > 1:
+        print("ERROR: Cannot specify more than one mode flag")
         sys.exit(1)
 
     print("\n" + "="*80)
@@ -289,10 +334,16 @@ def main():
         print("MODE: Factor Determination")
     elif args.ve_comparison:
         print("MODE: Variable Elimination Comparison")
+    elif args.only_dynus2:
+        print("MODE: DYNUS2 Only")
+    elif args.only_dynus_single:
+        print("MODE: DYNUS2 Single-Threaded Only")
+    elif args.safe_faster_only:
+        print("MODE: Safe FASTER Only")
     print("="*80)
     print(f"\nWorkspace: {WORKSPACE_DIR}")
 
-    configs = get_benchmark_configs(args.factor_determination, args.ve_comparison)
+    configs = get_benchmark_configs(args.factor_determination, args.ve_comparison, args.only_dynus2, args.only_dynus_single, args.safe_faster_only)
     print(f"Total configurations: {len(configs)}")
 
     # Check workspace

@@ -55,7 +55,7 @@ dynus_node:
         use_free_goal: false                                    # [-] Use free goal for the DGP
         free_goal_factor: 2.0                                   # [-] Factor for the free goal
         global_planner_huristic_weight: 2.0         # [-] Weight for the heuristic in the global planner
-        heat_weight: 5.0                           # [-] Weight for the heat in the global planner
+        heat_weight: 10.0                           # [-] Weight for the heat in the global planner
         max_dist_vertexes: 1.0                      # [m] Maximum distance between two consecutive vertexes
         w_unknown: 0.0                              # [-] Weight for the unknown cells in the global planner
         w_align: 0.0                               # [-] Weight for the alignment with the initial velocity in the global planner
@@ -109,12 +109,12 @@ dynus_node:
         # Optimization parameters
         horizon: 15.0                               # [m] Horizon
         dc: 0.01                                    # [s] Duration for the interpolation=Value of the timer pubGoal
-        dynamic_constraint_type: "Linf"               # [-] Constraint type: "Linf" (per-axis |v|≤vmax), "L2" (||v||₂≤vmax), "L1" (||v||₁≤vmax)
-        v_max: 2.5                                  # [m/s]  max velocity
+        dynamic_constraint_type: "Linf"             # [-] Constraint type: "Linf" (per-axis |v|≤vmax), "L2" (||v||₂≤vmax), "L1" (||v||₁≤vmax)
+        v_max: 5.0                                  # [m/s]  max velocity
         a_max: 20.0                                 # [m/s2] max acceleration
-        j_max: 100.0                                 # [m/s3] max jerk
+        j_max: 100.0                                # [m/s3] max jerk
         drone_bbox: [0.2, 0.2, 0.2]                 # [m] Size of the bounding box for the obstacles
-        goal_radius: 0.5                           # [m] Radius of the goal
+        goal_radius: 0.5                            # [m] Radius of the goal
         goal_seen_radius: 2.0                       # [m] Radius of the goal that the drone can see and stop replanning. Note that if this number is too small, the trajectory planning becomes extremely difficult.
         
         # DYNUS specific parameters
@@ -128,7 +128,7 @@ dynus_node:
         factor_constant_step_size: 0.1          # [-] Step size for the constant factor increase
         obst_max_vel: 0.5                         # [m/s] Maximum velocity of the dynamic obstacles
         obst_position_error: 0.0                  # [m] Bounded position estimation error for dynamic obstacles
-        inflate_unknown_voxels: true              # [bool] Inflate unknown voxel boundaries in SFC corridor generation
+        inflate_unknown_boundary: true              # [bool] Inflate unknown voxel boundaries in SFC corridor generation
         max_gurobi_comp_time_sec: 1.0            # [s] Maximum Gurobi computation time per replanning
         jerk_smooth_weight: 1.0e+1                # [-] Weight for the jerk smoothness
 

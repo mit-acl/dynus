@@ -47,6 +47,52 @@ from std_msgs.msg import Empty
 from dynus_interfaces.msg import DynTraj, State, Goal
 
 
+def update_num_p_in_yaml(yaml_path: str, num_p: int):
+    """Update the num_P parameter in a dynus.yaml file using text replacement.
+
+    This preserves comments and formatting by doing a regex substitution
+    rather than re-serializing the YAML.
+
+    Args:
+        yaml_path: Path to dynus.yaml config file
+        num_p: New value for num_P
+    """
+    import re
+    with open(yaml_path, 'r') as f:
+        content = f.read()
+
+    # Replace num_P value while preserving the comment
+    new_content = re.sub(
+        r'(num_P:\s*)\d+',
+        rf'\g<1>{num_p}',
+        content
+    )
+
+    with open(yaml_path, 'w') as f:
+        f.write(new_content)
+
+    print(f"Updated num_P to {num_p} in {yaml_path}")
+
+
+def set_num_p_everywhere(num_p: int):
+    """Update num_P in both src and install copies of dynus.yaml.
+
+    Args:
+        num_p: New value for num_P
+    """
+    script_dir = Path(__file__).parent
+    src_yaml = script_dir.parent / "config" / "dynus.yaml"
+    # Find the install yaml relative to the workspace
+    ws_dir = script_dir.parent.parent.parent  # dynus_ws
+    install_yaml = ws_dir / "install" / "dynus" / "share" / "dynus" / "config" / "dynus.yaml"
+
+    for yaml_path in [src_yaml, install_yaml]:
+        if yaml_path.exists():
+            update_num_p_in_yaml(str(yaml_path), num_p)
+        else:
+            print(f"Warning: {yaml_path} not found, skipping")
+
+
 def load_dynus_params_from_yaml(yaml_path: str) -> dict:
     """Load DYNUS parameters from dynus.yaml
 
@@ -1107,6 +1153,15 @@ def main():
         help='Environment name override for gazebo mode (default: auto-mapped from case)'
     )
 
+    parser.add_argument(
+        '--num-p-values',
+        type=int,
+        nargs='+',
+        default=None,
+        help='List of num_P values to sweep over (e.g., --num-p-values 2 3). '
+             'Creates P_<N> subfolders in the output directory for each value.'
+    )
+
     args = parser.parse_args()
 
     # Map cases to obstacle counts
@@ -1129,6 +1184,9 @@ def main():
     else:
         cases_to_run = [c for c in args.cases if c != 'all']
 
+    # Determine num_P sweep values (default: no sweep, use whatever is in dynus.yaml)
+    num_p_values = args.num_p_values if args.num_p_values else [None]
+
     print(f"\n{'='*80}")
     print("DYNUS BENCHMARK")
     print(f"{'='*80}")
@@ -1136,128 +1194,170 @@ def main():
     print(f"Mode: {args.mode}")
     print(f"Cases to run: {', '.join(cases_to_run)}")
     print(f"Number of trials per case: {args.num_trials}")
+    if args.num_p_values:
+        print(f"num_P sweep: {args.num_p_values}")
     if args.mode == 'rviz-only':
         print(f"Dynamic ratio: {args.dynamic_ratio}")
     print(f"Timeout: {args.timeout}s")
     print(f"{'='*80}\n")
 
-    # Run benchmarks for each case
-    for case in cases_to_run:
-        # Determine obstacle count, environment, and trajs_topic for this case
-        trajs_topic = '/trajs'  # default
+    # Read original num_P so we can restore it after the sweep
+    original_num_p = None
+    if args.num_p_values:
+        src_yaml = Path(__file__).parent.parent / "config" / "dynus.yaml"
+        if src_yaml.exists():
+            with open(src_yaml, 'r') as f:
+                _cfg = yaml.safe_load(f)
+            _params = None
+            if 'dynus_node' in _cfg and 'ros__parameters' in _cfg['dynus_node']:
+                _params = _cfg['dynus_node']['ros__parameters']
+            elif 'dynus' in _cfg and 'ros__parameters' in _cfg['dynus']:
+                _params = _cfg['dynus']['ros__parameters']
+            if _params:
+                original_num_p = _params.get('num_P')
 
-        if args.mode == 'gazebo':
-            num_obstacles = 0  # Static world, no procedural obstacles
-            env_name = args.env if args.env else case_environments[case]
-        elif args.mode == 'gazebo-dynamic':
-            num_obstacles = case_obstacles[case]
-            env_name = args.env if args.env else 'empty_wo_ground'
-            trajs_topic = '/trajs_ground_truth'
-        else:
-            num_obstacles = case_obstacles[case]
-            env_name = None
+    try:
+        # Outer loop: sweep over num_P values
+        for num_p in num_p_values:
+            if num_p is not None:
+                print(f"\n{'#'*80}")
+                print(f"# SETTING num_P = {num_p}")
+                print(f"{'#'*80}\n")
+                set_num_p_everywhere(num_p)
 
-        # Determine output directory for this case
-        if args.output_dir:
-            output_dir = Path(args.output_dir) / case
-        else:
-            # Default to benchmark_data with case and timestamp
-            base_dir = Path(__file__).parent.parent / "benchmark_data" / args.config_name
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_dir = base_dir / f"{case}_{timestamp}"
+            # Run benchmarks for each case
+            for case in cases_to_run:
+                # Determine obstacle count, environment, and trajs_topic for this case
+                trajs_topic = '/trajs'  # default
 
-        if args.mode == 'gazebo':
-            print(f"\n{'='*80}")
-            print(f"RUNNING {case.upper()} CASE (gazebo: {env_name})")
-            print(f"{'='*80}")
-        else:
-            print(f"\n{'='*80}")
-            print(f"RUNNING {case.upper()} CASE ({num_obstacles} obstacles)")
-            print(f"{'='*80}")
-        print(f"Output directory: {output_dir}")
-        print(f"{'='*80}\n")
+                if args.mode == 'gazebo':
+                    num_obstacles = 0  # Static world, no procedural obstacles
+                    env_name = args.env if args.env else case_environments[case]
+                elif args.mode == 'gazebo-dynamic':
+                    num_obstacles = case_obstacles[case]
+                    env_name = args.env if args.env else 'empty_wo_ground'
+                    trajs_topic = '/trajs_ground_truth'
+                else:
+                    num_obstacles = case_obstacles[case]
+                    env_name = None
 
-        # Create CSV directory for DYNUS benchmark data
-        csv_dir = output_dir / "csv"
-        csv_dir.mkdir(parents=True, exist_ok=True)
+                # Determine output directory for this case
+                if args.output_dir:
+                    if num_p is not None:
+                        output_dir = Path(args.output_dir) / f"P_{num_p}" / case
+                    else:
+                        output_dir = Path(args.output_dir) / case
+                else:
+                    # Default to benchmark_data with case and timestamp
+                    base_dir = Path(__file__).parent.parent / "benchmark_data" / args.config_name
+                    if num_p is not None:
+                        base_dir = base_dir / f"P_{num_p}"
+                    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                    output_dir = base_dir / f"{case}_{timestamp}"
 
-        # Start timing the benchmark
-        benchmark_start_time = time.time()
-        benchmark_start_datetime = datetime.datetime.now()
-
-        # Run trials
-        metrics_list = []
-        for i in range(args.num_trials):
-            seed = args.start_seed + i
-
-            # Create data file path for this trial
-            data_file = str(csv_dir / f"num_{i}.csv")
-
-            try:
-                metrics = run_single_trial(
-                    trial_id=i,
-                    seed=seed,
-                    num_obstacles=num_obstacles,
-                    dynamic_ratio=args.dynamic_ratio,
-                    start=tuple(args.start),
-                    goal=tuple(args.goal),
-                    setup_bash=args.setup_bash,
-                    timeout=args.timeout,
-                    visualize=args.visualize,
-                    data_file=data_file,
-                    mode=args.mode,
-                    env=env_name,
-                    trajs_topic=trajs_topic
-                )
-                metrics_list.append(metrics)
-
-                # Print trial summary
-                status = "success" if metrics.goal_reached else ("timeout" if metrics.timeout_reached else "failed")
-                print(f"\n{'='*80}")
-                print(f"Run {i+1} / {args.num_trials} : {status}")
+                if args.mode == 'gazebo':
+                    print(f"\n{'='*80}")
+                    print(f"RUNNING {case.upper()} CASE (gazebo: {env_name})"
+                          + (f" [num_P={num_p}]" if num_p is not None else ""))
+                    print(f"{'='*80}")
+                else:
+                    print(f"\n{'='*80}")
+                    print(f"RUNNING {case.upper()} CASE ({num_obstacles} obstacles)"
+                          + (f" [num_P={num_p}]" if num_p is not None else ""))
+                    print(f"{'='*80}")
+                print(f"Output directory: {output_dir}")
                 print(f"{'='*80}\n")
 
-                # Save intermediate results (silently)
-                save_results(metrics_list, output_dir, args.config_name, verbose=False)
+                # Create CSV directory for DYNUS benchmark data
+                csv_dir = output_dir / "csv"
+                csv_dir.mkdir(parents=True, exist_ok=True)
 
-                # Wait before next trial to ensure clean shutdown
-                if i < args.num_trials - 1:
-                    print(f"Waiting 3 seconds before starting next trial...\n")
-                    time.sleep(3)
+                # Start timing the benchmark
+                benchmark_start_time = time.time()
+                benchmark_start_datetime = datetime.datetime.now()
 
-            except KeyboardInterrupt:
-                print("\n\nBenchmark interrupted by user")
-                break
-            except Exception as e:
-                print(f"\nError in trial {i}: {e}")
-                import traceback
-                traceback.print_exc()
-                continue
+                # Run trials
+                metrics_list = []
+                for i in range(args.num_trials):
+                    seed = args.start_seed + i
 
-        # Calculate benchmark duration and end time for this case
-        benchmark_end_datetime = datetime.datetime.now()
-        benchmark_duration = time.time() - benchmark_start_time
+                    # Create data file path for this trial
+                    data_file = str(csv_dir / f"num_{i}.csv")
 
-        # Final save for this case
-        if metrics_list:
-            save_results(metrics_list, output_dir, args.config_name, verbose=True)
+                    try:
+                        metrics = run_single_trial(
+                            trial_id=i,
+                            seed=seed,
+                            num_obstacles=num_obstacles,
+                            dynamic_ratio=args.dynamic_ratio,
+                            start=tuple(args.start),
+                            goal=tuple(args.goal),
+                            setup_bash=args.setup_bash,
+                            timeout=args.timeout,
+                            visualize=args.visualize,
+                            data_file=data_file,
+                            mode=args.mode,
+                            env=env_name,
+                            trajs_topic=trajs_topic
+                        )
+                        metrics_list.append(metrics)
 
-            # Print overall summary for this case
-            total_trials = len(metrics_list)
-            successful_trials = sum(1 for m in metrics_list if m.goal_reached)
+                        # Print trial summary
+                        status = "success" if metrics.goal_reached else ("timeout" if metrics.timeout_reached else "failed")
+                        print(f"\n{'='*80}")
+                        print(f"Run {i+1} / {args.num_trials} : {status}")
+                        print(f"{'='*80}\n")
 
-            print(f"\n{'='*80}")
-            print(f"BENCHMARK SUMMARY - {case.upper()} CASE")
-            print(f"{'='*80}")
-            print(f"Started: {benchmark_start_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"Ended: {benchmark_end_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"Duration: {benchmark_duration:.1f}s")
-            print(f"Total trials: {total_trials}")
-            print(f"Success rate: {successful_trials}/{total_trials} ({100*successful_trials/total_trials:.1f}%)")
-            print(f"Data saved to: {output_dir}")
-            print(f"{'='*80}\n")
-        else:
-            print(f"\nNo trials completed successfully for {case} case.")
+                        # Save intermediate results (silently)
+                        save_results(metrics_list, output_dir, args.config_name, verbose=False)
+
+                        # Wait before next trial to ensure clean shutdown
+                        if i < args.num_trials - 1:
+                            print(f"Waiting 3 seconds before starting next trial...\n")
+                            time.sleep(3)
+
+                    except KeyboardInterrupt:
+                        print("\n\nBenchmark interrupted by user")
+                        raise
+                    except Exception as e:
+                        print(f"\nError in trial {i}: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        continue
+
+                # Calculate benchmark duration and end time for this case
+                benchmark_end_datetime = datetime.datetime.now()
+                benchmark_duration = time.time() - benchmark_start_time
+
+                # Final save for this case
+                if metrics_list:
+                    save_results(metrics_list, output_dir, args.config_name, verbose=True)
+
+                    # Print overall summary for this case
+                    total_trials = len(metrics_list)
+                    successful_trials = sum(1 for m in metrics_list if m.goal_reached)
+
+                    print(f"\n{'='*80}")
+                    print(f"BENCHMARK SUMMARY - {case.upper()} CASE"
+                          + (f" [num_P={num_p}]" if num_p is not None else ""))
+                    print(f"{'='*80}")
+                    print(f"Started: {benchmark_start_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+                    print(f"Ended: {benchmark_end_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+                    print(f"Duration: {benchmark_duration:.1f}s")
+                    print(f"Total trials: {total_trials}")
+                    print(f"Success rate: {successful_trials}/{total_trials} ({100*successful_trials/total_trials:.1f}%)")
+                    print(f"Data saved to: {output_dir}")
+                    print(f"{'='*80}\n")
+                else:
+                    print(f"\nNo trials completed successfully for {case} case.")
+
+    except KeyboardInterrupt:
+        print("\n\nBenchmark interrupted by user")
+    finally:
+        # Restore original num_P if we changed it
+        if original_num_p is not None:
+            print(f"\nRestoring original num_P = {original_num_p}")
+            set_num_p_everywhere(original_num_p)
 
     print(f"\n{'='*80}")
     print("ALL BENCHMARKS COMPLETE")

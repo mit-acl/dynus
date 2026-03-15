@@ -14,7 +14,7 @@ def generate_launch_description():
 
         # Benchmark parameters
         DeclareLaunchArgument('use_single_threaded', default_value='false'),
-        DeclareLaunchArgument('planner_names', default_value='["dynus"]'),
+        DeclareLaunchArgument('planner_names', default_value='["dynus2"]'),
         DeclareLaunchArgument('num_N_list', default_value='[4,5,6]'),
         DeclareLaunchArgument('factor_initial_list', default_value='[2.2,1.7,1.5]'),
         DeclareLaunchArgument('factor_final_list', default_value='[3.8,2.2,1.9]'),
@@ -23,6 +23,9 @@ def generate_launch_description():
         DeclareLaunchArgument('per_case_timeout_sec', default_value='3.0'),
         DeclareLaunchArgument('max_gurobi_comp_time_sec', default_value='0.5'),
         DeclareLaunchArgument('factor_constant_step_size', default_value='0.1'),
+        DeclareLaunchArgument('use_dynamic_factor', default_value='false'),
+        DeclareLaunchArgument('dynamic_factor_initial_mean_list', default_value='[1.5,1.5,1.5]'),
+        DeclareLaunchArgument('dynamic_factor_k_radius', default_value='0.4'),
 
         Node(
             package='dynus',
@@ -43,6 +46,9 @@ def generate_launch_description():
                 'per_case_timeout_sec': LaunchConfiguration('per_case_timeout_sec'),
                 'max_gurobi_comp_time_sec': LaunchConfiguration('max_gurobi_comp_time_sec'),
                 'factor_constant_step_size': LaunchConfiguration('factor_constant_step_size'),
+                'use_dynamic_factor': LaunchConfiguration('use_dynamic_factor'),
+                'dynamic_factor_initial_mean_list': LaunchConfiguration('dynamic_factor_initial_mean_list'),
+                'dynamic_factor_k_radius': LaunchConfiguration('dynamic_factor_k_radius'),
             }],
         ),
     ])

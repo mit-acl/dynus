@@ -193,11 +193,11 @@ def plot_history(t, p, v, a, j, save_path,
     """
     setup_plot_style(use_tex)
 
-    base_font = 18
-    title_font = 20
-    label_font = 16
-    tick_font = 16
-    legend_font = 13
+    base_font = 26
+    title_font = 28
+    label_font = 26
+    tick_font = 22
+    legend_font = 28
 
     width = 10.0
     phi = (1 + 5**0.5) / 2
@@ -222,15 +222,6 @@ def plot_history(t, p, v, a, j, save_path,
             lim_eff = lim + float(tol_abs)
             lim_handle = ax.axhline(+lim, ls=":", lw=1.8, color="k", label="limit")
             ax.axhline(-lim, ls=":", lw=1.8, color="k", label="_nolegend_")
-
-            # Violation markers
-            over = np.abs(y) > lim_eff
-            for k in range(3):
-                idx = np.where(over[:, k])[0]
-                if idx.size > 0:
-                    ax.plot(t[idx], y[idx, k], linestyle="None",
-                            marker="o", markersize=4.5, alpha=0.7,
-                            color=lines[k].get_color())
 
         if ylim_range is not None:
             ax.set_ylim(ylim_range[0], ylim_range[1])
@@ -278,17 +269,17 @@ def plot_history(t, p, v, a, j, save_path,
         handles.append(j_lim)
         labels.append("limit")
 
-    plt.tight_layout(rect=[0.0, 0.0, right_margin, 1.0])
+    plt.tight_layout(rect=[0.0, 0.12, 1.0, 1.0])
     fig.legend(
         handles, labels,
-        loc="center left",
-        bbox_to_anchor=(right_margin + 0.02, 0.5),
+        loc="lower center",
+        bbox_to_anchor=(0.5, -0.08),
         frameon=False,
         fontsize=legend_font,
-        ncol=1,
+        ncol=len(labels),
         borderaxespad=0.0,
         handlelength=2.6,
-        labelspacing=0.6,
+        columnspacing=2.0,
     )
 
     os.makedirs(os.path.dirname(save_path) if os.path.dirname(save_path) else ".", exist_ok=True)
@@ -384,6 +375,19 @@ HW_DYNAMIC_TESTS = [
     ("test4",       "5 obsts, line-ish (run 1)"),
     ("test5",       "5 obsts, line-ish (run 2)"),
     ("test6",       "5 obsts, line-ish (run 3)"),
+]
+
+# Dynamic round2 test configurations: test_name -> (obst_type, num_obst, obst_traj, v_max, a_max, j_max)
+HW_DYNAMIC_ROUND2_TESTS = [
+    ("test10", "Only Dyn.",        1, "Line",     2.0, 5.0, 7.5),
+    ("test11", "Only Dyn.",        1, "Circle",   2.0, 5.0, 7.5),
+    ("test12", "Only Dyn.",        1, "Figure 8", 2.0, 5.0, 7.5),
+    ("test14", "Only Dyn.",        5, "Line",     2.0, 5.0, 7.5),
+    ("test15", "Only Dyn.",        5, "Line",     2.0, 5.0, 7.5),
+    ("test16", "Only Dyn.",        5, "Line",     2.0, 5.0, 7.5),
+    ("test18", r"Dyn. \& Static",  5, "Line",     2.0, 5.0, 7.5),
+    ("test23", r"Dyn. \& Static",  5, "Line",     3.0, 5.0, 7.5),
+    ("test24", r"Dyn. \& Static",  5, "Line",     4.0, 5.0, 7.5),
 ]
 
 
@@ -555,9 +559,9 @@ def generate_hw_static_table(static_dir, table_output):
             plot_history(t, p, v_arr, a_arr, j_arr, plot_path,
                          v_max=v_max, a_max=a_max, j_max=j_max,
                          p_ylim=(0, 20),
-                         v_ylim=(-v_max, v_max),
-                         a_ylim=(-a_max, a_max),
-                         j_ylim=(-j_max, j_max))
+                         v_ylim=(-v_max * 1.1, v_max * 1.1),
+                         a_ylim=(-a_max * 1.1, a_max * 1.1),
+                         j_ylim=(-j_max * 1.1, j_max * 1.1))
         else:
             print(f"    No goal messages found for {test_name}, skipping plot.")
 
@@ -657,6 +661,113 @@ def generate_hw_dynamic_static_table(dynamic_static_dir, table_output):
     save_table(table_str, table_output)
 
 
+def build_dynamic_round2_table(rows, caption, label):
+    """Build a LaTeX table with Exp, Obst. Type, Num. Obst., Obst. Traj., v_max, and computation time columns."""
+    lines = []
+    lines.append(r"\begin{table}")
+    lines.append(f"  \\caption{{{caption}}}")
+    lines.append(f"  \\label{{{label}}}")
+    lines.append(r"  \centering")
+    lines.append(r"  \renewcommand{\arraystretch}{1.2}")
+    lines.append(r"  \resizebox{\columnwidth}{!}{")
+    lines.append(r"    \begin{tabular}{c c c c c c c c c}")
+    lines.append(r"      \toprule")
+    lines.append(
+        r"      \multirow{2}{*}[-0.4ex]{\textbf{Exp.}}"
+        r" & \multirow{2}{*}[-0.4ex]{\textbf{Obst. Type}}"
+        r" & \multirow{2}{*}[-0.4ex]{\makecell{\textbf{Num.} \\ \textbf{Obst.}}}"
+        r" & \multirow{2}{*}[-0.4ex]{\textbf{Obst. Traj.}}"
+        r" & \multirow{2}{*}[-0.4ex]{\makecell{$v_{\max}$ \\ {[m/s]}}}"
+        r" & \multicolumn{4}{c}{\textbf{Computation Time}}"
+        r" \\"
+    )
+    lines.append(r"      \cmidrule(lr){6-9}")
+    lines.append(
+        r"      & & & & "
+        r"& $T_{\mathrm{replan}}$ [ms]"
+        r" & $T_{\mathrm{global}}$ [ms]"
+        r" & $T_{\mathrm{STSFC}}$ [ms]"
+        r" & $T_{\mathrm{opt}}$ [ms]"
+        r" \\"
+    )
+    lines.append(r"      \midrule")
+
+    for i, row in enumerate(rows, start=7):
+        cells = format_comp_cells(row["comp_stats"])
+        cell_str = " & ".join(cells)
+        lines.append(f"      {i} & {row['obst_type']} & {row['num_obst']} & {row['obst_traj']} & {row['v_max']:.1f} & {cell_str} \\\\")
+
+    lines.append(r"      \bottomrule")
+    lines.append(r"    \end{tabular}")
+    lines.append(r"  }")
+    lines.append(r"  \vspace{-1.0em}")
+    lines.append(r"\end{table}")
+    return "\n".join(lines) + "\n"
+
+
+def generate_hw_dynamic_round2(dynamic_dir, table_output):
+    """Generate a LaTeX table and history plots for hw dynamic round2 tests."""
+    rows = []
+
+    for test_name, obst_type, num_obst, obst_traj, v_max, a_max, j_max in HW_DYNAMIC_ROUND2_TESTS:
+        test_dir = os.path.join(dynamic_dir, test_name)
+        if not os.path.isdir(test_dir):
+            print(f"  WARNING: {test_dir} not found, skipping")
+            continue
+
+        bag_path = find_bag_in_test_dir(test_dir)
+        if bag_path is None:
+            print(f"  WARNING: No bag found in {test_dir}, skipping")
+            continue
+
+        print(f"  Processing {test_name} ({obst_type}, v_max={v_max}) -> {bag_path}")
+
+        ns = discover_namespace(bag_path)
+        comp_stats = get_comp_stats(bag_path, ns)
+
+        rows.append({
+            "obst_type": obst_type,
+            "num_obst": num_obst,
+            "obst_traj": obst_traj,
+            "v_max": v_max,
+            "comp_stats": comp_stats,
+        })
+
+        # Generate history plot
+        goal_data = extract_goal_arrays(bag_path, ns)
+        if goal_data is not None:
+            t, p, v_arr, a_arr, j_arr = goal_data
+            plot_path = os.path.join(bag_path, f"history_{test_name}.pdf")
+            # Adjust position y-axis based on goal position
+            if test_name in ("test10", "test11", "test12"):
+                p_ylim_val = (-2, 12)
+            else:
+                p_ylim_val = (0, 20)
+            plot_history(t, p, v_arr, a_arr, j_arr, plot_path,
+                         v_max=v_max, a_max=a_max, j_max=j_max,
+                         p_ylim=p_ylim_val,
+                         v_ylim=(-v_max * 1.1, v_max * 1.1),
+                         a_ylim=(-a_max * 1.1, a_max * 1.1),
+                         j_ylim=(-j_max * 1.1, j_max * 1.1))
+        else:
+            print(f"    No goal messages found for {test_name}, skipping plot.")
+
+    if not rows:
+        print("No data collected. Cannot generate table.")
+        return
+
+    caption = (
+        "Hardware flight computation times in dynamic environments. "
+        "All flights use $a_{\\max}=5$ m/s$^2$ and $j_{\\max}=10$ m/s$^3$."
+    )
+    table_str = build_dynamic_round2_table(
+        rows,
+        caption=caption,
+        label="tab:hw_dynamic_round2",
+    )
+    save_table(table_str, table_output)
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -670,8 +781,8 @@ def main():
     parser.add_argument("--a_max", type=float, default=20.0, help="Acceleration limit [m/s^2]")
     parser.add_argument("--j_max", type=float, default=100.0, help="Jerk limit [m/s^3]")
     parser.add_argument("--use_tex", action="store_true", help="Use LaTeX for text rendering")
-    parser.add_argument("--generate_table", type=str, choices=["static", "dynamic", "dynamic_static"],
-                        help="Generate LaTeX table: 'static', 'dynamic', or 'dynamic_static'")
+    parser.add_argument("--generate_table", type=str, choices=["static", "dynamic", "dynamic_static", "dynamic_round2"],
+                        help="Generate LaTeX table: 'static', 'dynamic', 'dynamic_static', or 'dynamic_round2'")
     parser.add_argument("--table_output", type=str, default=None,
                         help="Output path for the LaTeX table (auto-set if not provided)")
     args = parser.parse_args()
@@ -689,6 +800,9 @@ def main():
         elif args.generate_table == "dynamic_static":
             output = args.table_output or os.path.join(tables_dir, "hw_dynamic_static.tex")
             generate_hw_dynamic_static_table(path, output)
+        elif args.generate_table == "dynamic_round2":
+            output = args.table_output or os.path.join(tables_dir, "hw_dynamic_round2.tex")
+            generate_hw_dynamic_round2(path, output)
         return
 
     if is_ros2_bag(path):

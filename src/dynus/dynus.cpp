@@ -51,12 +51,19 @@ DYNUS::DYNUS(parameters par) : par_(par)
     }
   }
 
-  // Set up unconstrained optimization solver for whole trajectory
+  // Set up unconstrained optimization solver for whole trajectory.
+  // Hybrid threading: distribute CPU cores across external factor threads
+  // so each Gurobi instance gets multiple internal threads rather than
+  // all threads competing for all cores.
+  const int num_cores = static_cast<int>(std::thread::hardware_concurrency());
+  const int grb_threads_per_solver = std::max(1, num_cores / std::max(1, num_dynamic_factors_));
   whole_traj_solver_ptrs_.reserve(num_dynamic_factors_);
   for (int i = 0; i < num_dynamic_factors_; i++)
   {
-    whole_traj_solver_ptrs_.push_back(std::make_shared<SolverGurobi>());
-    whole_traj_solver_ptrs_[i]->initializeSolver(par_);
+    auto solver = std::make_shared<SolverGurobi>();
+    solver->setGurobiThreads(grb_threads_per_solver);
+    solver->initializeSolver(par_);
+    whole_traj_solver_ptrs_.push_back(solver);
   }
 
   // Set up decomp ellip workers for each thread
@@ -995,8 +1002,14 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
     poly_out_whole_ = shared_spatial_poly_out;
   }
 
+  // Shared flag: when one thread succeeds, all others abort early
+  auto any_thread_succeeded = std::make_shared<std::atomic<bool>>(false);
+
   std::vector<std::future<std::tuple<bool, double, double, double, vec_E<Polyhedron<3>>>>> futures;
   futures.reserve(factors_.size());
+
+  // Time the parallel optimization section
+  auto parallel_opt_start = std::chrono::steady_clock::now();
 
   for (size_t i = 0; i < factors_.size(); ++i)
   {
@@ -1005,11 +1018,15 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
     futures.push_back(std::async(std::launch::async,
                                  [this, i, factor, &global_path, local_A, local_E, sub_goal, A_time,
                                   initial_dt, &obst_pos, &obst_bbox, &base_map, use_precomputed_constraints,
-                                  &shared_spatial_constraints, &shared_spatial_poly_out]()
+                                  &shared_spatial_constraints, &shared_spatial_poly_out, any_thread_succeeded]()
                                      -> std::tuple<bool, double, double, double, vec_E<Polyhedron<3>>>
                                  {
                                    try
                                    {
+                                     // Early exit: another thread already found a solution
+                                     if (any_thread_succeeded->load(std::memory_order_relaxed))
+                                       return {false, 0.0, 0.0, factor, vec_E<Polyhedron<3>>{}};
+
                                      double thread_gurobi_time = 0.0;
                                      double thread_convx_decomp_time = 0.0;
                                      vec_E<Polyhedron<3>> thread_poly_out_safe;
@@ -1033,6 +1050,10 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
                                          use_precomputed_constraints ? &shared_spatial_constraints : nullptr,
                                          use_precomputed_constraints ? &shared_spatial_poly_out : nullptr);
 
+                                     // Signal other threads to stop
+                                     if (result)
+                                       any_thread_succeeded->store(true, std::memory_order_relaxed);
+
                                      return {result, thread_gurobi_time, thread_convx_decomp_time, factor, thread_poly_out_safe};
                                    }
                                    catch (const std::exception &ex)
@@ -1044,7 +1065,9 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
                                  }));
   }
 
-  // Wait for any task to succeed.
+  // Poll futures for first success instead of blocking sequentially.
+  // This ensures we react immediately when ANY thread finishes successfully,
+  // rather than waiting for earlier (by index) threads to complete first.
   std::vector<bool> vec_optimization_succeeded;
   std::vector<std::vector<state>> vec_goal_setpoints;
   std::vector<PieceWisePol> vec_pwp_to_share;
@@ -1053,54 +1076,94 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
   std::vector<double> vec_convx_decomp_times;
   std::vector<vec_E<Polyhedron<3>>> vec_poly_out_safe;
 
-  vec_optimization_succeeded.resize(factors_.size(), false);
-  vec_goal_setpoints.resize(factors_.size());
-  vec_pwp_to_share.resize(factors_.size());
-  vec_cps.resize(factors_.size());
-  vec_gurobi_times.resize(factors_.size(), 0.0);
-  vec_convx_decomp_times.resize(factors_.size(), 0.0);
-  vec_poly_out_safe.resize(factors_.size());
+  const size_t num_factors = factors_.size();
+  vec_optimization_succeeded.resize(num_factors, false);
+  vec_goal_setpoints.resize(num_factors);
+  vec_pwp_to_share.resize(num_factors);
+  vec_cps.resize(num_factors);
+  vec_gurobi_times.resize(num_factors, 0.0);
+  vec_convx_decomp_times.resize(num_factors, 0.0);
+  vec_poly_out_safe.resize(num_factors);
 
-  for (size_t i = 0; i < futures.size(); ++i)
+  std::vector<bool> collected(num_factors, false);
+  size_t num_collected = 0;
+  int winner_index = -1;
+
+  // Poll until we find a winner or all futures are collected
+  while (num_collected < num_factors)
   {
-    auto [result, thread_gurobi_time, thread_convx_decomp_time, thread_factor, thread_poly_out_safe] = futures[i].get();
-
-    // Save polytopes for visualization even if the optimizer failed
-    if (poly_out_safe_.empty() && !thread_poly_out_safe.empty())
-      poly_out_safe_ = thread_poly_out_safe;
-
-    if (!result)
-      continue;
-
-    // One thread succeeded. Stop all the other solver instances.
-    for (size_t j = 0; j < factors_.size(); ++j)
+    for (size_t i = 0; i < num_factors; ++i)
     {
-      if (j == i)
+      if (collected[i])
         continue;
 
-      try
+      // Non-blocking check: is this future ready?
+      if (futures[i].wait_for(std::chrono::microseconds(0)) != std::future_status::ready)
+        continue;
+
+      // Collect the result
+      auto [result, thread_gurobi_time, thread_convx_decomp_time, thread_factor, thread_poly_out_safe] = futures[i].get();
+      collected[i] = true;
+      num_collected++;
+
+      // Save polytopes for visualization even if the optimizer failed
+      if (poly_out_safe_.empty() && !thread_poly_out_safe.empty())
+        poly_out_safe_ = thread_poly_out_safe;
+
+      if (!result)
+        continue;
+
+      // First success — immediately stop all other solvers
+      for (size_t j = 0; j < num_factors; ++j)
       {
-        whole_traj_solver_ptrs_[j]->stopExecution();
+        if (j == i)
+          continue;
+        try
+        {
+          whole_traj_solver_ptrs_[j]->stopExecution();
+        }
+        catch (const std::exception &e)
+        {
+          std::cout << "it's likely that the solver has gurobi error and already released the gurobi environment" << std::endl;
+          std::cerr << e.what() << '\n';
+        }
       }
-      catch (const std::exception &e)
-      {
-        std::cout << "it's likely that the solver has gurobi error and already released the gurobi environment" << std::endl;
-        std::cerr << e.what() << '\n';
-      }
+
+      // Get results from the successful solver
+      whole_traj_solver_ptrs_[i]->fillGoalSetPoints();
+      whole_traj_solver_ptrs_[i]->getGoalSetpoints(vec_goal_setpoints[i]);
+      whole_traj_solver_ptrs_[i]->getPieceWisePol(vec_pwp_to_share[i]);
+      whole_traj_solver_ptrs_[i]->getControlPoints(vec_cps[i]); // Bezier control points
+      vec_gurobi_times[i] = thread_gurobi_time;
+      vec_convx_decomp_times[i] = thread_convx_decomp_time;
+      vec_poly_out_safe[i] = thread_poly_out_safe;
+      vec_optimization_succeeded[i] = true;
+      winner_index = static_cast<int>(i);
     }
 
-    // Get Results from the successful solver.
-    whole_traj_solver_ptrs_[i]->fillGoalSetPoints();
-    whole_traj_solver_ptrs_[i]->getGoalSetpoints(vec_goal_setpoints[i]);
-    whole_traj_solver_ptrs_[i]->getPieceWisePol(vec_pwp_to_share[i]);
-    whole_traj_solver_ptrs_[i]->getControlPoints(vec_cps[i]); // Bezier control points
-    vec_gurobi_times[i] = thread_gurobi_time;
-    vec_convx_decomp_times[i] = thread_convx_decomp_time;
-    vec_poly_out_safe[i] = thread_poly_out_safe;
+    // If we found a winner, still drain remaining futures (they should exit fast
+    // due to stopExecution + any_thread_succeeded flag)
+    if (winner_index >= 0 && num_collected < num_factors)
+    {
+      for (size_t i = 0; i < num_factors; ++i)
+      {
+        if (!collected[i])
+        {
+          futures[i].get(); // These should return quickly since solvers were stopped
+          collected[i] = true;
+          num_collected++;
+        }
+      }
+      break;
+    }
 
-    vec_optimization_succeeded[i] = true;
-    // break; // Exit the loop after the first success
+    // Brief yield to avoid busy-spin
+    std::this_thread::yield();
   }
+
+  // Measure wall-clock time for the parallel optimization only
+  auto parallel_opt_end = std::chrono::steady_clock::now();
+  double parallel_opt_ms = std::chrono::duration<double, std::milli>(parallel_opt_end - parallel_opt_start).count();
 
   // Find the first successful optimization
   int successful_index = -1;
@@ -1112,7 +1175,7 @@ bool DYNUS::planLocalTrajectory(vec_Vecf<3> &global_path, double last_replaning_
       goal_setpoints_ = vec_goal_setpoints[i];
       pwp_to_share_ = vec_pwp_to_share[i];
       cps_ = vec_cps[i];
-      local_traj_computation_time_ = vec_gurobi_times[i];
+      local_traj_computation_time_ = parallel_opt_ms;
       cvx_decomp_time_ = vec_convx_decomp_times[i];
       successful_factor_ = factors_[i];
       poly_out_safe_ = vec_poly_out_safe[i];
