@@ -1,4 +1,4 @@
-# SANDO: Hermite Spline-based Efficient Trajectory Planning #
+# SANDO: Safe Autonomous Trajectory Planning for Dynamic Unknown Environments #
 
 If you like this project, please consider starring ⭐ the repo!
 
@@ -6,27 +6,27 @@ If you like this project, please consider starring ⭐ the repo!
 
 | **Spatiotemporal SFC** | **Hardware Heatmap** |
 | ------------------------- | ------------------------- |
-| <video src="./mp4/small_sando_stsfc.mp4" width="360" autoplay loop muted></video> | <video src="./mp4/small_sando_hw_heatmap.mp4" width="360" autoplay loop muted></video> |
+| <video src="https://github.com/user-attachments/assets/7279e010-bde3-4061-9a28-07a145092276" width="360" autoplay loop muted></video> | <video src="https://github.com/user-attachments/assets/f9bf40c3-18ec-498c-80f7-e7ff92dcb2a6" width="360" autoplay loop muted></video> |
 
 | **Sim Interactive** | **Sim Static** |
 | ------------------------- | ------------------------- |
-| <video src="./mp4/small_sando_sim_interactive.mp4" width="360" autoplay loop muted></video> | <video src="./mp4/small_sando_sim_static.mp4" width="360" autoplay loop muted></video> |
+| <video src="https://github.com/user-attachments/assets/6718410a-aa0d-4726-a6ca-605a22e25b2c" width="360" autoplay loop muted></video> | <video src="https://github.com/user-attachments/assets/61e676a6-4b03-480a-90b3-4dafb19d7198" width="360" autoplay loop muted></video> |
 
 | **Sim Dynamic** | **Hardware Single Dynamic** |
 | ------------------------- | ------------------------- |
-| <video src="./mp4/small_sando_sim_dynamic.mp4" width="360" autoplay loop muted></video> | <video src="./mp4/small_sando_hw_single_dynamic.mp4" width="360" autoplay loop muted></video> |
+| <video src="https://github.com/user-attachments/assets/f672ad26-3e06-4cbf-99d2-fd6b2eaeac1d" width="360" autoplay loop muted></video> | <video src="https://github.com/user-attachments/assets/3a6a9805-078e-4b12-bc5e-d3421edce9cf" width="360" autoplay loop muted></video> |
 
 | **Hardware Multiple Dynamic** | **Hardware Dynamic + Static** |
 | ------------------------- | ------------------------- |
-| <video src="./mp4/small_sando_hw_multiple_dynamic.mp4" width="360" autoplay loop muted></video> | <video src="./mp4/small_sando_hw_dynamic_static.mp4" width="360" autoplay loop muted></video> |
+| <video src="https://github.com/user-attachments/assets/aac54514-d8fb-4aa7-8304-63ffc71c2bad" width="360" autoplay loop muted></video> | <video src="https://github.com/user-attachments/assets/175d183b-60ea-40a3-92ae-1ece3cdf40e6" width="360" autoplay loop muted></video> |
 
 ## Paper
 
-SANDO: Hermite Spline-based Efficient Trajectory Planning is available [https://arxiv.org/abs/2511.10822](https://arxiv.org/abs/2511.10822)!
+SANDO: Safe Autonomous Trajectory Planning for Dynamic Unknown Environments is available [https://arxiv.org/abs/2511.10822](https://arxiv.org/abs/2511.10822)!
 
 ```bibtex
 @article{kondo2026sando,
-      title={SANDO: Hermite Spline-based Efficient Trajectory Planning}, 
+      title={SANDO: Safe Autonomous Trajectory Planning for Dynamic Unknown Environments},
 }
 ```
 
@@ -51,8 +51,8 @@ SANDO has been tested on both Docker and native installations on Ubuntu 22.04 wi
    ```bash
    mkdir -p ~/code/ws/src
    cd ~/code/ws/src
-   git clone https://github.com/mit-acl/dynus.git
-   cd src/sando/docker
+   git clone https://github.com/mit-acl/dynus.git sando
+   cd sando/docker
    ```
 
 3. **BUILD:**
@@ -140,7 +140,7 @@ SANDO has been tested on both Docker and native installations on Ubuntu 22.04 wi
    ```bash
    mkdir -p ~/code/ws
    cd ~/code/ws
-   git clone https://github.com/mit-acl/dynus.git
+   git clone https://github.com/mit-acl/dynus.git sando
    cd sando
    ```
 

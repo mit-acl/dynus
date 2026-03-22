@@ -3,7 +3,7 @@
 <package format="3">
   <name>sando</name>
   <version>0.0.0</version>
-  <description>SANDO: Dynamic-aware spline-based Efficient Trajectory Planning</description>
+  <description>SANDO: Safe Autonomous Trajectory Planning for Dynamic Unknown Environments</description>
   <maintainer email="kkondo@mit.edu">Kota Kondo</maintainer>
   <license>TODO: License declaration</license>
 
