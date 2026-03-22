@@ -32,15 +32,20 @@ def generate_launch_description():
                               description='Ratio of dynamic obstacles (0.0-1.0)'),
         DeclareLaunchArgument('x_min', default_value='5.0'),
         DeclareLaunchArgument('x_max', default_value='100.0'),
-        DeclareLaunchArgument('y_min', default_value='-7.0'),
-        DeclareLaunchArgument('y_max', default_value='7.0'),
+        DeclareLaunchArgument('y_min', default_value='-6.0'),
+        DeclareLaunchArgument('y_max', default_value='6.0'),
         DeclareLaunchArgument('z_min', default_value='0.5'),
         DeclareLaunchArgument('z_max', default_value='4.5'),
         DeclareLaunchArgument('publish_rate_hz', default_value='100.0'),
         DeclareLaunchArgument('seed', default_value='0'),
+        DeclareLaunchArgument('obstacles_json_file', default_value='',
+                              description='Path to shared benchmark obstacle JSON config'),
         DeclareLaunchArgument('use_rviz', default_value='true'),
         DeclareLaunchArgument('publish_tf', default_value='true',
                               description='Publish TF for dynamic obstacles'),
+        DeclareLaunchArgument('rviz_config',
+                              default_value=os.path.join(get_package_share_directory('dynus'), 'rviz', 'dynus.rviz'),
+                              description='Path to RViz config file'),
     ]
 
     # RViz node for visualization
@@ -49,7 +54,7 @@ def generate_launch_description():
         executable='rviz2',
         name='rviz2',
         output='log',
-        arguments=['-d', os.path.join(get_package_share_directory('dynus'), 'rviz', 'dynus.rviz'), '--ros-args', '--log-level', 'error'],
+        arguments=['-d', LaunchConfiguration('rviz_config'), '--ros-args', '--log-level', 'error'],
         parameters=[{'use_sim_time': False}],
         condition=IfCondition(LaunchConfiguration('use_rviz'))
     )
@@ -75,6 +80,7 @@ def generate_launch_description():
             'publish_markers': 'true',
             'publish_tf': LaunchConfiguration('publish_tf'),
             'launch_forest_node': 'true',
+            'obstacles_json_file': LaunchConfiguration('obstacles_json_file'),
         }.items()
     )
 

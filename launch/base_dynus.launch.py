@@ -33,6 +33,9 @@ def generate_launch_description():
     # benchmark name
     benchmark_name_arg = DeclareLaunchArgument('benchmark_name', default_value='benchmark_name', description='Benchmark name')
     world_file_arg = DeclareLaunchArgument('world_file', default_value='', description='Full path override for world file (bypasses env mapping)')
+    rviz_config_arg = DeclareLaunchArgument('rviz_config',
+        default_value=os.path.join(get_package_share_directory('dynus'), 'rviz', 'dynus.rviz'),
+        description='Path to RViz config file')
 
     # Opaque function to launch nodes
     def launch_setup(context, *args, **kwargs):
@@ -80,11 +83,7 @@ def generate_launch_description():
         use_gazebo_gui = LaunchConfiguration('use_gazebo_gui').perform(context)
 
         # Create a rviz node
-        rviz_config_file = os.path.join(
-            get_package_share_directory('dynus'),
-            'rviz',
-            'dynus.rviz'
-        )
+        rviz_config_file = LaunchConfiguration('rviz_config').perform(context)
 
         rviz_node = Node(
                     package='rviz2',
@@ -136,5 +135,6 @@ def generate_launch_description():
         use_dyn_obs_arg,
         benchmark_name_arg,
         world_file_arg,
+        rviz_config_arg,
         OpaqueFunction(function=launch_setup)
     ])

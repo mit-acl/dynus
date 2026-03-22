@@ -642,7 +642,8 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
                      data_file: Optional[str] = None,
                      mode: str = 'rviz-only',
                      env: Optional[str] = None,
-                     trajs_topic: str = '/trajs') -> BenchmarkMetrics:
+                     trajs_topic: str = '/trajs',
+                     obstacles_json_file: Optional[str] = None) -> BenchmarkMetrics:
     """Run a single simulation trial and collect metrics"""
 
     print(f"\nTrial {trial_id}: seed={seed}, obstacles={num_obstacles}, dynamic_ratio={dynamic_ratio}")
@@ -725,7 +726,6 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
         cmd = [
             "python3", str(run_sim_path),
             "--mode", "gazebo-dynamic",
-            "--no-ground-truth",
             "--trajs-topic", trajs_topic,
             "--d435",
             "--setup-bash", setup_bash,
@@ -769,6 +769,10 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
             "--seed", str(seed),
             "--no-goal-sender",  # Disable automatic goal sending - we'll send manually after rosbag starts
         ]
+
+        # Use shared obstacle JSON config if provided
+        if obstacles_json_file:
+            cmd.extend(["--obstacles-json-file", obstacles_json_file])
 
         # Add benchmark data file if specified
         if data_file:
@@ -1111,6 +1115,15 @@ def main():
     )
 
     parser.add_argument(
+        '--obstacles-json-dir',
+        type=str,
+        default=None,
+        help='Directory containing shared obstacle JSON configs '
+             '(files named obstacles_seed{N}.json). When set, obstacles are '
+             'loaded from these files instead of being generated per-trial.'
+    )
+
+    parser.add_argument(
         '--v-max',
         type=float,
         default=None,
@@ -1284,6 +1297,15 @@ def main():
                     # Create data file path for this trial
                     data_file = str(csv_dir / f"num_{i}.csv")
 
+                    # Resolve shared obstacle JSON file if provided
+                    obs_json = None
+                    if args.obstacles_json_dir:
+                        obs_json = os.path.join(
+                            args.obstacles_json_dir, f"obstacles_seed{seed}.json")
+                        if not os.path.exists(obs_json):
+                            print(f"WARNING: Obstacle JSON not found: {obs_json}")
+                            obs_json = None
+
                     try:
                         metrics = run_single_trial(
                             trial_id=i,
@@ -1298,7 +1320,8 @@ def main():
                             data_file=data_file,
                             mode=args.mode,
                             env=env_name,
-                            trajs_topic=trajs_topic
+                            trajs_topic=trajs_topic,
+                            obstacles_json_file=obs_json
                         )
                         metrics_list.append(metrics)
 

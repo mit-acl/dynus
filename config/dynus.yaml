@@ -36,18 +36,18 @@ dynus_node:
         global_planner: "astar_heat"                            # ["sjps", "sastar", "astar_heat"]
         factor_dgp: 1.0                                         # do not change - [m] actual_resolution = factor_dgp * (resolution of the map)
         inflation_dgp: 0.45                                     # [m] The obstacles are inflated (to run DGP) by this amount
-        x_min: -5.0                                             # [m] x_min of the map (tightened for corridor)
-        x_max: 110.0                                            # [m] x_max of the map (tightened for corridor)
-        y_min: -5.0                                            # [m] y_min of the map (tightened for corridor)
-        y_max: 5.0                                             # [m] y_max of the map (tightened for corridor)
-        z_min: 0.3                                              # [m] points below this are considered ground
-        z_max: 5.0                                              # [m] DGP is run with resolution=factor_dgp*(resolution of the map)
-        # x_min: -100.0                                             # [m] x_min of the map (tightened for corridor)
-        # x_max: 100.0                                            # [m] x_max of the map (tightened for corridor)
-        # y_min: -100.0                                            # [m] y_min of the map (tightened for corridor)
-        # y_max: 100.0                                             # [m] y_max of the map (tightened for corridor)
-        # z_min: -100.0                                              # [m] points below this are considered ground
-        # z_max: 100.0                                              # [m] DGP is run with resolution=factor_dgp*(resolution of the map)
+        # x_min: -5.0                                             # [m] x_min of the map (tightened for corridor)
+        # x_max: 110.0                                            # [m] x_max of the map (tightened for corridor)
+        # y_min: -5.0                                            # [m] y_min of the map (tightened for corridor)
+        # y_max: 5.0                                             # [m] y_max of the map (tightened for corridor)
+        # z_min: 0.3                                              # [m] points below this are considered ground
+        # z_max: 5.0                                              # [m] DGP is run with resolution=factor_dgp*(resolution of the map)
+        x_min: -200.0                                             # [m] x_min of the map (tightened for corridor)
+        x_max: 200.0                                            # [m] x_max of the map (tightened for corridor)
+        y_min: -200.0                                            # [m] y_min of the map (tightened for corridor)
+        y_max: 200.0                                             # [m] y_max of the map (tightened for corridor)
+        z_min: 0.5                                              # [m] points below this are considered ground
+        z_max: 6.0                                              # [m] DGP is run with resolution=factor_dgp*(resolution of the map)
         dgp_timeout_duration_ms: 1000                           # [ms] Timeout duration for the DGP
         max_num_expansion: 100000                                # [-] Maximum number of node expansions allowed
         use_free_start: true                                    # [-] Use free start for the DGP
@@ -124,7 +124,7 @@ dynus_node:
         dynamic_factor_k_radius: 0.4              # [-] the factors are [prev_successful_factor - k_radius, prev_successful_factor - k_radius + factor_constant_step_size, ..., prev_successful_factor, ... prev_successful_factor + k_radius]        
         dynamic_factor_initial_mean: 1.5               # [-] Initial factor for the dynamic factor search (only used when use_dynamic_factor is true)
         factor_initial: 1.0                       # [-] Initial factor for the trajectory time allocation
-        factor_final: 1.6                         # [-] Final factor for the trajectory time allocation
+        factor_final: 2.5                         # [-] Final factor for the trajectory time allocation
         factor_constant_step_size: 0.1          # [-] Step size for the constant factor increase
         obst_max_vel: 0.5                         # [m/s] Maximum velocity of the dynamic obstacles
         obst_position_error: 0.0                  # [m] Bounded position estimation error for dynamic obstacles
@@ -154,7 +154,7 @@ dynus_node:
         
         # Hover avoidance parameters
         ignore_other_trajs: false              # [-] Ignore shared trajectories from /trajs (useful for adversarial chaser agent)
-        hover_avoidance_enabled: true           # [-] Enable hover obstacle repulsion
+        hover_avoidance_enabled: false           # [-] Enable hover obstacle repulsion
         hover_avoidance_2d: true               # [-] Keep current altitude during avoidance (no vertical push)
         hover_avoidance_d_trigger: 4.0          # [m] Distance threshold to trigger avoidance
         hover_avoidance_h: 3.0                  # [m] Evasion distance from hover position

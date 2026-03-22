@@ -2,7 +2,7 @@ import os
 import subprocess
 import argparse
 
-def record_ros2_bag(bag_name, bag_path, agents, use_hardware=False, topics=None):
+def record_ros2_bag(bag_name, bag_path, agents, use_hardware=False, video=False, topics=None):
 
     # Per-agent topics common to both sim and hardware (prefixed with /{agent})
     base_topics = [
@@ -84,8 +84,42 @@ def record_ros2_bag(bag_name, bag_path, agents, use_hardware=False, topics=None)
         "/map_generator/global_cloud",
     ]
 
+    # Lightweight video-friendly topic set (visualization only, no data topics)
+    video_topics = [
+        "/traj_committed_colored",
+        "/traj_subopt_colored",
+        "/actual_traj",
+        "/dgp_path_marker",
+        "/original_dgp_path_marker",
+        "/poly_safe",
+        "/point_G",
+        "/point_A",
+        "/point_E",
+        "/term_goal",
+        "/hover_avoidance_viz",
+        "/occupancy_grid",
+        "/unknown_grid",
+        "/dynamic_grid",
+        "/heat_cloud",
+        "/tracked_obstacles",
+        "/cluster_bounding_boxes",
+        "/uncertainty_spheres",
+        "/vel_text",
+        "/fov",
+        "/drone_marker",
+    ]
+
+    video_static_topics = [
+        "/tf",
+        "/tf_static",
+        "/shapes_dynamic_mesh",
+    ]
+
     # Build per-agent topic list
-    agent_topics = base_topics + (hw_topics if use_hardware else sim_topics)
+    if video:
+        agent_topics = video_topics
+    else:
+        agent_topics = base_topics + (hw_topics if use_hardware else sim_topics)
 
     # Generate topics for all agents
     all_topics = []
@@ -94,9 +128,12 @@ def record_ros2_bag(bag_name, bag_path, agents, use_hardware=False, topics=None)
             all_topics.append(f"/{agent}{topic}")
 
     # Add global topics
-    all_topics.extend(static_topics)
-    if not use_hardware:
-        all_topics.extend(sim_static_topics)
+    if video:
+        all_topics.extend(video_static_topics)
+    else:
+        all_topics.extend(static_topics)
+        if not use_hardware:
+            all_topics.extend(sim_static_topics)
 
     # Use provided topics if specified, otherwise default to generated topics
     if topics is None:
@@ -136,6 +173,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Use hardware topic set (livox/lidar instead of mid360_PointCloud2, etc.)",
     )
+    parser.add_argument(
+        "--video",
+        action="store_true",
+        help="Record only visualization topics for video replay (lightweight, no data topics)",
+    )
     args = parser.parse_args()
 
     if args.bag_name:
@@ -154,5 +196,6 @@ if __name__ == "__main__":
     print("Bag path:", bag_path)
     print("Agents:", agents)
     print("Hardware:", args.hardware)
+    print("Video:", args.video)
 
-    record_ros2_bag(bag_name, bag_path, agents, use_hardware=args.hardware)
+    record_ros2_bag(bag_name, bag_path, agents, use_hardware=args.hardware, video=args.video)

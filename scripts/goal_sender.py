@@ -36,15 +36,15 @@ class GoalSender(Node):
         for agent in self.list_agents:
             self.pub_goals[agent] = self.create_publisher(PoseStamped, f'/{agent}/term_goal', 10)
 
-        # Send the goals
-        while True: # sometimes this doesn't work so keep trying
+        # Send the goals (publish a few times to ensure delivery, then stop)
+        sleep(1)  # wait for subscribers to connect
+        for _ in range(3):
             for agent, goal in zip(self.list_agents, self.list_goals):
-                print("Sending goal for agent", agent)
-                print(goal)
                 self.send_goal(agent, goal)
-            
-            # Sleep for 2 seconds
-            sleep(2)
+            sleep(0.3)
+
+        for agent, goal in zip(self.list_agents, self.list_goals):
+            print(f"Goal sent for {agent}: {goal}")
 
     def send_goal(self, agent, goal):
 

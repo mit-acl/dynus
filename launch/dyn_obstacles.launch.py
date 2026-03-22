@@ -102,7 +102,13 @@ def _spawn_static_block(context):
         # Load obstacles from pre-generated file (shared with WorldPlugin)
         print(f"[dyn_obstacles][spawn] Loading obstacles from file: {obstacles_json_file}")
         with open(obstacles_json_file) as f:
-            obstacles_meta = json.load(f)
+            raw = json.load(f)
+        # Support both shared format {"metadata": ..., "obstacles": [...]}
+        # and legacy flat-list format [...]
+        if isinstance(raw, dict) and "obstacles" in raw:
+            obstacles_meta = raw["obstacles"]
+        else:
+            obstacles_meta = raw
         _OBSTACLES_JSON_STORAGE['obstacles_json'] = json.dumps(obstacles_meta)
         print(f"[dyn_obstacles][spawn] Loaded {len(obstacles_meta)} obstacles from file")
         return []  # No Gazebo spawn actions needed (WorldPlugin handles it)
@@ -110,10 +116,10 @@ def _spawn_static_block(context):
     num_obstacles   = _as(context, 'num_obstacles', int,   1)
     x_min           = _as(context, 'x_min', float, 5.0)
     x_max           = _as(context, 'x_max', float, 105.0)
-    y_min           = _as(context, 'y_min', float, -15.0)
-    y_max           = _as(context, 'y_max', float, 15.0)
-    z_min           = _as(context, 'z_min', float, 0.0)
-    z_max           = _as(context, 'z_max', float, 6.0)
+    y_min           = _as(context, 'y_min', float, -6.0)
+    y_max           = _as(context, 'y_max', float, 6.0)
+    z_min           = _as(context, 'z_min', float, 0.5)
+    z_max           = _as(context, 'z_max', float, 4.5)
     slower_min      = _as(context, 'slower_min', float, 10.0)
     slower_max      = _as(context, 'slower_max', float, 12.0)
     spawn_interval  = _as(context, 'spawn_interval', float, 10.0)
@@ -345,10 +351,10 @@ def generate_launch_description():
         # Spatial ranges
         DeclareLaunchArgument('x_min', default_value='5.0'),
         DeclareLaunchArgument('x_max', default_value='100.0'),
-        DeclareLaunchArgument('y_min', default_value='-15.0'),
-        DeclareLaunchArgument('y_max', default_value='15.0'),
-        DeclareLaunchArgument('z_min', default_value='0.0'),
-        DeclareLaunchArgument('z_max', default_value='7.0'),
+        DeclareLaunchArgument('y_min', default_value='-6.0'),
+        DeclareLaunchArgument('y_max', default_value='6.0'),
+        DeclareLaunchArgument('z_min', default_value='0.5'),
+        DeclareLaunchArgument('z_max', default_value='4.5'),
 
         # Trajectory params
         DeclareLaunchArgument('slower_min', default_value='4.0'),

@@ -2,3 +2,6 @@ data
 benchmark_data
 __pycache__/
 *.pyc
+videos/dynus2_animation/media/
+docker/gurobi.lic
+*.gif

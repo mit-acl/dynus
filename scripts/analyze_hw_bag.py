@@ -379,15 +379,19 @@ HW_DYNAMIC_TESTS = [
 
 # Dynamic round2 test configurations: test_name -> (obst_type, num_obst, obst_traj, v_max, a_max, j_max)
 HW_DYNAMIC_ROUND2_TESTS = [
-    ("test10", "Only Dyn.",        1, "Line",     2.0, 5.0, 7.5),
-    ("test11", "Only Dyn.",        1, "Circle",   2.0, 5.0, 7.5),
-    ("test12", "Only Dyn.",        1, "Figure 8", 2.0, 5.0, 7.5),
-    ("test14", "Only Dyn.",        5, "Line",     2.0, 5.0, 7.5),
-    ("test15", "Only Dyn.",        5, "Line",     2.0, 5.0, 7.5),
-    ("test16", "Only Dyn.",        5, "Line",     2.0, 5.0, 7.5),
-    ("test18", r"Dyn. \& Static",  5, "Line",     2.0, 5.0, 7.5),
-    ("test23", r"Dyn. \& Static",  5, "Line",     3.0, 5.0, 7.5),
-    ("test24", r"Dyn. \& Static",  5, "Line",     4.0, 5.0, 7.5),
+    # Exp 7-10: single obstacle, different trajectories
+    ("test28", "1 Dyn.",                              "Line",       2.0, 5.0, 7.5),
+    ("test29", "1 Dyn.",                              "Circle",     2.0, 5.0, 7.5),
+    ("test30", "1 Dyn.",                              "Fig. Eight", 2.0, 5.0, 7.5),
+    ("test31", "1 Dyn.",                              "Person",     2.0, 5.0, 7.5),
+    # Exp 11-13: five dynamic obstacles
+    ("test14", "5 Dyn.",                              "Line",       2.0, 5.0, 7.5),
+    ("test15", "5 Dyn.",                              "Line",       2.0, 5.0, 7.5),
+    ("test16", "5 Dyn.",                              "Line",       2.0, 5.0, 7.5),
+    # Exp 14-16: dynamic + static, varying v_max
+    ("test18", r"\makecell{5 Dyn. \\ \& Static}",    "Line",       2.0, 5.0, 7.5),
+    ("test23", r"\makecell{5 Dyn. \\ \& Static}",    "Line",       3.0, 5.0, 7.5),
+    ("test24", r"\makecell{5 Dyn. \\ \& Static}",    "Line",       4.0, 5.0, 7.5),
 ]
 
 
@@ -662,7 +666,7 @@ def generate_hw_dynamic_static_table(dynamic_static_dir, table_output):
 
 
 def build_dynamic_round2_table(rows, caption, label):
-    """Build a LaTeX table with Exp, Obst. Type, Num. Obst., Obst. Traj., v_max, and computation time columns."""
+    """Build a LaTeX table with multirow grouping for repeated values."""
     lines = []
     lines.append(r"\begin{table}")
     lines.append(f"  \\caption{{{caption}}}")
@@ -670,32 +674,77 @@ def build_dynamic_round2_table(rows, caption, label):
     lines.append(r"  \centering")
     lines.append(r"  \renewcommand{\arraystretch}{1.2}")
     lines.append(r"  \resizebox{\columnwidth}{!}{")
-    lines.append(r"    \begin{tabular}{c c c c c c c c c}")
+    lines.append(r"    \begin{tabular}{c c c c c c c c}")
     lines.append(r"      \toprule")
     lines.append(
         r"      \multirow{2}{*}[-0.4ex]{\textbf{Exp.}}"
-        r" & \multirow{2}{*}[-0.4ex]{\textbf{Obst. Type}}"
-        r" & \multirow{2}{*}[-0.4ex]{\makecell{\textbf{Num.} \\ \textbf{Obst.}}}"
-        r" & \multirow{2}{*}[-0.4ex]{\textbf{Obst. Traj.}}"
+        r" & \multirow{2}{*}[-0.4ex]{\makecell{\textbf{Obst.} \\ \textbf{Type}}}"
+        r" & \multirow{2}{*}[-0.4ex]{\makecell{\textbf{Obst.} \\ \textbf{Traj.}}}"
         r" & \multirow{2}{*}[-0.4ex]{\makecell{$v_{\max}$ \\ {[m/s]}}}"
-        r" & \multicolumn{4}{c}{\textbf{Computation Time}}"
+        r" & \multicolumn{4}{c}{\textbf{Computation Time [ms]}}"
         r" \\"
     )
-    lines.append(r"      \cmidrule(lr){6-9}")
+    lines.append(r"      \cmidrule(lr){5-8}")
     lines.append(
-        r"      & & & & "
-        r"& $T_{\mathrm{replan}}$ [ms]"
-        r" & $T_{\mathrm{global}}$ [ms]"
-        r" & $T_{\mathrm{STSFC}}$ [ms]"
-        r" & $T_{\mathrm{opt}}$ [ms]"
+        r"      & & & "
+        r"& $T_{\mathrm{replan}}$"
+        r" & $T_{\mathrm{global}}$"
+        r" & $T_{\mathrm{STSFC}}$"
+        r" & $T_{\mathrm{opt}}$"
         r" \\"
     )
     lines.append(r"      \midrule")
 
+    # Split rows into groups separated by midrules
+    midrule_after = {10, 13}
+    groups = []
+    current_group = []
     for i, row in enumerate(rows, start=7):
-        cells = format_comp_cells(row["comp_stats"])
-        cell_str = " & ".join(cells)
-        lines.append(f"      {i} & {row['obst_type']} & {row['num_obst']} & {row['obst_traj']} & {row['v_max']:.1f} & {cell_str} \\\\")
+        current_group.append((i, row))
+        if i in midrule_after or i == len(rows) + 6:
+            groups.append(current_group)
+            current_group = []
+    if current_group:
+        groups.append(current_group)
+
+    for gi, group in enumerate(groups):
+        n = len(group)
+        for j, (exp_num, row) in enumerate(group):
+            cells = format_comp_cells(row["comp_stats"])
+            cell_str = " & ".join(cells)
+
+            # Determine if this column should use multirow (first in group)
+            # or be empty (subsequent in group with same value)
+            obst_type_vals = [r["obst_type"] for _, r in group]
+            obst_traj_vals = [r["obst_traj"] for _, r in group]
+            v_max_vals = [r["v_max"] for _, r in group]
+
+            if j == 0:
+                # First row: use multirow if all values in group are the same
+                if all(v == obst_type_vals[0] for v in obst_type_vals):
+                    obst_type_str = f"\\multirow{{{n}}}{{*}}{{{row['obst_type']}}}"
+                else:
+                    obst_type_str = row["obst_type"]
+
+                if all(v == obst_traj_vals[0] for v in obst_traj_vals):
+                    obst_traj_str = f"\\multirow{{{n}}}{{*}}{{{row['obst_traj']}}}"
+                else:
+                    obst_traj_str = row["obst_traj"]
+
+                if all(v == v_max_vals[0] for v in v_max_vals):
+                    v_max_str = f"\\multirow{{{n}}}{{*}}{{{row['v_max']:.1f}}}"
+                else:
+                    v_max_str = f"{row['v_max']:.1f}"
+            else:
+                # Subsequent rows: empty if multirow, otherwise show value
+                obst_type_str = "" if all(v == obst_type_vals[0] for v in obst_type_vals) else row["obst_type"]
+                obst_traj_str = "" if all(v == obst_traj_vals[0] for v in obst_traj_vals) else row["obst_traj"]
+                v_max_str = "" if all(v == v_max_vals[0] for v in v_max_vals) else f"{row['v_max']:.1f}"
+
+            lines.append(f"      {exp_num} & {obst_type_str} & {obst_traj_str} & {v_max_str} & {cell_str} \\\\")
+
+        if gi < len(groups) - 1:
+            lines.append(r"      \midrule")
 
     lines.append(r"      \bottomrule")
     lines.append(r"    \end{tabular}")
@@ -709,7 +758,7 @@ def generate_hw_dynamic_round2(dynamic_dir, table_output):
     """Generate a LaTeX table and history plots for hw dynamic round2 tests."""
     rows = []
 
-    for test_name, obst_type, num_obst, obst_traj, v_max, a_max, j_max in HW_DYNAMIC_ROUND2_TESTS:
+    for test_name, obst_type, obst_traj, v_max, a_max, j_max in HW_DYNAMIC_ROUND2_TESTS:
         test_dir = os.path.join(dynamic_dir, test_name)
         if not os.path.isdir(test_dir):
             print(f"  WARNING: {test_dir} not found, skipping")
@@ -727,7 +776,6 @@ def generate_hw_dynamic_round2(dynamic_dir, table_output):
 
         rows.append({
             "obst_type": obst_type,
-            "num_obst": num_obst,
             "obst_traj": obst_traj,
             "v_max": v_max,
             "comp_stats": comp_stats,
@@ -739,7 +787,7 @@ def generate_hw_dynamic_round2(dynamic_dir, table_output):
             t, p, v_arr, a_arr, j_arr = goal_data
             plot_path = os.path.join(bag_path, f"history_{test_name}.pdf")
             # Adjust position y-axis based on goal position
-            if test_name in ("test10", "test11", "test12"):
+            if test_name in ("test28", "test29", "test30", "test31"):
                 p_ylim_val = (-2, 12)
             else:
                 p_ylim_val = (0, 20)

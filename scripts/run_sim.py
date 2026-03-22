@@ -42,6 +42,10 @@ import yaml
 from pathlib import Path
 
 
+# Source rviz config (not the install copy)
+RVIZ_CONFIG = Path(__file__).resolve().parent.parent / 'rviz' / 'dynus.rviz'
+
+
 def find_setup_bash(args_setup_bash: str = None) -> Path:
     """Find setup.bash path. Requires explicit --setup-bash argument."""
     if not args_setup_bash:
@@ -115,11 +119,7 @@ def generate_multiagent_yaml(setup_bash: Path, agents: list, ros_domain_id: int 
             'window_name': 'main',
             'layout': 'tiled',
             'shell_command_before': [
-                f'''if [ -z "$SETUP_BASH" ] || [ ! -f "$SETUP_BASH" ]; then
-  echo "[ERROR] SETUP_BASH is missing or invalid: $SETUP_BASH" >&2
-  exit 1
-fi
-. "$SETUP_BASH"''',
+                f'. "$SETUP_BASH" 2>/dev/null || true',
                 f'export ROS_DOMAIN_ID={ros_domain_id}'
             ],
             'panes': panes
@@ -134,7 +134,7 @@ def generate_rviz_only_yaml(setup_bash: Path, goal: tuple,
                            ros_domain_id: int = 20, num_obstacles: int = 50,
                            dynamic_ratio: float = 0.65,
                            x_min: float = 5.0, x_max: float = 100.0,
-                           y_min: float = -7.0, y_max: float = 7.0,
+                           y_min: float = -6.0, y_max: float = 6.0,
                            z_min: float = 0.5, z_max: float = 4.5,
                            seed: int = 0,
                            data_file: str = None,
@@ -143,7 +143,9 @@ def generate_rviz_only_yaml(setup_bash: Path, goal: tuple,
                            send_goal: bool = True,
                            use_rviz: bool = True,
                            environment_assumption: str = '',
-                           publish_obstacle_tf: bool = True) -> str:
+                           publish_obstacle_tf: bool = True,
+                           with_goal_relay: bool = False,
+                           obstacles_json_file: str = None) -> str:
     """Generate YAML for RViz-only simulation (no Gazebo, lightweight)."""
     goal_x, goal_y, goal_z = goal
     start_x, start_y, start_z = start_pos
@@ -161,7 +163,9 @@ def generate_rviz_only_yaml(setup_bash: Path, goal: tuple,
                 f'publish_rate_hz:=100.0 '
                 f'seed:={seed} '
                 f'use_rviz:={str(use_rviz).lower()} '
-                f'publish_tf:={str(publish_obstacle_tf).lower()}'
+                f'publish_tf:={str(publish_obstacle_tf).lower()} '
+                f'rviz_config:={RVIZ_CONFIG}'
+                + (f' obstacles_json_file:={obstacles_json_file}' if obstacles_json_file else '')
             ]
         },
         # Onboard agent NX01 (with rviz_only mode - no point cloud)
@@ -188,17 +192,22 @@ def generate_rviz_only_yaml(setup_bash: Path, goal: tuple,
             ]
         })
 
+    # Add goal relay pane for interactive mode (RViz click-to-goal)
+    if with_goal_relay:
+        panes.append({
+            'shell_command': [
+                'sleep 8',
+                f'ros2 run dynus goal_relay.py --ros-args -p default_goal_z:={goal_z}'
+            ]
+        })
+
     yaml_content = {
         'session_name': 'dynus_sim',
         'windows': [{
             'window_name': 'main',
             'layout': 'tiled',
             'shell_command_before': [
-                f'''if [ -z "$SETUP_BASH" ] || [ ! -f "$SETUP_BASH" ]; then
-  echo "[ERROR] SETUP_BASH is missing or invalid: $SETUP_BASH" >&2
-  exit 1
-fi
-. "$SETUP_BASH"''',
+                f'. "$SETUP_BASH" 2>/dev/null || true',
                 f'export ROS_DOMAIN_ID={ros_domain_id}'
             ],
             'panes': panes
@@ -225,7 +234,8 @@ def _generate_obstacle_json(num_obstacles: int, seed: int,
                             x_min: float, x_max: float,
                             y_min: float, y_max: float,
                             z_min: float, z_max: float,
-                            dynamic_ratio: float = 1.0) -> list:
+                            dynamic_ratio: float = 1.0,
+                            exclusion_zone: tuple = None) -> list:
     """Generate obstacle metadata list (same logic as dyn_obstacles.launch.py)."""
     import random as _rng
     _rng.seed(seed)
@@ -245,9 +255,16 @@ def _generate_obstacle_json(num_obstacles: int, seed: int,
     for i in range(num_obstacles):
         is_dynamic = i < num_dynamic
 
-        x = x_min + (x_max - x_min) * _rng.random()
-        y = y_min + (y_max - y_min) * _rng.random()
-        z = z_min + (z_max - z_min) * _rng.random()
+        # Sample position, rejecting points inside the exclusion zone
+        while True:
+            x = x_min + (x_max - x_min) * _rng.random()
+            y = y_min + (y_max - y_min) * _rng.random()
+            z = z_min + (z_max - z_min) * _rng.random()
+            if exclusion_zone is None:
+                break
+            ex_min, ex_max, ey_min, ey_max = exclusion_zone
+            if not (ex_min <= x <= ex_max and ey_min <= y <= ey_max):
+                break
 
         if is_dynamic:
             sx = _rng.uniform(*scale_range[0])
@@ -267,7 +284,12 @@ def _generate_obstacle_json(num_obstacles: int, seed: int,
                 z = bbox_static_vert[2] / 2.0
                 bbox = bbox_static_vert
             else:
-                bbox = bbox_static_horiz
+                num_horiz = num_static - int(num_static * percentage_vert)
+                horiz_idx = static_idx - int(num_static * percentage_vert)
+                if horiz_idx < num_horiz / 2:
+                    bbox = bbox_static_horiz            # [0.4, 4.0, 0.4] long on Y
+                else:
+                    bbox = [4.0, 0.4, 0.4]              # long on X
 
             x_str = str(x)
             y_str = str(y)
@@ -315,12 +337,12 @@ def generate_gazebo_dynamic_yaml(setup_bash: Path, goal: tuple,
                                  dynamic_ratio: float = 0.65,
                                  seed: int = 0,
                                  x_min: float = 5.0, x_max: float = 100.0,
-                                 y_min: float = -7.0, y_max: float = 7.0,
+                                 y_min: float = -6.0, y_max: float = 6.0,
                                  z_min: float = 0.5, z_max: float = 4.5,
                                  send_goal: bool = True,
                                  publish_trajs: bool = True,
                                  trajs_topic: str = '/trajs',
-                                 depth_topic: str = 'mid360_PointCloud2',
+                                 depth_topic: str = 'd435/depth/color/points',
                                  data_file: str = None,
                                  use_benchmark: bool = False,
                                  global_planner: str = 'astar_heat') -> str:
@@ -374,7 +396,8 @@ def generate_gazebo_dynamic_yaml(setup_bash: Path, goal: tuple,
                     f'ros2 launch dynus base_dynus.launch.py use_dyn_obs:=false '
                     f'use_gazebo_gui:={str(use_gazebo_gui).lower()} '
                     f'use_rviz:={str(use_rviz).lower()} env:={env} '
-                    f'world_file:={temp_world}'
+                    f'world_file:={temp_world} '
+                    f'rviz_config:={RVIZ_CONFIG}'
                 ]
             },
             # dynamic_forest_node for RViz markers, TF, and ground truth on a separate topic
@@ -406,7 +429,8 @@ def generate_gazebo_dynamic_yaml(setup_bash: Path, goal: tuple,
                 'shell_command': [
                     f'ros2 launch dynus base_dynus.launch.py use_dyn_obs:=false '
                     f'use_gazebo_gui:={str(use_gazebo_gui).lower()} '
-                    f'use_rviz:={str(use_rviz).lower()} env:={env}'
+                    f'use_rviz:={str(use_rviz).lower()} env:={env} '
+                    f'rviz_config:={RVIZ_CONFIG}'
                 ]
             },
             {
@@ -466,11 +490,7 @@ def generate_gazebo_dynamic_yaml(setup_bash: Path, goal: tuple,
             'window_name': 'main',
             'layout': 'tiled',
             'shell_command_before': [
-                f'''if [ -z "$SETUP_BASH" ] || [ ! -f "$SETUP_BASH" ]; then
-  echo "[ERROR] SETUP_BASH is missing or invalid: $SETUP_BASH" >&2
-  exit 1
-fi
-. "$SETUP_BASH"''',
+                f'. "$SETUP_BASH" 2>/dev/null || true',
                 f'export ROS_DOMAIN_ID={ros_domain_id}'
             ],
             'panes': panes
@@ -525,17 +545,13 @@ def generate_hover_test_yaml(setup_bash: Path,
     with open(json_path, 'w') as f:
         _json.dump(obstacles, f)
 
-    # Resolve rviz config path from install directory
-    install_dir = setup_bash.resolve().parent
-    rviz_cfg = install_dir / 'dynus' / 'share' / 'dynus' / 'rviz' / 'dynus.rviz'
-
     panes = []
 
     # Pane 1: RViz (standalone, since rviz_only.launch.py doesn't forward obstacles_json_file)
     if use_rviz:
         panes.append({
             'shell_command': [
-                f'rviz2 -d {rviz_cfg}'
+                f'rviz2 -d {RVIZ_CONFIG}'
             ]
         })
 
@@ -584,11 +600,7 @@ def generate_hover_test_yaml(setup_bash: Path,
             'window_name': 'main',
             'layout': 'tiled',
             'shell_command_before': [
-                f'''if [ -z "$SETUP_BASH" ] || [ ! -f "$SETUP_BASH" ]; then
-  echo "[ERROR] SETUP_BASH is missing or invalid: $SETUP_BASH" >&2
-  exit 1
-fi
-. "$SETUP_BASH"''',
+                f'. "$SETUP_BASH" 2>/dev/null || true',
                 f'export ROS_DOMAIN_ID={ros_domain_id}'
             ],
             'panes': panes
@@ -617,17 +629,13 @@ def generate_adversarial_test_yaml(setup_bash: Path,
     ex, ey, ez = evader_start
     cx, cy, cz = chaser_start
 
-    # Resolve rviz config path from install directory
-    install_dir = setup_bash.resolve().parent
-    rviz_cfg = install_dir / 'dynus' / 'share' / 'dynus' / 'rviz' / 'dynus.rviz'
-
     panes = []
 
     # Pane 1: RViz
     if use_rviz:
         panes.append({
             'shell_command': [
-                f'rviz2 -d {rviz_cfg}'
+                f'rviz2 -d {RVIZ_CONFIG}'
             ]
         })
 
@@ -691,11 +699,7 @@ def generate_adversarial_test_yaml(setup_bash: Path,
             'window_name': 'main',
             'layout': 'tiled',
             'shell_command_before': [
-                f'''if [ -z "$SETUP_BASH" ] || [ ! -f "$SETUP_BASH" ]; then
-  echo "[ERROR] SETUP_BASH is missing or invalid: $SETUP_BASH" >&2
-  exit 1
-fi
-. "$SETUP_BASH"''',
+                f'. "$SETUP_BASH" 2>/dev/null || true',
                 f'export ROS_DOMAIN_ID={ros_domain_id}'
             ],
             'panes': panes
@@ -721,22 +725,30 @@ def generate_gazebo_yaml(setup_bash: Path, goal: tuple,
     goal_x, goal_y, goal_z = goal
     start_x, start_y, start_z = start_pos
 
+    # Default environment assumption based on env type
+    static_envs = {'easy_forest', 'medium_forest', 'hard_forest'}
+    if not environment_assumption:
+        environment_assumption = 'static' if env in static_envs else 'dynamic'
+
     panes = [
         # Base station with Gazebo
         {
             'shell_command': [
                 f'ros2 launch dynus base_dynus.launch.py use_dyn_obs:={str(use_dyn_obs).lower()} '
-                f'use_gazebo_gui:={str(use_gazebo_gui).lower()} use_rviz:={str(use_rviz).lower()} env:={env}'
+                f'use_gazebo_gui:={str(use_gazebo_gui).lower()} use_rviz:={str(use_rviz).lower()} env:={env} '
+                f'rviz_config:={RVIZ_CONFIG}'
             ]
         }
     ]
 
     # ACL mapper (optional)
     if use_mapper:
+        static_envs = {'easy_forest', 'medium_forest', 'hard_forest'}
+        param_file = 'static_global_mapper.yaml' if env in static_envs else 'global_mapper.yaml'
         panes.append({
             'shell_command': [
                 'sleep 5',
-                f'ros2 launch global_mapper_ros global_mapper_node.launch.py quad:=NX01 depth_pointcloud_topic:={depth_topic}'
+                f'ros2 launch global_mapper_ros global_mapper_node.launch.py quad:=NX01 depth_pointcloud_topic:={depth_topic} param_file:={param_file}'
             ]
         })
 
@@ -765,11 +777,7 @@ def generate_gazebo_yaml(setup_bash: Path, goal: tuple,
             'window_name': 'main',
             'layout': 'tiled',
             'shell_command_before': [
-                f'''if [ -z "$SETUP_BASH" ] || [ ! -f "$SETUP_BASH" ]; then
-  echo "[ERROR] SETUP_BASH is missing or invalid: $SETUP_BASH" >&2
-  exit 1
-fi
-. "$SETUP_BASH"''',
+                f'. "$SETUP_BASH" 2>/dev/null || true',
                 f'export ROS_DOMAIN_ID={ros_domain_id}'
             ],
             'panes': panes
@@ -1192,14 +1200,20 @@ def main():
 
     parser.add_argument(
         '--mode', '-m',
-        choices=['multiagent', 'gazebo', 'gazebo-dynamic', 'rviz-only', 'hover-test', 'adversarial-test', 'benchmark-record'],
+        choices=['multiagent', 'gazebo', 'gazebo-dynamic', 'rviz-only', 'interactive', 'hover-test', 'adversarial-test', 'benchmark-record',
+                 'static', 'dynamic', 'unknown_dynamic'],
         default='gazebo',
-        help='Simulation mode: multiagent (fake sensing), gazebo (static world + ACL mapper), '
-             'gazebo-dynamic (static world + ACL mapper + dynamic obstacles), '
-             'rviz-only (lightweight, no Gazebo), hover-test (empty world + trefoil '
-             'obstacles for hover avoidance testing), adversarial-test (chaser DYNUS '
-             'follows evader DYNUS), or benchmark-record (record rosbags '
-             'for all 6 benchmark configs) [default: gazebo]'
+        help='Simulation mode. Simplified demo modes: static, dynamic, unknown_dynamic, interactive '
+             '(use with --difficulty). Advanced modes: multiagent, gazebo, gazebo-dynamic, rviz-only, '
+             'hover-test, adversarial-test, benchmark-record. [default: gazebo]'
+    )
+
+    parser.add_argument(
+        '--difficulty', '-d',
+        choices=['easy', 'medium', 'hard'],
+        default='medium',
+        help='Difficulty level for demo modes (static/dynamic/unknown_dynamic). '
+             'easy=50 obstacles, medium=100, hard=200. [default: medium]'
     )
 
     parser.add_argument(
@@ -1349,6 +1363,14 @@ def main():
     )
 
     parser.add_argument(
+        '--obstacles-json-file',
+        type=str,
+        default=None,
+        help='Path to shared benchmark obstacle JSON config. '
+             'When set, overrides seed-based obstacle generation.'
+    )
+
+    parser.add_argument(
         '--data-file',
         type=str,
         default=None,
@@ -1375,9 +1397,15 @@ def main():
     )
 
     parser.add_argument(
-        '--no-ground-truth',
+        '--with-goal-relay',
         action='store_true',
-        help='Disable ground truth /trajs publishing for dynamic obstacles (gazebo-dynamic mode)'
+        help='Add a goal relay pane that forwards RViz 2D Nav Goal clicks to the planner (interactive mode)'
+    )
+
+    parser.add_argument(
+        '--ground-truth',
+        action='store_true',
+        help='Enable ground truth /trajs publishing for dynamic obstacles (gazebo-dynamic mode, default: disabled)'
     )
 
     parser.add_argument(
@@ -1450,6 +1478,29 @@ def main():
         )
         return
 
+    # ---- Simplified demo modes: map to internal modes ----
+    DIFFICULTY_OBSTACLES = {'easy': 50, 'medium': 100, 'hard': 200}
+    STATIC_ENVS = {'easy': 'easy_forest', 'medium': 'medium_forest', 'hard': 'hard_forest'}
+
+    if args.mode == 'static':
+        args.mode = 'gazebo'
+        args.env = STATIC_ENVS[args.difficulty]
+        args.goal = [105.0, 0.0, 2.0]
+        print(f"[INFO] Demo: static {args.difficulty} ({args.env})")
+    elif args.mode == 'dynamic':
+        args.mode = 'rviz-only'
+        args.num_obstacles = DIFFICULTY_OBSTACLES[args.difficulty]
+        args.dynamic_ratio = 0.65
+        args.goal = [105.0, 0.0, 2.0]
+        print(f"[INFO] Demo: dynamic {args.difficulty} ({args.num_obstacles} obstacles)")
+    elif args.mode == 'unknown_dynamic':
+        args.mode = 'gazebo-dynamic'
+        args.env = 'empty_wo_ground'
+        args.num_obstacles = DIFFICULTY_OBSTACLES[args.difficulty]
+        args.dynamic_ratio = 0.65
+        args.goal = [105.0, 0.0, 2.0]
+        print(f"[INFO] Demo: unknown_dynamic {args.difficulty} ({args.num_obstacles} obstacles)")
+
     # Determine sim_env and generate YAML
     if args.mode == 'multiagent':
         agents = generate_multiagent_positions(args.num_agents, args.radius)
@@ -1476,15 +1527,59 @@ def main():
             use_benchmark=args.use_benchmark or (args.data_file is not None),
             global_planner=args.global_planner,
             send_goal=not args.no_goal_sender,
-            use_rviz=use_rviz
+            use_rviz=use_rviz,
+            with_goal_relay=args.with_goal_relay,
+            obstacles_json_file=args.obstacles_json_file
         )
         num_dyn = int(args.num_obstacles * args.dynamic_ratio)
         num_stat = args.num_obstacles - num_dyn
         print(f"[INFO] Mode: RViz-only simulation (no Gazebo)")
         print(f"[INFO] Obstacles: {args.num_obstacles} total ({num_dyn} dynamic, {num_stat} static)")
+        if args.obstacles_json_file:
+            print(f"[INFO] Obstacles loaded from: {args.obstacles_json_file}")
         print(f"[INFO] Start: ({args.start[0]}, {args.start[1]}, {args.start[2]}) yaw={args.start_yaw}")
         print(f"[INFO] Goal: ({args.goal[0]}, {args.goal[1]}, {args.goal[2]})")
         print(f"[INFO] Seed: {args.seed}")
+    elif args.mode == 'interactive':
+        import json as _json
+        use_rviz = args.rviz and not args.no_rviz
+        num_obs = args.num_obstacles
+        dyn_ratio = args.dynamic_ratio
+        # Pre-generate obstacles with exclusion zone around the origin
+        obstacles = _generate_obstacle_json(
+            num_obs, args.seed,
+            x_min=-15.0, x_max=15.0,
+            y_min=-15.0, y_max=15.0,
+            z_min=0.5, z_max=4.5,
+            dynamic_ratio=dyn_ratio,
+            exclusion_zone=(-3.0, 3.0, -3.0, 3.0),
+        )
+        json_path = '/tmp/dynus_interactive_obstacles.json'
+        with open(json_path, 'w') as f:
+            _json.dump(obstacles, f)
+        yaml_content = generate_rviz_only_yaml(
+            setup_bash,
+            goal=(0, 0, 2.0),  # dummy, user clicks goals
+            start_pos=tuple(args.start),
+            start_yaw=args.start_yaw,
+            ros_domain_id=args.ros_domain_id,
+            num_obstacles=num_obs,
+            dynamic_ratio=dyn_ratio,
+            x_min=-15.0, x_max=15.0,
+            y_min=-15.0, y_max=15.0,
+            z_min=0.5, z_max=4.5,
+            seed=args.seed,
+            send_goal=False,
+            use_rviz=use_rviz,
+            with_goal_relay=True,
+            obstacles_json_file=json_path,
+        )
+        num_dyn = int(num_obs * dyn_ratio)
+        num_stat = num_obs - num_dyn
+        print(f"[INFO] Mode: Interactive (click goals in RViz)")
+        print(f"[INFO] Arena: 30x30m, exclusion zone: 6x6m center")
+        print(f"[INFO] Obstacles: {num_obs} total ({num_dyn} dynamic, {num_stat} static)")
+        print(f"[INFO] Use RViz '2D Nav Goal' to send goals")
     elif args.mode == 'gazebo-dynamic':
         use_rviz = args.rviz and not args.no_rviz
         use_gazebo_gui = args.gazebo_gui and not args.no_gazebo_gui
@@ -1507,9 +1602,8 @@ def main():
             z_min=args.obs_z_range[0],
             z_max=args.obs_z_range[1],
             send_goal=not args.no_goal_sender,
-            publish_trajs=not args.no_ground_truth,
+            publish_trajs=args.ground_truth,
             trajs_topic=args.trajs_topic,
-            depth_topic='d435/depth/color/points' if args.d435 else 'mid360_PointCloud2',
             data_file=args.data_file,
             use_benchmark=args.use_benchmark or (args.data_file is not None),
             global_planner=args.global_planner,
@@ -1520,7 +1614,7 @@ def main():
         print(f"[INFO] Depth sensor: {'D435' if args.d435 else 'mid360 lidar'}")
         print(f"[INFO] Static world: {args.env} (pointcloud + ACL mapper)")
         print(f"[INFO] Obstacles: {args.num_obstacles} total ({num_dyn} dynamic, {num_stat} static)")
-        print(f"[INFO] Ground truth /trajs: {'disabled' if args.no_ground_truth else 'enabled'}")
+        print(f"[INFO] Ground truth /trajs: {'enabled' if args.ground_truth else 'disabled'}")
         print(f"[INFO] Start: ({args.start[0]}, {args.start[1]}, {args.start[2]}) yaw={args.start_yaw}")
         print(f"[INFO] Goal: ({args.goal[0]}, {args.goal[1]}, {args.goal[2]})")
         print(f"[INFO] Seed: {args.seed}")

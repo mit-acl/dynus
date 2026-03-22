@@ -6,15 +6,16 @@ Panels:
       Expanded:
         - /Global Options1
         - /Common1
-        - /Common1/TF1
         - /Common1/TF1/Frames1
         - /PX031
         - /PX031/Planning1
         - /PX031/Planning1/PX03 DGP path1/Topic1
         - /PX031/Planning1/PX03 Poly for Safe Trajs1/Topic1
         - /PX031/Mapping1
+        - /PX031/Mapping1/PX03 Lidar PointCloud1
         - /PX031/Mapping1/PX03 Lidar PointCloud1/Autocompute Value Bounds1
         - /PX031/Mapping1/PX03 Static Grid1/Topic1
+        - /PX031/Mapping1/PX03 Heat Cloud1
         - /PX031/Others1
         - /PX03 Lidar PointCloud1
         - /PX03 Lidar PointCloud1/Autocompute Value Bounds1
@@ -67,35 +68,33 @@ Visualization Manager:
           Frames:
             All Enabled: false
             PX03:
-              Value: false
+              Value: true
             PX03/base_link:
               Value: true
             PX03/d455_link:
-              Value: false
+              Value: true
             PX03/imu:
-              Value: false
+              Value: true
             PX03/init_pose:
-              Value: false
+              Value: true
             PX03/lidar:
-              Value: false
-            PX03/pose_af:
-              Value: false
+              Value: true
             base_link:
-              Value: false
+              Value: true
             base_link_frd:
-              Value: false
+              Value: true
             map:
-              Value: false
+              Value: true
             map_ned:
-              Value: false
+              Value: true
             odom:
-              Value: false
+              Value: true
             odom_ned:
-              Value: false
+              Value: true
             world:
-              Value: false
+              Value: true
             world_mocap:
-              Value: false
+              Value: true
           Marker Scale: 5
           Name: TF
           Show Arrows: false
@@ -139,7 +138,7 @@ Visualization Manager:
         - Class: rviz_common/Group
           Displays:
             - Class: rviz_default_plugins/MarkerArray
-              Enabled: false
+              Enabled: true
               Name: PX03 DGP path
               Namespaces:
                 {}
@@ -149,9 +148,9 @@ Visualization Manager:
                 History Policy: Keep Last
                 Reliability Policy: Best Effort
                 Value: /PX03/dgp_path_marker
-              Value: false
+              Value: true
             - Class: rviz_default_plugins/MarkerArray
-              Enabled: true
+              Enabled: false
               Name: PX03 DGP Free Path
               Namespaces:
                 {}
@@ -161,7 +160,7 @@ Visualization Manager:
                 History Policy: Keep Last
                 Reliability Policy: System Default
                 Value: /PX03/free_dgp_path_marker
-              Value: true
+              Value: false
             - Alpha: 0.20000000298023224
               BoundColor: 255; 154; 140
               Class: decomp_rviz_plugins/PolyhedronArray
@@ -197,29 +196,29 @@ Visualization Manager:
               VsColor: 0; 255; 0
               VsScale: 1
             - Class: rviz_default_plugins/MarkerArray
-              Enabled: true
+              Enabled: false
               Name: PX03 Traj
               Namespaces:
-                state_vec: true
+                {}
               Topic:
                 Depth: 5
                 Durability Policy: Volatile
                 History Policy: Keep Last
                 Reliability Policy: System Default
                 Value: /PX03/traj_committed_colored
-              Value: true
+              Value: false
             - Class: rviz_default_plugins/MarkerArray
-              Enabled: true
+              Enabled: false
               Name: PX03 Actual Traj
               Namespaces:
-                actual_traj_03: true
+                {}
               Topic:
                 Depth: 5
                 Durability Policy: Volatile
                 History Policy: Keep Last
                 Reliability Policy: Reliable
                 Value: /PX03/actual_traj
-              Value: true
+              Value: false
             - Class: rviz_default_plugins/MarkerArray
               Enabled: false
               Name: PX03 Cps
@@ -443,7 +442,7 @@ Visualization Manager:
               Autocompute Intensity Bounds: false
               Autocompute Value Bounds:
                 Max Value: 2
-                Min Value: -0.6000000238418579
+                Min Value: -0.20000000298023224
                 Value: false
               Axis: Z
               Channel Name: intensity
@@ -635,12 +634,12 @@ Visualization Manager:
               Color: 255; 255; 255
               Color Transformer: Intensity
               Decay Time: 0
-              Enabled: false
-              Invert Rainbow: false
+              Enabled: true
+              Invert Rainbow: true
               Max Color: 255; 255; 255
               Max Intensity: 1
               Min Color: 0; 0; 0
-              Min Intensity: 0.07030613720417023
+              Min Intensity: 0.009250651113688946
               Name: PX03 Heat Cloud
               Position Transformer: XYZ
               Selectable: true
@@ -656,7 +655,7 @@ Visualization Manager:
                 Value: /PX03/heat_cloud
               Use Fixed Frame: true
               Use rainbow: true
-              Value: false
+              Value: true
             - Alpha: 1
               Autocompute Intensity Bounds: true
               Autocompute Value Bounds:
@@ -752,7 +751,7 @@ Visualization Manager:
               Enabled: true
               Name: PX03 tracked obstacles
               Namespaces:
-                "": true
+                {}
               Topic:
                 Depth: 5
                 Durability Policy: Volatile
@@ -764,8 +763,7 @@ Visualization Manager:
               Enabled: true
               Name: PX03 Cluster Bbox
               Namespaces:
-                centroid: true
-                wireframe: true
+                {}
               Topic:
                 Depth: 5
                 Durability Policy: Volatile
@@ -883,25 +881,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 17.533689498901367
+      Distance: 27.33739471435547
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 2.8823471069335938
-        Y: 2.04661226272583
-        Z: -5.710597991943359
+        X: 4.070794582366943
+        Y: -0.4214394688606262
+        Z: -4.669261932373047
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.9647973775863647
+      Pitch: 0.9497976303100586
       Target Frame: world
       Value: Orbit (rviz_default_plugins)
-      Yaw: 3.8562328815460205
+      Yaw: 3.141228675842285
     Saved: ~
 Window Geometry:
   Displays:

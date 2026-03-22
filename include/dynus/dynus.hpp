@@ -110,6 +110,7 @@ public:
   bool getNextGoal(state &next_goal);
   bool checkReadyToReplan();
   void setTerminalGoal(const state &term_goal);
+  void logGoalEvent(const std::string &event, const state &drone, const state &goal, const Eigen::Vector3d &G_projected);
   void changeDroneStatus(int new_status);
   void getDesiredYaw(state &next_goal);
   void yaw(double diff, state &next_goal);
@@ -326,4 +327,5 @@ private:
 
   // decomp ellip workers for each thread
   std::vector<EllipsoidDecomp3D> ellip_workers_;
+
 };

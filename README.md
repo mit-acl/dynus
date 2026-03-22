@@ -42,16 +42,7 @@ The full video is available [https://youtu.be/Pvb-VPUdLvg](https://youtu.be/Pvb-
 
 ## Interactive Demo
 
-If you are interested in an interactive demo of DYNUS, please switch to the `interactive_demo` branch [https://github.com/mit-acl/dynus/tree/interactive_demo] by running:
-
-```bash
-git checkout interactive_demo
-```
-and follow the setup instructions in the README of that branch.
-
-## Fork
-
-Since you might want to use interactive demos, when you fork this repository, please make sure to also include the `interactive_demo` branch by unselecting the "Copy the main branch only" option.
+DYNUS includes a built-in interactive mode where you can click goals in RViz and watch the drone navigate through dynamic obstacles in real time. See the [Run Simulation](#use-docker-recommended) section for instructions.
 
 ## Setup
 
@@ -77,25 +68,72 @@ DYNUS has been tested on both Docker and native installations on Ubuntu 22.04 wi
       ```
 
 4. **Run Simulation**
-    - Run the following command to start the simulation:
-      ```bash
-      make run
-      ```
+
+    DYNUS provides four simulation modes with three difficulty levels:
+
+    | Mode | Description |
+    |------|-------------|
+    | `static` | Static forest obstacles (Gazebo) |
+    | `dynamic` | Known dynamic obstacles (RViz-only, lightweight) |
+    | `unknown_dynamic` | Unknown dynamic obstacles detected via pointcloud (Gazebo) |
+    | `interactive` | Click-to-goal with obstacles in a 30x30m arena (RViz-only) |
+
+    | Difficulty | Obstacles |
+    |------------|-----------|
+    | `easy` | 50 |
+    | `medium` | 100 |
+    | `hard` | 200 |
+
+    **Demo modes** (goal is sent automatically):
+    ```bash
+    make run-demo SCENARIO=static_easy
+    make run-demo SCENARIO=dynamic_hard
+    make run-demo SCENARIO=unknown_dynamic_medium
+    ```
+
+    **Interactive mode** (click goals in RViz using "2D Nav Goal"):
+    ```bash
+    make run-interactive
+    make run-interactive NUM_OBSTACLES=100   # customize obstacle count
+    ```
+
+    **Convenience aliases:**
+    ```bash
+    make run-static-easy
+    make run-static-medium
+    make run-static-hard
+    make run-dynamic-easy
+    make run-dynamic-medium
+    make run-dynamic-hard
+    make run-unknown-easy
+    make run-unknown-medium
+    make run-unknown-hard
+    ```
+
+    **Without GPU:**
+    ```bash
+    make run-demo SCENARIO=static_easy GPU=false
+    ```
+
+    **Debug shell:**
+    ```bash
+    make shell
+    ```
 
 <details>
   <summary><b>Useful Docker Commands</b></summary>
 
-  - **Remove all caches:**  
+  - **Remove all caches:**
     ```bash
     docker builder prune
     ```
 
-  - **Remove all containers:**  
+  - **Remove all containers:**
     ```bash
     docker rm $(docker ps -a -q)
     ```
 
-  - **Remove all images:**  
+  - **Remove all images:**
     ```bash
     docker rmi $(docker images -q)
     ```
@@ -119,9 +157,34 @@ DYNUS has been tested on both Docker and native installations on Ubuntu 22.04 wi
    This script will first install ROS 2 Humble, then DYNUS and its dependencies. Please note that this script modifies your `~/.bashrc` file.
 
  3. **Run the Simulation**
-    Run the simulation. You might need to change the path to `setup.bash` to its absolute path (eg. `/home/kkondo/code/ws/install/setup.bash`).
+
+    Source the workspace and run simulations using `run_sim.py`:
     ```bash
-    cd ~/code/dynus_ws && ./src/dynus/launch/run_dynus_sim.sh ~/code/dynus_ws/install/setup.bash
+    cd ~/code/dynus_ws
+    source install/setup.bash
+    ```
+
+    **Demo modes** (goal is sent automatically):
+    ```bash
+    # Static forest environments (Gazebo)
+    python3 src/dynus/scripts/run_sim.py -m static -d easy -s install/setup.bash
+    python3 src/dynus/scripts/run_sim.py -m static -d medium -s install/setup.bash
+    python3 src/dynus/scripts/run_sim.py -m static -d hard -s install/setup.bash
+
+    # Known dynamic obstacles (RViz-only, lightweight)
+    python3 src/dynus/scripts/run_sim.py -m dynamic -d easy -s install/setup.bash
+    python3 src/dynus/scripts/run_sim.py -m dynamic -d hard -s install/setup.bash
+
+    # Unknown dynamic obstacles (Gazebo + obstacle tracker)
+    python3 src/dynus/scripts/run_sim.py -m unknown_dynamic -d medium -s install/setup.bash
+    ```
+
+    **Interactive mode** (click goals in RViz using "2D Nav Goal"):
+    ```bash
+    python3 src/dynus/scripts/run_sim.py -m interactive -s install/setup.bash
+
+    # Customize obstacle count
+    python3 src/dynus/scripts/run_sim.py -m interactive --num-obstacles 100 -s install/setup.bash
     ```
 
 ## Benchmarking

@@ -8,6 +8,7 @@
 
 #include "dynus/dynus.hpp"
 #include <chrono>
+#include <fstream>
 
 using namespace dynus;
 using namespace termcolor;
@@ -202,9 +203,7 @@ bool DYNUS::needReplan(const state &local_state, const state &local_G_term, cons
   }
 
   if (drone_status_ == DroneStatus::GOAL_SEEN && dist_from_last_plan_state_to_term_G < par_.goal_radius)
-  {
     return false;
-  }
 
   return true;
 }
@@ -760,7 +759,7 @@ bool DYNUS::generateGlobalPath(vec_Vecf<3> &global_path, double current_time, do
   computeG(local_A, local_G_term, par_.horizon);
 
   // Update Map
-  if (par_.sim_env == "fake_sim")
+  if (par_.sim_env == "fake_sim" || par_.sim_env == "rviz_only")
   {
     updateOccupancyMap(current_time);
   }
@@ -827,6 +826,29 @@ bool DYNUS::generateGlobalPath(vec_Vecf<3> &global_path, double current_time, do
     dgp_failure_count_++;
     replanning_failure_count_++;
     return false;
+  }
+
+  // Log replan details to file
+  {
+    static const std::string path = "/tmp/dynus_goal_log.txt";
+    std::ofstream f(path, std::ios::app);
+    if (f.is_open())
+    {
+      static auto t0 = std::chrono::steady_clock::now();
+      double t = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+      f << std::fixed << std::setprecision(3)
+        << "[" << t << "s] REPLAN #" << num_replanning_ << "\n"
+        << "  A:          (" << local_A.pos.x() << ", " << local_A.pos.y() << ", " << local_A.pos.z() << ")\n"
+        << "  G:          (" << local_G.pos.x() << ", " << local_G.pos.y() << ", " << local_G.pos.z() << ")\n"
+        << "  G_term:     (" << local_G_term.pos.x() << ", " << local_G_term.pos.y() << ", " << local_G_term.pos.z() << ")\n"
+        << "  dir_hint:   (" << dir_hint.x() << ", " << dir_hint.y() << ", " << dir_hint.z() << ")\n"
+        << "  global_path (" << global_path.size() << " pts):";
+      for (size_t i = 0; i < std::min(global_path.size(), (size_t)5); i++)
+        f << " (" << global_path[i][0] << "," << global_path[i][1] << "," << global_path[i][2] << ")";
+      if (global_path.size() > 5) f << " ...";
+      f << "\n\n";
+      f.close();
+    }
   }
 
   // use this for map resizing
@@ -2060,13 +2082,70 @@ void DYNUS::yaw(double diff, state &next_goal)
  * @brief Sets the terminal goal.
  * @param const state &term_goal: Desired terminal goal state.
  */
+void DYNUS::logGoalEvent(const std::string &event, const state &drone, const state &goal,
+                         const Eigen::Vector3d &G_projected)
+{
+  static const std::string path = "/tmp/dynus_goal_log.txt";
+  std::ofstream f(path, std::ios::app);
+  if (!f.is_open()) return;
+
+  auto now = std::chrono::steady_clock::now();
+  static auto t0 = now;
+  double t = std::chrono::duration<double>(now - t0).count();
+
+  f << std::fixed << std::setprecision(3)
+    << "[" << t << "s] " << event << "\n"
+    << "  drone_pos:  (" << drone.pos.x() << ", " << drone.pos.y() << ", " << drone.pos.z() << ")\n"
+    << "  drone_vel:  (" << drone.vel.x() << ", " << drone.vel.y() << ", " << drone.vel.z() << ")\n"
+    << "  drone_yaw:  " << drone.yaw << "\n"
+    << "  term_goal:  (" << goal.pos.x() << ", " << goal.pos.y() << ", " << goal.pos.z() << ")\n"
+    << "  G_project:  (" << G_projected.x() << ", " << G_projected.y() << ", " << G_projected.z() << ")\n"
+    << "  status:     " << static_cast<int>(drone_status_) << " (0=YAWING,1=TRAVELING,2=GOAL_SEEN,3=GOAL_REACHED)\n"
+    << "\n";
+  f.close();
+}
+
 void DYNUS::setTerminalGoal(const state &term_goal)
 {
+
+  // Ignore duplicate goals — the goal_sender re-publishes every 2s for reliability,
+  // but re-triggering YAWING clears the plan and stops the drone mid-flight.
+  if (terminal_goal_initialized_)
+  {
+    state current_gterm;
+    getGterm(current_gterm);
+    if ((current_gterm.pos - term_goal.pos).norm() < 0.1)
+      return;  // same goal, skip
+  }
 
   // Get the state
   state local_state;
   getState(local_state);
 
+  // If the drone is already in TRAVELING or GOAL_SEEN state (i.e. mid-flight),
+  // smoothly update the terminal goal without stopping.  The replanning timer
+  // will pick up the new goal on the next cycle and replan toward it.
+  if (terminal_goal_initialized_ &&
+      (drone_status_ == DroneStatus::TRAVELING || drone_status_ == DroneStatus::GOAL_SEEN))
+  {
+    setGterm(term_goal);
+    p_hover_ = term_goal.pos;
+
+    // Project the terminal goal to the sphere for the next replan
+    mtx_G_.lock();
+    G_.pos = dynus_utils::projectPointToSphere(local_state.pos, term_goal.pos, par_.horizon);
+    mtx_G_.unlock();
+
+    logGoalEvent("SMOOTH_UPDATE (mid-flight)", local_state, term_goal, G_.pos);
+
+    // Go back to TRAVELING if we were in GOAL_SEEN (since we have a new goal now)
+    if (drone_status_ == DroneStatus::GOAL_SEEN)
+      changeDroneStatus(DroneStatus::TRAVELING);
+
+    return;
+  }
+
+  // First goal or drone is in YAWING/GOAL_REACHED: full initialization
   // Re-initialize plan from current state so that the first replan's
   // A point reflects the actual drone position (not the stale position
   // from when state_initialized_ was first set, e.g. z=0 on the ground).
@@ -2109,6 +2188,8 @@ void DYNUS::setTerminalGoal(const state &term_goal)
 
   // Start with YAWING: rotate to face terminal goal before planning
   changeDroneStatus(DroneStatus::YAWING);
+
+  logGoalEvent("FULL_INIT (YAWING)", local_state, term_goal, G_.pos);
 
   if (!terminal_goal_initialized_)
     terminal_goal_initialized_ = true;
