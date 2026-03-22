@@ -9,11 +9,11 @@ windows:
     panes:
       # Fixed 3-obstacle environment + RViz
       - shell_command:
-        - python3 /home/kkondo/code/dynus_ws/src/dynus/scripts/fixed_obstacles_publisher.py &
-        - rviz2 -d /home/kkondo/code/dynus_ws/src/dynus/rviz/dynus.rviz
+        - python3 /home/kkondo/code/dynus_ws/src/sando/scripts/fixed_obstacles_publisher.py &
+        - rviz2 -d /home/kkondo/code/dynus_ws/src/sando/rviz/sando.rviz
 
       # Trajectory visualization (mode: loop, screenshot, single)
-      # Whitelist: SUPER Linf, CP-FASTER (N=4,5,6), DYNUS2 multi (N=4,5,6)
+      # Whitelist: SUPER Linf, CP-FASTER (N=4,5,6), SANDO2 multi (N=4,5,6)
       - shell_command:
         - sleep 2
-        - ros2 run dynus visualize_local_trajs_node --ros-args -p mode:=single -p single_case_index:=52 -p traj_dump_root_dirs:="['/home/kkondo/code/dynus_ws/src/dynus/benchmark_data/single_thread/traj_dump', '/home/kkondo/code/dynus_ws/src/dynus/benchmark_data/multi_thread/traj_dump', '/home/kkondo/code/super_ws/src/SUPER/data/standardized_benchmark/traj_linf']" -p planner_whitelist:="['super_linf', 'safe_faster_N4', 'safe_faster_N5', 'safe_faster_N6', 'dynus2_N4', 'dynus2_N5', 'dynus2_N6']" -p viz_enable_z_offset:=true -p viz_z_step:=0.05 -p viz_enable_halo:=false -p alpha_pts_base:=1.0 -p viz_alpha_line_base:=1.0
+        - ros2 run sando visualize_local_trajs_node --ros-args -p mode:=single -p single_case_index:=52 -p traj_dump_root_dirs:="['/home/kkondo/code/dynus_ws/src/sando/benchmark_data/single_thread/traj_dump', '/home/kkondo/code/dynus_ws/src/sando/benchmark_data/multi_thread/traj_dump', '/home/kkondo/code/super_ws/src/SUPER/data/standardized_benchmark/traj_linf']" -p planner_whitelist:="['super_linf', 'safe_faster_N4', 'safe_faster_N5', 'safe_faster_N6', 'sando_N4', 'sando_N5', 'sando_N6']" -p viz_enable_z_offset:=true -p viz_z_step:=0.05 -p viz_enable_halo:=false -p alpha_pts_base:=1.0 -p viz_alpha_line_base:=1.0

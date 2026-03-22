@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Analyze hardware ROS2 bag data from DYNUS flights.
+Analyze hardware ROS2 bag data from SANDO flights.
 
 Produces:
   1. Computation time statistics (avg +/- std) printed as a table and saved as CSV
@@ -822,7 +822,7 @@ def generate_hw_dynamic_round2(dynamic_dir, table_output):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Analyze DYNUS hardware ROS2 bag data."
+        description="Analyze SANDO hardware ROS2 bag data."
     )
     parser.add_argument("path", help="Path to a bag folder or parent directory containing bags")
     parser.add_argument("--v_max", type=float, default=5.0, help="Velocity limit [m/s]")
@@ -838,7 +838,7 @@ def main():
     path = os.path.abspath(args.path)
 
     if args.generate_table:
-        tables_dir = "/home/kkondo/paper_writing/DYNUS_v3/tables"
+        tables_dir = "/home/kkondo/paper_writing/SANDO_v3/tables"
         if args.generate_table == "static":
             output = args.table_output or os.path.join(tables_dir, "hw_static.tex")
             generate_hw_static_table(path, output)

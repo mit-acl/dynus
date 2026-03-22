@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-DYNUS Simulation Launcher
+SANDO Simulation Launcher
 
-This script provides a unified interface to launch DYNUS simulations in three modes:
+This script provides a unified interface to launch SANDO simulations in three modes:
 1. Multi-agent simulation with fake sensing (multiagent)
 2. Single-agent simulation with Gazebo and ACL mapper (gazebo)
 3. Single-agent RViz-only simulation with dynamic obstacles (rviz-only) - LIGHTWEIGHT!
@@ -43,7 +43,7 @@ from pathlib import Path
 
 
 # Source rviz config (not the install copy)
-RVIZ_CONFIG = Path(__file__).resolve().parent.parent / 'rviz' / 'dynus.rviz'
+RVIZ_CONFIG = Path(__file__).resolve().parent.parent / 'rviz' / 'sando.rviz'
 
 
 def find_setup_bash(args_setup_bash: str = None) -> Path:
@@ -90,7 +90,7 @@ def generate_multiagent_yaml(setup_bash: Path, agents: list, ros_domain_id: int 
     # Base station (simulator)
     panes.append({
         'shell_command': [
-            'ros2 launch dynus simulator.launch.py'
+            'ros2 launch sando simulator.launch.py'
         ]
     })
 
@@ -99,7 +99,7 @@ def generate_multiagent_yaml(setup_bash: Path, agents: list, ros_domain_id: int 
         panes.append({
             'shell_command': [
                 'sleep 10',
-                f"ros2 launch dynus onboard_dynus.launch.py namespace:={agent['namespace']} "
+                f"ros2 launch sando onboard_sando.launch.py namespace:={agent['namespace']} "
                 f"x:={agent['x']} y:={agent['y']} z:={agent['z']} yaw:={agent['yaw']} "
                 f"publish_odom:=true odom_topic:=odom"
             ]
@@ -109,12 +109,12 @@ def generate_multiagent_yaml(setup_bash: Path, agents: list, ros_domain_id: int 
     panes.append({
         'shell_command': [
             'sleep 20',
-            'ros2 launch dynus goal_monitor.launch.py'
+            'ros2 launch sando goal_monitor.launch.py'
         ]
     })
 
     yaml_content = {
-        'session_name': 'dynus_sim',
+        'session_name': 'sando_sim',
         'windows': [{
             'window_name': 'main',
             'layout': 'tiled',
@@ -145,7 +145,8 @@ def generate_rviz_only_yaml(setup_bash: Path, goal: tuple,
                            environment_assumption: str = '',
                            publish_obstacle_tf: bool = True,
                            with_goal_relay: bool = False,
-                           obstacles_json_file: str = None) -> str:
+                           obstacles_json_file: str = None,
+                           skip_initial_yawing: bool = False) -> str:
     """Generate YAML for RViz-only simulation (no Gazebo, lightweight)."""
     goal_x, goal_y, goal_z = goal
     start_x, start_y, start_z = start_pos
@@ -154,7 +155,7 @@ def generate_rviz_only_yaml(setup_bash: Path, goal: tuple,
         # RViz + obstacles visualization
         {
             'shell_command': [
-                f'ros2 launch dynus rviz_only.launch.py '
+                f'ros2 launch sando rviz_only.launch.py '
                 f'num_obstacles:={num_obstacles} '
                 f'dynamic_ratio:={dynamic_ratio} '
                 f'x_min:={x_min} x_max:={x_max} '
@@ -172,11 +173,12 @@ def generate_rviz_only_yaml(setup_bash: Path, goal: tuple,
         {
             'shell_command': [
                 'sleep 3',
-                f'ros2 launch dynus onboard_dynus.launch.py namespace:=NX01 '
+                f'ros2 launch sando onboard_sando.launch.py namespace:=NX01 '
                 f'x:={start_x} y:={start_y} z:={start_z} yaw:={start_yaw} '
                 f'sim_env:=rviz_only '
                 f'publish_odom:=true '
                 f'odom_topic:=odom '
+                + (f'skip_initial_yawing:=true ' if skip_initial_yawing else '')
                 + (f'environment_assumption:={environment_assumption} ' if environment_assumption else '')
                 + (f'use_benchmark:=true data_file:={data_file} global_planner:={global_planner} ' if use_benchmark and data_file else '')
             ]
@@ -188,7 +190,7 @@ def generate_rviz_only_yaml(setup_bash: Path, goal: tuple,
         panes.append({
             'shell_command': [
                 'sleep 8',
-                f"ros2 launch dynus goal_sender.launch.py list_agents:=\"['NX01']\" list_goals:=\"['[{goal_x}, {goal_y}, {goal_z}]']\""
+                f"ros2 launch sando goal_sender.launch.py list_agents:=\"['NX01']\" list_goals:=\"['[{goal_x}, {goal_y}, {goal_z}]']\""
             ]
         })
 
@@ -197,12 +199,12 @@ def generate_rviz_only_yaml(setup_bash: Path, goal: tuple,
         panes.append({
             'shell_command': [
                 'sleep 8',
-                f'ros2 run dynus goal_relay.py --ros-args -p default_goal_z:={goal_z}'
+                f'ros2 run sando goal_relay.py --ros-args -p default_goal_z:={goal_z}'
             ]
         })
 
     yaml_content = {
-        'session_name': 'dynus_sim',
+        'session_name': 'sando_sim',
         'windows': [{
             'window_name': 'main',
             'layout': 'tiled',
@@ -372,7 +374,7 @@ def generate_gazebo_dynamic_yaml(setup_bash: Path, goal: tuple,
 
     if not publish_trajs:
         # Write JSON for the WorldPlugin to read
-        json_path = '/tmp/dynus_obstacles.json'
+        json_path = '/tmp/sando_obstacles.json'
         with open(json_path, 'w') as f:
             f.write(obstacles_json_str)
 
@@ -385,15 +387,15 @@ def generate_gazebo_dynamic_yaml(setup_bash: Path, goal: tuple,
         }
         world_file = env_to_world.get(env, f'{env}.world')
         install_dir = setup_bash.resolve().parent
-        base_world = install_dir / 'dynus' / 'share' / 'dynus' / 'worlds' / world_file
-        temp_world = '/tmp/dynus_world.world'
+        base_world = install_dir / 'sando' / 'share' / 'sando' / 'worlds' / world_file
+        temp_world = '/tmp/sando_world.world'
         _inject_world_plugin(str(base_world), json_path, temp_world)
 
         panes = [
             # Gazebo with static world + WorldPlugin (spawns + moves dynamic obstacles)
             {
                 'shell_command': [
-                    f'ros2 launch dynus base_dynus.launch.py use_dyn_obs:=false '
+                    f'ros2 launch sando base_sando.launch.py use_dyn_obs:=false '
                     f'use_gazebo_gui:={str(use_gazebo_gui).lower()} '
                     f'use_rviz:={str(use_rviz).lower()} env:={env} '
                     f'world_file:={temp_world} '
@@ -406,7 +408,7 @@ def generate_gazebo_dynamic_yaml(setup_bash: Path, goal: tuple,
             {
                 'shell_command': [
                     'sleep 3',
-                    f'ros2 launch dynus dyn_obstacles.launch.py '
+                    f'ros2 launch sando dyn_obstacles.launch.py '
                     f'skip_gazebo:=true '
                     f'obstacles_json_file:={json_path} '
                     f'num_obstacles:={num_dyn_obstacles} '
@@ -427,7 +429,7 @@ def generate_gazebo_dynamic_yaml(setup_bash: Path, goal: tuple,
         panes = [
             {
                 'shell_command': [
-                    f'ros2 launch dynus base_dynus.launch.py use_dyn_obs:=false '
+                    f'ros2 launch sando base_sando.launch.py use_dyn_obs:=false '
                     f'use_gazebo_gui:={str(use_gazebo_gui).lower()} '
                     f'use_rviz:={str(use_rviz).lower()} env:={env} '
                     f'rviz_config:={RVIZ_CONFIG}'
@@ -436,7 +438,7 @@ def generate_gazebo_dynamic_yaml(setup_bash: Path, goal: tuple,
             {
                 'shell_command': [
                     'sleep 3',
-                    f'ros2 launch dynus dyn_obstacles.launch.py '
+                    f'ros2 launch sando dyn_obstacles.launch.py '
                     f'skip_gazebo:=true '
                     f'num_obstacles:={num_dyn_obstacles} '
                     f'dynamic_ratio:={dynamic_ratio} '
@@ -467,7 +469,7 @@ def generate_gazebo_dynamic_yaml(setup_bash: Path, goal: tuple,
         {
             'shell_command': [
                 'sleep 5',
-                f'ros2 launch dynus onboard_dynus.launch.py namespace:=NX01 '
+                f'ros2 launch sando onboard_sando.launch.py namespace:=NX01 '
                 f'x:={start_x} y:={start_y} z:={start_z} yaw:={start_yaw} '
                 + (f'use_benchmark:=true ' if use_benchmark else '')
                 + (f'data_file:={data_file} ' if data_file else '')
@@ -480,12 +482,12 @@ def generate_gazebo_dynamic_yaml(setup_bash: Path, goal: tuple,
         panes.append({
             'shell_command': [
                 'sleep 20',
-                f"ros2 launch dynus goal_sender.launch.py list_agents:=\"['NX01']\" list_goals:=\"['[{goal_x}, {goal_y}, {goal_z}]']\""
+                f"ros2 launch sando goal_sender.launch.py list_agents:=\"['NX01']\" list_goals:=\"['[{goal_x}, {goal_y}, {goal_z}]']\""
             ]
         })
 
     yaml_content = {
-        'session_name': 'dynus_sim',
+        'session_name': 'sando_sim',
         'windows': [{
             'window_name': 'main',
             'layout': 'tiled',
@@ -541,7 +543,7 @@ def generate_hover_test_yaml(setup_bash: Path,
             "size_x": 0.8, "size_y": 0.8, "size_z": 0.8,
         })
 
-    json_path = '/tmp/dynus_hover_test_obstacles.json'
+    json_path = '/tmp/sando_hover_test_obstacles.json'
     with open(json_path, 'w') as f:
         _json.dump(obstacles, f)
 
@@ -559,7 +561,7 @@ def generate_hover_test_yaml(setup_bash: Path,
     panes.append({
         'shell_command': [
             'sleep 2',
-            f'ros2 launch dynus dyn_obstacles.launch.py '
+            f'ros2 launch sando dyn_obstacles.launch.py '
             f'skip_gazebo:=true '
             f'obstacles_json_file:={json_path} '
             f'publish_rate_hz:=100.0 '
@@ -570,11 +572,11 @@ def generate_hover_test_yaml(setup_bash: Path,
         ]
     })
 
-    # Pane 3: DYNUS agent (rviz_only mode)
+    # Pane 3: SANDO agent (rviz_only mode)
     panes.append({
         'shell_command': [
             'sleep 3',
-            f'ros2 launch dynus onboard_dynus.launch.py namespace:=NX01 '
+            f'ros2 launch sando onboard_sando.launch.py namespace:=NX01 '
             f'x:={start_x} y:={start_y} z:={start_z} '
             f'sim_env:=rviz_only '
             f'publish_odom:=true '
@@ -595,7 +597,7 @@ def generate_hover_test_yaml(setup_bash: Path,
     })
 
     yaml_content = {
-        'session_name': 'dynus_sim',
+        'session_name': 'sando_sim',
         'windows': [{
             'window_name': 'main',
             'layout': 'tiled',
@@ -619,7 +621,7 @@ def generate_adversarial_test_yaml(setup_bash: Path,
                                    use_rviz: bool = True) -> str:
     """Generate YAML for adversarial hover-avoidance test.
 
-    Two DYNUS agents:
+    Two SANDO agents:
       - NX01 (evader): hovers at start, hover avoidance enabled, high v_max.
       - NX02 (chaser): continuously navigates toward NX01's position, low v_max.
 
@@ -643,7 +645,7 @@ def generate_adversarial_test_yaml(setup_bash: Path,
     panes.append({
         'shell_command': [
             'sleep 2',
-            f'ros2 launch dynus onboard_dynus.launch.py namespace:=NX01 '
+            f'ros2 launch sando onboard_sando.launch.py namespace:=NX01 '
             f'x:={ex} y:={ey} z:={ez} '
             f'sim_env:=rviz_only '
             f'publish_odom:=true '
@@ -656,7 +658,7 @@ def generate_adversarial_test_yaml(setup_bash: Path,
     panes.append({
         'shell_command': [
             'sleep 2',
-            f'ros2 launch dynus onboard_dynus.launch.py namespace:=NX02 '
+            f'ros2 launch sando onboard_sando.launch.py namespace:=NX02 '
             f'x:={cx} y:={cy} z:={cz} '
             f'sim_env:=rviz_only '
             f'publish_odom:=true '
@@ -685,7 +687,7 @@ def generate_adversarial_test_yaml(setup_bash: Path,
     panes.append({
         'shell_command': [
             'sleep 6',
-            f'ros2 run dynus chaser_goal_forwarder.py '
+            f'ros2 run sando chaser_goal_forwarder.py '
             f'--ros-args '
             f'-p evader_ns:=NX01 '
             f'-p chaser_ns:=NX02 '
@@ -694,7 +696,7 @@ def generate_adversarial_test_yaml(setup_bash: Path,
     })
 
     yaml_content = {
-        'session_name': 'dynus_sim',
+        'session_name': 'sando_sim',
         'windows': [{
             'window_name': 'main',
             'layout': 'tiled',
@@ -734,7 +736,7 @@ def generate_gazebo_yaml(setup_bash: Path, goal: tuple,
         # Base station with Gazebo
         {
             'shell_command': [
-                f'ros2 launch dynus base_dynus.launch.py use_dyn_obs:={str(use_dyn_obs).lower()} '
+                f'ros2 launch sando base_sando.launch.py use_dyn_obs:={str(use_dyn_obs).lower()} '
                 f'use_gazebo_gui:={str(use_gazebo_gui).lower()} use_rviz:={str(use_rviz).lower()} env:={env} '
                 f'rviz_config:={RVIZ_CONFIG}'
             ]
@@ -756,7 +758,7 @@ def generate_gazebo_yaml(setup_bash: Path, goal: tuple,
     panes.append({
         'shell_command': [
             'sleep 5',
-            f'ros2 launch dynus onboard_dynus.launch.py namespace:=NX01 x:={start_x} y:={start_y} z:={start_z} yaw:={start_yaw} '
+            f'ros2 launch sando onboard_sando.launch.py namespace:=NX01 x:={start_x} y:={start_y} z:={start_z} yaw:={start_yaw} '
             + (f'environment_assumption:={environment_assumption} ' if environment_assumption else '')
             + (f'use_benchmark:=true data_file:={data_file} global_planner:={global_planner} ' if use_benchmark and data_file else '')
         ]
@@ -767,12 +769,12 @@ def generate_gazebo_yaml(setup_bash: Path, goal: tuple,
         panes.append({
             'shell_command': [
                 'sleep 20',
-                f"ros2 launch dynus goal_sender.launch.py list_agents:=\"['NX01']\" list_goals:=\"['[{goal_x}, {goal_y}, {goal_z}]']\""
+                f"ros2 launch sando goal_sender.launch.py list_agents:=\"['NX01']\" list_goals:=\"['[{goal_x}, {goal_y}, {goal_z}]']\""
             ]
         })
 
     yaml_content = {
-        'session_name': 'dynus_sim',
+        'session_name': 'sando_sim',
         'windows': [{
             'window_name': 'main',
             'layout': 'tiled',
@@ -855,16 +857,16 @@ RVIZ_RECORD_TOPICS = [
 ]
 
 
-def kill_all_dynus_processes():
-    """Kill all dynus-related processes for a clean slate between runs.
+def kill_all_sando_processes():
+    """Kill all sando-related processes for a clean slate between runs.
 
     Mirrors the cleanup logic from run_benchmark.py.
     """
-    subprocess.run(["tmux", "kill-session", "-t", "dynus_sim"],
+    subprocess.run(["tmux", "kill-session", "-t", "sando_sim"],
                    stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
     for process_name in ["rviz2", "fake_sim", "dynamic_forest_node",
-                         "dynus_node", "goal_sender",
+                         "sando_node", "goal_sender",
                          "gzserver", "gzclient", "obstacle_tracker_node"]:
         subprocess.run(["pkill", "-9", "-x", process_name],
                        stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
@@ -872,7 +874,7 @@ def kill_all_dynus_processes():
     subprocess.run(["pkill", "-9", "tmuxp"],
                    stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
-    for pattern in ["ros2 launch dynus", "ros2 bag record"]:
+    for pattern in ["ros2 launch sando", "ros2 bag record"]:
         subprocess.run(["pkill", "-9", "-f", pattern],
                        stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
@@ -1012,7 +1014,7 @@ def run_benchmark_record(setup_bash: Path, ros_domain_id: int = 20,
 
         # 1. Cleanup
         print("[INFO] Cleaning up previous processes...")
-        kill_all_dynus_processes()
+        kill_all_sando_processes()
 
         # 2. Generate tmux YAML (no goal sender — we send goal manually)
         env_assumption = 'static' if mode == 'gazebo' else 'dynamic'
@@ -1176,7 +1178,7 @@ def run_benchmark_record(setup_bash: Path, ros_domain_id: int = 20,
             bag_proc.wait()
 
         # 9. Tear down sim
-        kill_all_dynus_processes()
+        kill_all_sando_processes()
         time.sleep(2)
 
         status = "REACHED" if goal_reached else "TIMEOUT"
@@ -1193,7 +1195,7 @@ def run_benchmark_record(setup_bash: Path, ros_domain_id: int = 20,
 
 def main():
     parser = argparse.ArgumentParser(
-        description='DYNUS Simulation Launcher',
+        description='SANDO Simulation Launcher',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__
     )
@@ -1554,7 +1556,7 @@ def main():
             dynamic_ratio=dyn_ratio,
             exclusion_zone=(-3.0, 3.0, -3.0, 3.0),
         )
-        json_path = '/tmp/dynus_interactive_obstacles.json'
+        json_path = '/tmp/sando_interactive_obstacles.json'
         with open(json_path, 'w') as f:
             _json.dump(obstacles, f)
         yaml_content = generate_rviz_only_yaml(
@@ -1573,6 +1575,7 @@ def main():
             use_rviz=use_rviz,
             with_goal_relay=True,
             obstacles_json_file=json_path,
+            skip_initial_yawing=True,
         )
         num_dyn = int(num_obs * dyn_ratio)
         num_stat = num_obs - num_dyn
@@ -1693,7 +1696,7 @@ def main():
             tmuxp_cmd.insert(2, '-d')  # Add detach flag
             print(f"[INFO] Running in detached mode (no terminal or benchmark mode)")
         else:
-            print(f"[INFO] Attach to session: tmux attach -t dynus_sim")
+            print(f"[INFO] Attach to session: tmux attach -t sando_sim")
 
         subprocess.run(tmuxp_cmd, env=env, check=True)
 

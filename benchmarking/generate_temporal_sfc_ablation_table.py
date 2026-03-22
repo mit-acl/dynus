@@ -19,7 +19,7 @@ Usage:
 
     # Specify output location
     python3 generate_temporal_sfc_ablation_table.py \
-        --output /home/kkondo/paper_writing/DYNUS_v3/tables/temporal_sfc_ablation.tex
+        --output /home/kkondo/paper_writing/SANDO_v3/tables/temporal_sfc_ablation.tex
 """
 
 import argparse
@@ -51,7 +51,7 @@ from analyze_dynamic_benchmark import (
 BENCHMARK_ROOT = Path(__file__).resolve().parent.parent / "benchmark_data"
 TEMPORAL_DIR = BENCHMARK_ROOT / "dynamic_worst_case" / "temporal"
 WORST_CASE_DIR = BENCHMARK_ROOT / "dynamic_worst_case" / "worst_case"
-OUTPUT_FILE = Path("/home/kkondo/paper_writing/DYNUS_v3/tables/temporal_sfc_ablation.tex")
+OUTPUT_FILE = Path("/home/kkondo/paper_writing/SANDO_v3/tables/temporal_sfc_ablation.tex")
 
 # Cases in display order
 CASES = ["easy", "medium", "hard"]

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unified benchmark runner for DYNUS, I-MPC, FAPP, and Ego-Swarm2 planners."""
+"""Unified benchmark runner for SANDO, I-MPC, FAPP, and Ego-Swarm2 planners."""
 
 import argparse
 import glob
@@ -11,24 +11,24 @@ import time
 TEST_TIMEOUT = 5  # seconds per command in --test mode
 
 PLANNERS = {
-    "dynus": {
-        "name": "DYNUS",
-        "key": "dynus",
+    "sando": {
+        "name": "SANDO",
+        "key": "sando",
         "working_dir": "/home/kkondo/code/dynus_ws",
         "benchmark_cmd": (
-            "colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select dynus"
+            "colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select sando"
             " && . install/setup.bash"
-            " && python3 src/dynus/scripts/run_benchmark.py"
+            " && python3 src/sando/scripts/run_benchmark.py"
             " --setup-bash install/setup.bash"
             " --num-trials {num_trials}"
             " --start-seed {seed_start}"
         ),
         "analysis_cmd": (
             ". install/setup.bash"
-            " && python3 src/dynus/scripts/analyze_dynamic_benchmark.py"
+            " && python3 src/sando/scripts/analyze_dynamic_benchmark.py"
             " --data-dir {data_dir}"
         ),
-        "data_base_dir": "src/dynus/benchmark_data/default",
+        "data_base_dir": "src/sando/benchmark_data/default",
         "data_glob_pattern": "*",
     },
     "impc": {
@@ -60,7 +60,7 @@ PLANNERS = {
     },
 }
 
-PLANNER_ORDER = ["dynus", "impc", "fapp", "ego"]
+PLANNER_ORDER = ["sando", "impc", "fapp", "ego"]
 
 
 def find_latest_data_dir(planner, after_time=None):
@@ -121,8 +121,8 @@ def run_benchmark(planner, num_trials, seed_start, timeout=None):
 
 def run_analysis(planner, data_dir, timeout=None):
     """Run the analysis for a single planner."""
-    if planner["key"] == "dynus":
-        # DYNUS needs --data-dir with path relative to working_dir
+    if planner["key"] == "sando":
+        # SANDO needs --data-dir with path relative to working_dir
         rel_data_dir = os.path.relpath(data_dir, planner["working_dir"])
         cmd = planner["analysis_cmd"].format(data_dir=rel_data_dir)
     else:
@@ -329,7 +329,7 @@ def main():
         )
     print("=" * 66)
     latex_path = (
-        "/home/kkondo/paper_writing/DYNUS_v3/tables/dynamic_benchmark.tex"
+        "/home/kkondo/paper_writing/SANDO_v3/tables/dynamic_benchmark.tex"
     )
     print(f"LaTeX table: {latex_path}")
     print("=" * 66)

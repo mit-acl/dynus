@@ -1,38 +1,32 @@
-# DYNUS: Hermite Spline-based Efficient Trajectory Planning #
+# SANDO: Hermite Spline-based Efficient Trajectory Planning #
 
 If you like this project, please consider starring ⭐ the repo!
 
 ### **Submitted to the IEEE Robotics and Automation Letters (RA-L)**
 
-| **Trajectory** | **Forest** |
+| **Spatiotemporal SFC** | **Hardware Heatmap** |
 | ------------------------- | ------------------------- |
-<a target="_blank" href="https://youtu.be/Pvb-VPUdLvg"><img src="./imgs/dynus_gifs_complex_benchmarks.gif" width="360" height="240" alt="Complex Benchmarks"></a> | <a target="_blank" href="https://youtu.be/Pvb-VPUdLvg"><img src="./imgs/dynus_gifs_hard_forest.gif" width="360" height="240" alt="Static Forest"></a> |
+| <video src="./mp4/small_sando_stsfc.mp4" width="360" autoplay loop muted></video> | <video src="./mp4/small_sando_hw_heatmap.mp4" width="360" autoplay loop muted></video> |
 
-| **Dynamic Obstacles** | **Long Flight** |
+| **Sim Interactive** | **Sim Static** |
 | ------------------------- | ------------------------- |
-<a target="_blank" href="https://youtu.be/Pvb-VPUdLvg"><img src="./imgs/dynus_gifs_dynamic_sim.gif" width="360" height="240" alt="Dynamic Obstacles"></a> | <a target="_blank" href="https://youtu.be/Pvb-VPUdLvg"><img src="./imgs/dynus_gifs_hw_long_flight.gif" width="360" height="240" alt="Hardware Long Flight"></a>
+| <video src="./mp4/small_sando_sim_interactive.mp4" width="360" autoplay loop muted></video> | <video src="./mp4/small_sando_sim_static.mp4" width="360" autoplay loop muted></video> |
 
-| **Fast Flight 1** | **Fast Flight 2** |
+| **Sim Dynamic** | **Hardware Single Dynamic** |
 | ------------------------- | ------------------------- |
-<a target="_blank" href="https://youtu.be/Pvb-VPUdLvg"><img src="./imgs/dynus_gifs_hw_fast_flight_1.gif" width="360" height="240" alt="Hardware Fast Flight 1"></a> | <a target="_blank" href="https://youtu.be/Pvb-VPUdLvg"><img src="./imgs/dynus_gifs_hw_fast_flight_2.gif" width="360" height="240" alt="Hardware Fast Flight 2"></a>
+| <video src="./mp4/small_sando_sim_dynamic.mp4" width="360" autoplay loop muted></video> | <video src="./mp4/small_sando_hw_single_dynamic.mp4" width="360" autoplay loop muted></video> |
 
-| **Dynamic Env 1** | **Dynamic Env 2** |
+| **Hardware Multiple Dynamic** | **Hardware Dynamic + Static** |
 | ------------------------- | ------------------------- |
-<a target="_blank" href="https://youtu.be/Pvb-VPUdLvg"><img src="./imgs/dynus_gifs_hw_dynamic_1.gif" width="360" height="240" alt="Hardware Dynamic Env 1"></a> | <a target="_blank" href="https://youtu.be/Pvb-VPUdLvg"><img src="./imgs/dynus_gifs_hw_dynamic_2.gif" width="360" height="240" alt="Hardware Dynamic Env 2"></a>
+| <video src="./mp4/small_sando_hw_multiple_dynamic.mp4" width="360" autoplay loop muted></video> | <video src="./mp4/small_sando_hw_dynamic_static.mp4" width="360" autoplay loop muted></video> |
 
 ## Paper
 
-DYNUS: Hermite Spline-based Efficient Trajectory Planning is available [https://arxiv.org/abs/2511.10822](https://arxiv.org/abs/2511.10822)!
+SANDO: Hermite Spline-based Efficient Trajectory Planning is available [https://arxiv.org/abs/2511.10822](https://arxiv.org/abs/2511.10822)!
 
 ```bibtex
-@article{kondo2025mighty,
-      title={DYNUS: Hermite Spline-based Efficient Trajectory Planning}, 
-      author={Kota Kondo and Yuwei Wu and Vijay Kumar and Jonathan P. How},
-      year={2025},
-      eprint={2511.10822},
-      archivePrefix={arXiv},
-      primaryClass={cs.RO},
-      url={https://arxiv.org/abs/2511.10822}, 
+@article{kondo2026sando,
+      title={SANDO: Hermite Spline-based Efficient Trajectory Planning}, 
 }
 ```
 
@@ -42,11 +36,11 @@ The full video is available [https://youtu.be/Pvb-VPUdLvg](https://youtu.be/Pvb-
 
 ## Interactive Demo
 
-DYNUS includes a built-in interactive mode where you can click goals in RViz and watch the drone navigate through dynamic obstacles in real time. See the [Run Simulation](#use-docker-recommended) section for instructions.
+SANDO includes a built-in interactive mode where you can click goals in RViz and watch the drone navigate through dynamic obstacles in real time. See the [Run Simulation](#use-docker-recommended) section for instructions.
 
 ## Setup
 
-DYNUS has been tested on both Docker and native installations on Ubuntu 22.04 with ROS 2 Humble.
+SANDO has been tested on both Docker and native installations on Ubuntu 22.04 with ROS 2 Humble.
 
 ### Use Docker (Recommended)
 
@@ -58,18 +52,18 @@ DYNUS has been tested on both Docker and native installations on Ubuntu 22.04 wi
    mkdir -p ~/code/ws/src
    cd ~/code/ws/src
    git clone https://github.com/mit-acl/dynus.git
-   cd src/dynus/docker
+   cd src/sando/docker
    ```
 
 3. **BUILD:**
-    - Navigate to the docker folder in your dynus repo (eg. `cd ~/code/ws/src/dynus/docker/`) and run this
+    - Navigate to the docker folder in your sando repo (eg. `cd ~/code/ws/src/sando/docker/`) and run this
       ```bash
       make build
       ```
 
 4. **Run Simulation**
 
-    DYNUS provides four simulation modes with three difficulty levels:
+    SANDO provides four simulation modes with three difficulty levels:
 
     | Mode | Description |
     |------|-------------|
@@ -147,14 +141,14 @@ DYNUS has been tested on both Docker and native installations on Ubuntu 22.04 wi
    mkdir -p ~/code/ws
    cd ~/code/ws
    git clone https://github.com/mit-acl/dynus.git
-   cd dynus
+   cd sando
    ```
 
 2. **Run the Setup Script:**
    ```bash
    ./setup.sh
    ```
-   This script will first install ROS 2 Humble, then DYNUS and its dependencies. Please note that this script modifies your `~/.bashrc` file.
+   This script will first install ROS 2 Humble, then SANDO and its dependencies. Please note that this script modifies your `~/.bashrc` file.
 
  3. **Run the Simulation**
 
@@ -167,24 +161,24 @@ DYNUS has been tested on both Docker and native installations on Ubuntu 22.04 wi
     **Demo modes** (goal is sent automatically):
     ```bash
     # Static forest environments (Gazebo)
-    python3 src/dynus/scripts/run_sim.py -m static -d easy -s install/setup.bash
-    python3 src/dynus/scripts/run_sim.py -m static -d medium -s install/setup.bash
-    python3 src/dynus/scripts/run_sim.py -m static -d hard -s install/setup.bash
+    python3 src/sando/scripts/run_sim.py -m static -d easy -s install/setup.bash
+    python3 src/sando/scripts/run_sim.py -m static -d medium -s install/setup.bash
+    python3 src/sando/scripts/run_sim.py -m static -d hard -s install/setup.bash
 
     # Known dynamic obstacles (RViz-only, lightweight)
-    python3 src/dynus/scripts/run_sim.py -m dynamic -d easy -s install/setup.bash
-    python3 src/dynus/scripts/run_sim.py -m dynamic -d hard -s install/setup.bash
+    python3 src/sando/scripts/run_sim.py -m dynamic -d easy -s install/setup.bash
+    python3 src/sando/scripts/run_sim.py -m dynamic -d hard -s install/setup.bash
 
     # Unknown dynamic obstacles (Gazebo + obstacle tracker)
-    python3 src/dynus/scripts/run_sim.py -m unknown_dynamic -d medium -s install/setup.bash
+    python3 src/sando/scripts/run_sim.py -m unknown_dynamic -d medium -s install/setup.bash
     ```
 
     **Interactive mode** (click goals in RViz using "2D Nav Goal"):
     ```bash
-    python3 src/dynus/scripts/run_sim.py -m interactive -s install/setup.bash
+    python3 src/sando/scripts/run_sim.py -m interactive -s install/setup.bash
 
     # Customize obstacle count
-    python3 src/dynus/scripts/run_sim.py -m interactive --num-obstacles 100 -s install/setup.bash
+    python3 src/sando/scripts/run_sim.py -m interactive --num-obstacles 100 -s install/setup.bash
     ```
 
 ## Benchmarking
@@ -205,16 +199,16 @@ Safety corridors define the collision-free space for trajectory optimization. Ge
 ```bash
 # Build the workspace
 cd ~/code/dynus_ws
-colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select dynus
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select sando
 
 # Source the workspace
 source install/setup.bash
 
 # Generate safety corridors
-tmuxp load src/dynus/launch/generate_sfc.yaml
+tmuxp load src/sando/launch/generate_sfc.yaml
 ```
 
-**Output**: Safety corridor files (`.mysco2` format) saved to `src/dynus/data/`
+**Output**: Safety corridor files (`.mysco2` format) saved to `src/sando/data/`
 
 **What it does**:
 - Launches simulator in background
@@ -224,19 +218,19 @@ tmuxp load src/dynus/launch/generate_sfc.yaml
 
 ### Step 2: Run Standardized Benchmarks
 
-Run comprehensive benchmarks comparing DYNUS (single/multi-threaded) and FASTER (original).
+Run comprehensive benchmarks comparing SANDO (single/multi-threaded) and FASTER (original).
 
 ```bash
-cd ~/code/dynus_ws/src/dynus/benchmarking
+cd ~/code/dynus_ws/src/sando/benchmarking
 
 # Run the full benchmark suite
 python3 run_benchmark_suite.py
 ```
 
 **Output**: CSV files in `benchmark_data/`:
-- `single_thread/dynus_N_benchmark.csv` (N=4,5,6)
+- `single_thread/sando_N_benchmark.csv` (N=4,5,6)
 - `single_thread/original_faster_N_benchmark.csv` (N=4,5,6)
-- `multi_thread/dynus_N_benchmark.csv` (N=4,5,6)
+- `multi_thread/sando_N_benchmark.csv` (N=4,5,6)
 
 **What it does**:
 - Tests multiple problem sizes (N=4,5,6 segments)
@@ -252,22 +246,22 @@ python3 run_benchmark_suite.py --factor-determination
 
 ### Step 3: Run Variable Elimination Benchmarks
 
-Compare DYNUS with and without variable elimination to demonstrate its performance impact.
+Compare SANDO with and without variable elimination to demonstrate its performance impact.
 
 ```bash
-cd ~/code/dynus_ws/src/dynus/benchmarking
+cd ~/code/dynus_ws/src/sando/benchmarking
 
 # Run VE comparison benchmark
 python3 run_benchmark_suite.py --ve-comparison
 ```
 
 **Output**: CSV files in `benchmark_data/ve_benchmark/`:
-- `dynus_N_with_ve_benchmark.csv` (N=4,5,6)
-- `dynus_N_without_ve_benchmark.csv` (N=4,5,6)
+- `sando_N_with_ve_benchmark.csv` (N=4,5,6)
+- `sando_N_without_ve_benchmark.csv` (N=4,5,6)
 
 **What it does**:
-- Runs multi-threaded DYNUS with variable elimination enabled
-- Runs multi-threaded DYNUS with variable elimination disabled
+- Runs multi-threaded SANDO with variable elimination enabled
+- Runs multi-threaded SANDO with variable elimination disabled
 - Directly compares optimization speed for the same problem instances
 - Highlights the computational benefit of variable elimination
 
@@ -276,13 +270,13 @@ python3 run_benchmark_suite.py --ve-comparison
 Process benchmark results and generate publication-ready LaTeX tables.
 
 ```bash
-cd ~/code/dynus_ws/src/dynus/benchmarking
+cd ~/code/dynus_ws/src/sando/benchmarking
 
 # Generate both standardized and VE benchmark tables
 python3 generate_latex_table.py
 ```
 
-**Output**: LaTeX files in `/home/kkondo/paper_writing/DYNUS_v3/tables/`:
+**Output**: LaTeX files in `/home/kkondo/paper_writing/SANDO_v3/tables/`:
 - `standardized_benchmark.tex` - Full comparison table
 - `ve_benchmark.tex` - Variable elimination comparison table
 
@@ -297,7 +291,7 @@ python3 generate_latex_table.py
 Use Jupyter notebook for detailed analysis and visualization.
 
 ```bash
-cd ~/code/dynus_ws/src/dynus/benchmarking
+cd ~/code/dynus_ws/src/sando/benchmarking
 
 # Open Jupyter notebook
 jupyter notebook local_traj_benchmark.ipynb
@@ -314,17 +308,17 @@ jupyter notebook local_traj_benchmark.ipynb
 1. **Run the first cell** to load standardized benchmark data:
    ```python
    # The notebook automatically loads from:
-   # - single_thread/dynus_N_benchmark.csv
+   # - single_thread/sando_N_benchmark.csv
    # - single_thread/original_faster_N_benchmark.csv
-   # - multi_thread/dynus_N_benchmark.csv
+   # - multi_thread/sando_N_benchmark.csv
    ```
    This generates a unified summary table with statistics.
 
 2. **Run the VE benchmarking cell** (second cell) to load variable elimination data:
    ```python
    # Loads from ve_benchmark/ folder:
-   # - dynus_N_with_ve_benchmark.csv
-   # - dynus_N_without_ve_benchmark.csv
+   # - sando_N_with_ve_benchmark.csv
+   # - sando_N_without_ve_benchmark.csv
    ```
    This generates a comparison table showing VE impact.
 
@@ -343,13 +337,13 @@ Visualize and compare trajectories from different planners side-by-side in RViz.
 cd ~/code/dynus_ws
 
 # Build if needed
-colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select dynus
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select sando
 
 # Source the workspace
 source install/setup.bash
 
 # Launch visualization
-tmuxp load src/dynus/launch/visualize_local_trajs.yaml
+tmuxp load src/sando/launch/visualize_local_trajs.yaml
 ```
 
 **What it does**:
@@ -373,7 +367,7 @@ tmuxp load src/dynus/launch/visualize_local_trajs.yaml
 ### Directory Structure
 
 ```
-dynus/
+sando/
 ├── benchmarking/
 │   ├── run_benchmark_suite.py          # Main benchmark runner
 │   ├── generate_latex_table.py         # Table generator
@@ -408,7 +402,7 @@ There are two modes:
 
 ```bash
 # Build the Docker image
-cd ~/code/ws/src/dynus/docker
+cd ~/code/ws/src/sando/docker
 make build
 
 # Run the container (GPU + display forwarding)
@@ -416,7 +410,7 @@ make run
 
 # Inside the container, everything is already built. Rebuild if needed:
 cd /home/kkondo/code/dynus_ws
-colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select dynus
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select sando
 source install/setup.bash
 ```
 
@@ -424,7 +418,7 @@ source install/setup.bash
 
 ```bash
 cd ~/code/dynus_ws
-colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select dynus
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select sando
 source install/setup.bash
 ```
 
@@ -435,12 +429,12 @@ Runs in `rviz-only` mode with procedurally generated obstacles. Three difficulty
 - **Medium**: 100 obstacles
 - **Hard**: 200 obstacles
 
-#### 1. Configure `dynus.yaml`
+#### 1. Configure `sando.yaml`
 
 Make sure `environment_assumption` is set to `"dynamic"`:
 
 ```bash
-# In src/dynus/config/dynus.yaml, verify:
+# In src/sando/config/sando.yaml, verify:
 #   environment_assumption: "dynamic"
 ```
 
@@ -448,13 +442,13 @@ Make sure `environment_assumption` is set to `"dynamic"`:
 
 ```bash
 cd ~/code/dynus_ws
-colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select dynus
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select sando
 ```
 
 #### 3. Run benchmark
 
 ```bash
-python3 src/dynus/scripts/run_benchmark.py \
+python3 src/sando/scripts/run_benchmark.py \
   --setup-bash install/setup.bash \
   --mode rviz-only \
   --cases easy medium hard \
@@ -468,8 +462,8 @@ python3 src/dynus/scripts/run_benchmark.py \
 #### 4. Analyze and generate LaTeX table
 
 ```bash
-python3 src/dynus/scripts/analyze_dynamic_benchmark.py \
-  --data-dir src/dynus/benchmark_data/dynamic \
+python3 src/sando/scripts/analyze_dynamic_benchmark.py \
+  --data-dir src/sando/benchmark_data/dynamic \
   --all-cases \
   --table-type dynamic \
   --latex-name dynamic_benchmark.tex
@@ -482,12 +476,12 @@ Runs in `gazebo` mode with pre-defined `.world` files. Three difficulty cases:
 - **Medium**: `medium_forest.world`
 - **Hard**: `hard_forest.world`
 
-#### 1. Configure `dynus.yaml`
+#### 1. Configure `sando.yaml`
 
 Set `environment_assumption` to `"static"`:
 
 ```bash
-# In src/dynus/config/dynus.yaml, set:
+# In src/sando/config/sando.yaml, set:
 #   environment_assumption: "static"
 ```
 
@@ -495,13 +489,13 @@ Set `environment_assumption` to `"static"`:
 
 ```bash
 cd ~/code/dynus_ws
-colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select dynus
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select sando
 ```
 
 #### 3. Run benchmark
 
 ```bash
-python3 src/dynus/scripts/run_benchmark.py \
+python3 src/sando/scripts/run_benchmark.py \
   --setup-bash install/setup.bash \
   --mode gazebo \
   --cases easy medium hard \
@@ -515,8 +509,8 @@ python3 src/dynus/scripts/run_benchmark.py \
 #### 4. Analyze and generate LaTeX table
 
 ```bash
-python3 src/dynus/scripts/analyze_dynamic_benchmark.py \
-  --data-dir src/dynus/benchmark_data/static \
+python3 src/sando/scripts/analyze_dynamic_benchmark.py \
+  --data-dir src/sando/benchmark_data/static \
   --all-cases \
   --table-type static \
   --latex-name static_benchmark.tex
@@ -525,7 +519,7 @@ python3 src/dynus/scripts/analyze_dynamic_benchmark.py \
 ### Where Data Goes
 
 ```
-src/dynus/
+src/sando/
 ├── benchmark_data/
 │   ├── dynamic/                          # Dynamic obstacle benchmark results
 │   │   ├── easy_YYYYMMDD_HHMMSS/
@@ -546,7 +540,7 @@ src/dynus/
 │       └── hard_YYYYMMDD_HHMMSS/
 ```
 
-**LaTeX tables** are written to: `/home/kkondo/paper_writing/DYNUS_v3/tables/`
+**LaTeX tables** are written to: `/home/kkondo/paper_writing/SANDO_v3/tables/`
 - `dynamic_benchmark.tex` — Dynamic obstacle results
 - `static_benchmark.tex` — Static forest results
 
@@ -581,21 +575,21 @@ src/dynus/
 
 ```bash
 # ── Dynamic benchmark (full pipeline) ──
-# 1. Set dynus.yaml: environment_assumption: "dynamic"
-# 2. colcon build --packages-select dynus
-# 3. python3 src/dynus/scripts/run_benchmark.py --setup-bash install/setup.bash --mode rviz-only --cases easy medium hard --config-name dynamic --num-trials 10
-# 4. python3 src/dynus/scripts/analyze_dynamic_benchmark.py --data-dir src/dynus/benchmark_data/dynamic --all-cases --table-type dynamic --latex-name dynamic_benchmark.tex
+# 1. Set sando.yaml: environment_assumption: "dynamic"
+# 2. colcon build --packages-select sando
+# 3. python3 src/sando/scripts/run_benchmark.py --setup-bash install/setup.bash --mode rviz-only --cases easy medium hard --config-name dynamic --num-trials 10
+# 4. python3 src/sando/scripts/analyze_dynamic_benchmark.py --data-dir src/sando/benchmark_data/dynamic --all-cases --table-type dynamic --latex-name dynamic_benchmark.tex
 
 # ── Static benchmark (full pipeline) ──
-# 1. Set dynus.yaml: environment_assumption: "static"
-# 2. colcon build --packages-select dynus
-# 3. python3 src/dynus/scripts/run_benchmark.py --setup-bash install/setup.bash --mode gazebo --cases easy medium hard --config-name static --num-trials 10
-# 4. python3 src/dynus/scripts/analyze_dynamic_benchmark.py --data-dir src/dynus/benchmark_data/static --all-cases --table-type static --latex-name static_benchmark.tex
+# 1. Set sando.yaml: environment_assumption: "static"
+# 2. colcon build --packages-select sando
+# 3. python3 src/sando/scripts/run_benchmark.py --setup-bash install/setup.bash --mode gazebo --cases easy medium hard --config-name static --num-trials 10
+# 4. python3 src/sando/scripts/analyze_dynamic_benchmark.py --data-dir src/sando/benchmark_data/static --all-cases --table-type static --latex-name static_benchmark.tex
 ```
 
 ## Hover Avoidance Testing
 
-DYNUS includes a hover avoidance system that detects nearby dynamic obstacles when the drone is hovering at a reached goal and autonomously evades them. Two test modes are provided via `run_sim.py`.
+SANDO includes a hover avoidance system that detects nearby dynamic obstacles when the drone is hovering at a reached goal and autonomously evades them. Two test modes are provided via `run_sim.py`.
 
 ### Hover Test (Trefoil Obstacles)
 
@@ -603,11 +597,11 @@ Spawns the drone in an empty world with 3 trefoil-knot obstacles orbiting nearby
 
 ```bash
 cd ~/code/dynus_ws
-colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select dynus
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select sando
 source install/setup.bash
 
 # Launch hover avoidance test
-python3 src/dynus/scripts/run_sim.py --mode hover-test -s install/setup.bash
+python3 src/sando/scripts/run_sim.py --mode hover-test -s install/setup.bash
 ```
 
 **What to expect in RViz:**
@@ -624,15 +618,15 @@ python3 src/dynus/scripts/run_sim.py --mode hover-test -s install/setup.bash
 
 ### Adversarial Test (Chaser vs. Evader)
 
-Spawns two DYNUS agents: an evader (NX01, v_max=5.0 m/s) hovering in place and a chaser (NX02, v_max=1.0 m/s) that continuously navigates toward the evader. Both agents share trajectories, so the evader's hover avoidance triggers when the chaser approaches.
+Spawns two SANDO agents: an evader (NX01, v_max=5.0 m/s) hovering in place and a chaser (NX02, v_max=1.0 m/s) that continuously navigates toward the evader. Both agents share trajectories, so the evader's hover avoidance triggers when the chaser approaches.
 
 ```bash
 cd ~/code/dynus_ws
-colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select dynus
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select sando
 source install/setup.bash
 
 # Launch adversarial test
-python3 src/dynus/scripts/run_sim.py --mode adversarial-test -s install/setup.bash
+python3 src/sando/scripts/run_sim.py --mode adversarial-test -s install/setup.bash
 ```
 
 **What to expect:**
@@ -642,7 +636,7 @@ python3 src/dynus/scripts/run_sim.py --mode adversarial-test -s install/setup.ba
 
 ### Configuration
 
-Hover avoidance parameters are in `src/dynus/config/dynus.yaml`:
+Hover avoidance parameters are in `src/sando/config/sando.yaml`:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
@@ -653,6 +647,6 @@ Hover avoidance parameters are in `src/dynus/config/dynus.yaml`:
 Both test modes support `--dry-run` to inspect the generated tmuxp YAML without launching:
 
 ```bash
-python3 src/dynus/scripts/run_sim.py --mode hover-test -s install/setup.bash --dry-run
-python3 src/dynus/scripts/run_sim.py --mode adversarial-test -s install/setup.bash --dry-run
+python3 src/sando/scripts/run_sim.py --mode hover-test -s install/setup.bash --dry-run
+python3 src/sando/scripts/run_sim.py --mode adversarial-test -s install/setup.bash --dry-run
 ```

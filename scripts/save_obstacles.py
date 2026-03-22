@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DYNUS Obstacle Data Saver
+SANDO Obstacle Data Saver
 
 Subscribes to /trajs topic and saves obstacle information to JSON.
 This data can be used later for collision checking.

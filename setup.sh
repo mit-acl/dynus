@@ -54,7 +54,7 @@ sudo apt install -y ros-${ROS_DISTRO}-rviz-common
 sudo apt install -y libpcl-dev 
 sudo apt install -y build-essential
 
-# DYNUS and dependencies
+# SANDO and dependencies
 mkdir -p /home/${USER}/code/dynus_ws/src
 cd /home/${USER}/code/dynus_ws/src
 git clone https://github.com/mit-acl/dynus.git
@@ -91,7 +91,7 @@ cmake .. && make -j && sudo make install
 cd /home/${USER}/code/livox_ws/src/livox_ros_driver2
 source /opt/ros/humble/setup.sh && ./build.sh humble
 
-#DYNUS
+#SANDO
 cd /home/${USER}/code/dynus_ws
 source /opt/ros/humble/setup.sh 
 source /home/${USER}/code/decomp_ws/install/setup.sh 

@@ -14,7 +14,7 @@ def generate_launch_description():
 
         # Benchmark parameters
         DeclareLaunchArgument('use_single_threaded', default_value='false'),
-        DeclareLaunchArgument('planner_names', default_value='["dynus2"]'),
+        DeclareLaunchArgument('planner_names', default_value='["sando"]'),
         DeclareLaunchArgument('num_N_list', default_value='[4,5,6]'),
         DeclareLaunchArgument('factor_initial_list', default_value='[2.2,1.7,1.5]'),
         DeclareLaunchArgument('factor_final_list', default_value='[3.8,2.2,1.9]'),
@@ -28,7 +28,7 @@ def generate_launch_description():
         DeclareLaunchArgument('dynamic_factor_k_radius', default_value='0.4'),
 
         Node(
-            package='dynus',
+            package='sando',
             executable='local_traj_benchmark_node',
             name='local_traj_benchmark_node',
             output='screen',

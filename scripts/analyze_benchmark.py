@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DYNUS Benchmark Analysis Script
+SANDO Benchmark Analysis Script
 
 Quick analysis and visualization of benchmark results.
 
@@ -187,7 +187,7 @@ def plot_results(df: pd.DataFrame, output_path: str = None):
         ax9.set_xlabel('Jerk Integral')
         ax9.set_ylabel('Count')
 
-    plt.suptitle('DYNUS Benchmark Analysis', fontsize=16, fontweight='bold', y=0.995)
+    plt.suptitle('SANDO Benchmark Analysis', fontsize=16, fontweight='bold', y=0.995)
 
     if output_path:
         plt.savefig(output_path, dpi=150, bbox_inches='tight')
@@ -201,7 +201,7 @@ def generate_report(df: pd.DataFrame, output_path: str):
     success_df = df[df['flight_success'] == True]
 
     report = [
-        "# DYNUS Benchmark Report",
+        "# SANDO Benchmark Report",
         f"\nGenerated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}",
         f"\n## Overview",
         f"\n- Total trials: {len(df)}",
@@ -251,7 +251,7 @@ def generate_report(df: pd.DataFrame, output_path: str):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Analyze DYNUS benchmark results',
+        description='Analyze SANDO benchmark results',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__
     )

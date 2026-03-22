@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DYNUS Collision Checker
+SANDO Collision Checker
 
 Post-processes benchmark data to detect collisions between drone trajectory
 and obstacles, accounting for both drone and obstacle bounding boxes.
@@ -278,9 +278,9 @@ def load_obstacles_from_markers(markers: MarkerArray) -> List[Obstacle]:
 
 
 def load_drone_bbox_from_yaml(yaml_path: str) -> Tuple[float, float, float]:
-    """Load drone bounding box from dynus.yaml
+    """Load drone bounding box from sando.yaml
 
-    Note: drone_bbox in dynus.yaml contains FULL sizes, so we divide by 2 to get half-extents
+    Note: drone_bbox in sando.yaml contains FULL sizes, so we divide by 2 to get half-extents
 
     Returns:
         Tuple of (hx, hy, hz) half-extents in meters
@@ -290,8 +290,8 @@ def load_drone_bbox_from_yaml(yaml_path: str) -> Tuple[float, float, float]:
 
     # Look for drone_bbox in the config (contains FULL sizes)
     drone_bbox_full = None
-    if 'dynus' in config and 'ros__parameters' in config['dynus']:
-        params = config['dynus']['ros__parameters']
+    if 'sando' in config and 'ros__parameters' in config['sando']:
+        params = config['sando']['ros__parameters']
         if 'drone_bbox' in params:
             drone_bbox_full = params['drone_bbox']
 
@@ -352,7 +352,7 @@ def save_collision_report(collisions: List[CollisionEvent], stats: Dict,
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Check collisions in DYNUS benchmark data',
+        description='Check collisions in SANDO benchmark data',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__
     )
@@ -384,14 +384,14 @@ def main():
         nargs=3,
         metavar=('HX', 'HY', 'HZ'),
         default=None,
-        help='Drone bounding box half-extents (default: from dynus.yaml)'
+        help='Drone bounding box half-extents (default: from sando.yaml)'
     )
 
     parser.add_argument(
-        '--dynus-yaml',
+        '--sando-yaml',
         type=str,
         default=None,
-        help='Path to dynus.yaml config file'
+        help='Path to sando.yaml config file'
     )
 
     parser.add_argument(
@@ -423,12 +423,12 @@ def main():
     if args.drone_bbox:
         drone_half_extents = tuple(args.drone_bbox)
         print(f"Using drone bbox from args: {drone_half_extents}")
-    elif args.dynus_yaml:
-        drone_half_extents = load_drone_bbox_from_yaml(args.dynus_yaml)
+    elif args.sando_yaml:
+        drone_half_extents = load_drone_bbox_from_yaml(args.sando_yaml)
         print(f"Loaded drone bbox from YAML: {drone_half_extents}")
     else:
-        # Try to find dynus.yaml in standard location
-        yaml_path = Path(__file__).parent.parent / "config" / "dynus.yaml"
+        # Try to find sando.yaml in standard location
+        yaml_path = Path(__file__).parent.parent / "config" / "sando.yaml"
         if yaml_path.exists():
             drone_half_extents = load_drone_bbox_from_yaml(str(yaml_path))
             print(f"Loaded drone bbox from default YAML: {drone_half_extents}")

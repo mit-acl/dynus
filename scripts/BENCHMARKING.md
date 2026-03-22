@@ -1,6 +1,6 @@
-# DYNUS Benchmarking Guide
+# SANDO Benchmarking Guide
 
-This guide explains how to use the benchmarking system to evaluate DYNUS performance.
+This guide explains how to use the benchmarking system to evaluate SANDO performance.
 
 ## Quick Start
 
@@ -9,10 +9,10 @@ This guide explains how to use the benchmarking system to evaluate DYNUS perform
 cd /home/kkondo/code/dynus_ws
 
 # Run a quick benchmark (5 trials)
-python3 src/dynus/scripts/run_benchmark.py --setup-bash install/setup.bash
+python3 src/sando/scripts/run_benchmark.py --setup-bash install/setup.bash
 
 # Analyze results
-python3 src/dynus/scripts/analyze_benchmark.py benchmark_data/*/benchmark_*.csv --plot
+python3 src/sando/scripts/analyze_benchmark.py benchmark_data/*/benchmark_*.csv --plot
 ```
 
 ## System Architecture
@@ -386,4 +386,4 @@ For issues or questions:
 - Check this documentation
 - Review example usage in `/benchmark_data/README.md`
 - Examine source code comments
-- Open an issue on the DYNUS repository
+- Open an issue on the SANDO repository

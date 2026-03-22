@@ -14,11 +14,11 @@ Usage:
 
     # Custom base directory
     python3 generate_unknown_dynamic_table.py \
-        --base-dir /media/kkondo/kota_elements/dynus_2nd_paper/dynus/benchmark_data/unknown_dynamic
+        --base-dir /media/kkondo/kota_elements/sando_2nd_paper/sando/benchmark_data/unknown_dynamic
 
     # Specify output location
     python3 generate_unknown_dynamic_table.py \
-        --output /home/kkondo/paper_writing/DYNUS_v3/tables/unknown_dynamic_sim.tex
+        --output /home/kkondo/paper_writing/SANDO_v3/tables/unknown_dynamic_sim.tex
 """
 
 import argparse
@@ -47,8 +47,8 @@ from analyze_dynamic_benchmark import (
 # --------------------------------------------------------------------------
 # Default paths
 # --------------------------------------------------------------------------
-BASE_DIR = Path("/media/kkondo/kota_elements/dynus_2nd_paper/dynus/benchmark_data/unknown_dynamic")
-OUTPUT_FILE = Path("/home/kkondo/paper_writing/DYNUS_v3/tables/unknown_dynamic_sim.tex")
+BASE_DIR = Path("/media/kkondo/kota_elements/sando_2nd_paper/sando/benchmark_data/unknown_dynamic")
+OUTPUT_FILE = Path("/home/kkondo/paper_writing/SANDO_v3/tables/unknown_dynamic_sim.tex")
 
 # Configuration directories and their (heat_weight, N) parameters
 CONFIGS = [
@@ -246,7 +246,7 @@ def generate_latex(rows: list) -> str:
     lines = []
     lines.append(r"\begin{table*}")
     lines.append(r"  \caption{Benchmark results in unknown dynamic environments. "
-                 r"DYNUS navigates using only pointcloud sensing (no ground truth obstacle trajectories). "
+                 r"SANDO navigates using only pointcloud sensing (no ground truth obstacle trajectories). "
                  r"We compare different heat map weights ($w$) and trajectory segment counts ($N$). "
                  r"We highlight the \best{best} and \worst{worst} value for each environment.}")
     lines.append(r"  \label{tab:unknown_dynamic_benchmark}")

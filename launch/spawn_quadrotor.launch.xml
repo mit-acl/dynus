@@ -1,6 +1,6 @@
 <launch>
   <arg name="name" default="quadrotor"/>
-  <arg name="model" default="$(find-pkg-share dynus)/urdf/quadrotor.gazebo.xacro"/>
+  <arg name="model" default="$(find-pkg-share sando)/urdf/quadrotor.gazebo.xacro"/>
   <arg name="tf_prefix" default=""/>
 
   <arg name="x" default="0.0"/>

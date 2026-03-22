@@ -1,6 +1,6 @@
-# DYNUS Comprehensive Benchmarking System
+# SANDO Comprehensive Benchmarking System
 
-Complete benchmarking solution for DYNUS with collision checking, obstacle tracking, and performance analysis.
+Complete benchmarking solution for SANDO with collision checking, obstacle tracking, and performance analysis.
 
 ## System Components
 
@@ -25,7 +25,7 @@ Main benchmarking orchestrator that:
 ### 2. Collision Checking (`scripts/check_collisions.py`)
 Post-flight safety analysis that:
 - Performs AABB collision detection
-- Accounts for drone bounding box (from dynus.yaml)
+- Accounts for drone bounding box (from sando.yaml)
 - Accounts for obstacle bounding boxes (cubes, pillars, walls)
 - Supports safety margins
 - Generates detailed collision reports
@@ -64,12 +64,12 @@ Visualization and statistical analysis:
 cd /home/kkondo/code/dynus_ws
 
 # Run 5 trials with collision checking (automatic)
-python3 src/dynus/scripts/run_benchmark.py \
+python3 src/sando/scripts/run_benchmark.py \
     --setup-bash install/setup.bash \
     --num-trials 5
 
 # Analyze results
-python3 src/dynus/scripts/analyze_benchmark.py \
+python3 src/sando/scripts/analyze_benchmark.py \
     benchmark_data/*/benchmark_*.csv \
     --plot
 ```
@@ -127,7 +127,7 @@ python3 scripts/check_collisions.py \
 - Subscribes to `/trajs` topic published by `dynamic_forest_node`
 - Tracks obstacle positions over time for accurate dynamic obstacle collision detection
 - Interpolates obstacle positions to match trajectory timestamps
-- Automatically loads drone bounding box from `config/dynus.yaml`
+- Automatically loads drone bounding box from `config/sando.yaml`
 
 ## Collision Detection Details
 
@@ -161,9 +161,9 @@ The collision checking system uses the `/trajs` topic:
 
 ### Drone Bounding Box
 
-Configured in `config/dynus.yaml`:
+Configured in `config/sando.yaml`:
 ```yaml
-dynus:
+sando:
   ros__parameters:
     drone_bbox: [0.6, 0.6, 0.3]  # [width, height, depth] in meters (FULL sizes)
 ```
@@ -294,7 +294,7 @@ print(f"  Avg jerk RMS: {safe_trials['jerk_rms'].mean():.2f}")
 ## File Structure
 
 ```
-dynus/
+sando/
 ├── scripts/
 │   ├── run_benchmark.py              # Main benchmark orchestrator
 │   ├── check_collisions.py           # Collision checker (integrated & standalone)
@@ -310,7 +310,7 @@ dynus/
 │       ├── benchmark_*.json          # Results JSON
 │       └── obstacles.json            # Obstacle data (if saved)
 ├── config/
-│   └── dynus.yaml                    # Contains drone_bbox config
+│   └── sando.yaml                    # Contains drone_bbox config
 └── BENCHMARKING_SYSTEM.md           # This file
 ```
 
@@ -334,7 +334,7 @@ Same data in JSON format for easier programmatic access
 
 ✅ **Fully Automated**: Run benchmarks, get collision data automatically
 ✅ **Bbox-Aware**: Correctly handles different obstacle sizes (cubes, pillars, walls)
-✅ **Drone-Aware**: Reads drone size from dynus.yaml configuration
+✅ **Drone-Aware**: Reads drone size from sando.yaml configuration
 ✅ **Comprehensive Metrics**: 30+ metrics per trial
 ✅ **Visualization**: Automated plotting with matplotlib/seaborn
 ✅ **Statistical Analysis**: Built-in summary statistics
@@ -362,7 +362,7 @@ Potential additions:
    - Verify imports work: `python3 -c "from check_collisions import CollisionChecker"`
 
 2. **Incorrect collision detection**
-   - Verify drone_bbox in `config/dynus.yaml`
+   - Verify drone_bbox in `config/sando.yaml`
    - Check obstacle sizes with `save_obstacles.py`
    - Confirm obstacle topic name (default: `/obstacles`)
 
@@ -380,7 +380,7 @@ Potential additions:
 
 ## Credits
 
-Benchmarking system developed for DYNUS (Dynamic UAV Navigation and Uncertainty-aware Safe corridors).
+Benchmarking system developed for SANDO (Dynamic UAV Navigation and Uncertainty-aware Safe corridors).
 Collision checking uses AABB intersection with bbox-aware obstacle representation.
 
 ---
@@ -389,5 +389,5 @@ Collision checking uses AABB intersection with bbox-aware obstacle representatio
 
 ```bash
 # Start benchmarking with collision checking now
-python3 src/dynus/scripts/run_benchmark.py --setup-bash install/setup.bash
+python3 src/sando/scripts/run_benchmark.py --setup-bash install/setup.bash
 ```

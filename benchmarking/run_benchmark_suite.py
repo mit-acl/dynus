@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Simplified Benchmark Suite Runner for DYNUS Local Trajectory Optimization
+Simplified Benchmark Suite Runner for SANDO Local Trajectory Optimization
 
 This script:
 1. Launches the simulator in the background
@@ -10,9 +10,9 @@ This script:
 Usage:
     python3 run_benchmark_suite.py [--factor-determination] [--ve-comparison]
 
-    --factor-determination: Run DYNUS2 single-threaded with wide factor ranges
+    --factor-determination: Run SANDO2 single-threaded with wide factor ranges
                            to determine optimal min/max factors for each N
-    --ve-comparison: Run multi-threaded DYNUS2 with and without variable elimination
+    --ve-comparison: Run multi-threaded SANDO2 with and without variable elimination
                     to compare performance. Results saved to ve_benchmark/ folder.
 """
 
@@ -26,7 +26,7 @@ from pathlib import Path
 
 # Configuration
 WORKSPACE_DIR = Path("/home/kkondo/code/dynus_ws")
-PACKAGE_NAME = "dynus"
+PACKAGE_NAME = "sando"
 
 # Factor ranges for each N (normal mode - fixed range)
 FACTOR_INITIAL = {4: 1.0, 5: 1.0, 6: 1.0}
@@ -36,12 +36,12 @@ FACTOR_FINAL = {4: 5.0, 5: 5.0, 6: 5.0}
 FACTOR_INITIAL_WIDE = {4: 1.0, 5: 1.0, 6: 1.0}
 FACTOR_FINAL_WIDE = {4: 5.0, 5: 5.0, 6: 5.0}
 
-# Dynamic k-factor window parameters (for DYNUS2)
+# Dynamic k-factor window parameters (for SANDO2)
 DYNAMIC_FACTOR_INITIAL_MEAN = {4: 1.5, 5: 1.5, 6: 1.5}
 DYNAMIC_FACTOR_K_RADIUS = 0.4
 
 
-def get_benchmark_configs(factor_determination=False, ve_comparison=False, only_dynus2=False, only_dynus_single=False, safe_faster_only=False):
+def get_benchmark_configs(factor_determination=False, ve_comparison=False, only_sando=False, only_sando_single=False, safe_faster_only=False):
     """Get benchmark configurations based on mode
 
     Returns list of tuples: (use_single_threaded, planner_name, num_N_list, description, use_var_elim)
@@ -50,30 +50,30 @@ def get_benchmark_configs(factor_determination=False, ve_comparison=False, only_
         return [
             (True, "safe_faster", [4, 5, 6], "Safe FASTER single-threaded (N=4,5,6)", False),
         ]
-    elif only_dynus_single:
+    elif only_sando_single:
         return [
-            (True, "dynus2", [4, 5, 6], "DYNUS2 single-threaded (N=4,5,6)", True),
+            (True, "sando", [4, 5, 6], "SANDO2 single-threaded (N=4,5,6)", True),
         ]
-    elif only_dynus2:
+    elif only_sando:
         return [
-            (False, "dynus2", [4, 5, 6], "DYNUS2 multi-threaded (N=4,5,6)", True),
+            (False, "sando", [4, 5, 6], "SANDO2 multi-threaded (N=4,5,6)", True),
         ]
     elif factor_determination:
-        # Only run DYNUS2 single-threaded for factor determination
+        # Only run SANDO2 single-threaded for factor determination
         return [
-            (True, "dynus2", [4, 5, 6], "DYNUS2 single-threaded (N=4,5,6) - Factor Determination", True),
+            (True, "sando", [4, 5, 6], "SANDO2 single-threaded (N=4,5,6) - Factor Determination", True),
         ]
     elif ve_comparison:
-        # Variable elimination comparison mode - multi-threaded DYNUS2 only
+        # Variable elimination comparison mode - multi-threaded SANDO2 only
         return [
-            (False, "dynus2", [4, 5, 6], "DYNUS2 multi-threaded (N=4,5,6) WITH variable elimination", True),
-            (False, "dynus2", [4, 5, 6], "DYNUS2 multi-threaded (N=4,5,6) WITHOUT variable elimination", False),
+            (False, "sando", [4, 5, 6], "SANDO2 multi-threaded (N=4,5,6) WITH variable elimination", True),
+            (False, "sando", [4, 5, 6], "SANDO2 multi-threaded (N=4,5,6) WITHOUT variable elimination", False),
         ]
     else:
         # Normal full benchmark suite
         return [
-            (False, "dynus2", [4, 5, 6], "DYNUS2 multi-threaded (N=4,5,6)", True),
-            (True, "dynus2", [4, 5, 6], "DYNUS2 single-threaded (N=4,5,6)", True),
+            (False, "sando", [4, 5, 6], "SANDO2 multi-threaded (N=4,5,6)", True),
+            (True, "sando", [4, 5, 6], "SANDO2 single-threaded (N=4,5,6)", True),
             (True, "original_faster", [4, 5, 6], "FASTER (original) single-threaded (N=4,5,6)", False),
         ]
 
@@ -83,7 +83,7 @@ def source_workspace():
     setup_file = WORKSPACE_DIR / "install" / "setup.bash"
     if not setup_file.exists():
         print(f"ERROR: Setup file not found: {setup_file}")
-        print("Please build the workspace first: colcon build --packages-select dynus")
+        print("Please build the workspace first: colcon build --packages-select sando")
         sys.exit(1)
     return str(setup_file)
 
@@ -98,10 +98,10 @@ def launch_simulator(visualize=False):
     print("="*80)
 
     setup_file = source_workspace()
-    obstacles_script = WORKSPACE_DIR / "src" / "dynus" / "scripts" / "fixed_obstacles_publisher.py"
+    obstacles_script = WORKSPACE_DIR / "src" / "sando" / "scripts" / "fixed_obstacles_publisher.py"
     cmd = f"source {setup_file} && python3 {obstacles_script} & "
     if visualize:
-        rviz_config = WORKSPACE_DIR / "src" / "dynus" / "rviz" / "dynus.rviz"
+        rviz_config = WORKSPACE_DIR / "src" / "sando" / "rviz" / "sando.rviz"
         cmd += f"rviz2 -d {rviz_config} & "
     cmd += "wait"
 
@@ -129,7 +129,7 @@ def run_benchmark(use_single_threaded, planner_name, num_N_list, description,
     print("="*80)
 
     # Determine if this planner uses dynamic k-factor
-    use_dynamic_factor = planner_name in ("dynus2", "faster_star")
+    use_dynamic_factor = planner_name in ("sando", "faster_star")
 
     # Choose factor ranges based on mode
     if factor_determination:
@@ -172,7 +172,7 @@ def run_benchmark(use_single_threaded, planner_name, num_N_list, description,
     # Determine output directory based on mode
     if ve_comparison:
         # Use ve_benchmark folder for variable elimination comparison
-        output_dir_override = "/home/kkondo/code/dynus_ws/src/dynus/benchmark_data/ve_benchmark"
+        output_dir_override = "/home/kkondo/code/dynus_ws/src/sando/benchmark_data/ve_benchmark"
     else:
         output_dir_override = ""
 
@@ -245,11 +245,11 @@ def analyze_factors():
 
     import pandas as pd
 
-    data_dir = WORKSPACE_DIR / "src" / "dynus" / "benchmark_data" / "single_thread"
+    data_dir = WORKSPACE_DIR / "src" / "sando" / "benchmark_data" / "single_thread"
 
     results = {}
     for n in [4, 5, 6]:
-        csv_file = data_dir / f"dynus_{n}_benchmark.csv"
+        csv_file = data_dir / f"sando_{n}_benchmark.csv"
 
         if not csv_file.exists():
             print(f"\n✗ CSV file not found: {csv_file}")
@@ -309,41 +309,41 @@ def analyze_factors():
 
 def main():
     """Run all benchmark configurations"""
-    parser = argparse.ArgumentParser(description='DYNUS Benchmark Suite')
+    parser = argparse.ArgumentParser(description='SANDO Benchmark Suite')
     parser.add_argument('--factor-determination', action='store_true',
-                       help='Run factor determination mode (DYNUS single-threaded with wide ranges)')
+                       help='Run factor determination mode (SANDO single-threaded with wide ranges)')
     parser.add_argument('--ve-comparison', action='store_true',
-                       help='Run variable elimination comparison mode (DYNUS multi-threaded with/without VE)')
-    parser.add_argument('--only-dynus2', action='store_true',
-                       help='Run only DYNUS2 (dynamic k-factor) multi-threaded benchmark')
-    parser.add_argument('--only-dynus-single', action='store_true',
-                       help='Run only DYNUS2 single-threaded benchmark')
+                       help='Run variable elimination comparison mode (SANDO multi-threaded with/without VE)')
+    parser.add_argument('--only-sando', action='store_true',
+                       help='Run only SANDO2 (dynamic k-factor) multi-threaded benchmark')
+    parser.add_argument('--only-sando-single', action='store_true',
+                       help='Run only SANDO2 single-threaded benchmark')
     parser.add_argument('--safe-faster-only', action='store_true',
                        help='Run only Safe FASTER single-threaded benchmark')
     args = parser.parse_args()
 
     # Check for conflicting modes
-    mode_count = sum([args.factor_determination, args.ve_comparison, args.only_dynus2, args.only_dynus_single, args.safe_faster_only])
+    mode_count = sum([args.factor_determination, args.ve_comparison, args.only_sando, args.only_sando_single, args.safe_faster_only])
     if mode_count > 1:
         print("ERROR: Cannot specify more than one mode flag")
         sys.exit(1)
 
     print("\n" + "="*80)
-    print("DYNUS Local Trajectory Benchmark Suite")
+    print("SANDO Local Trajectory Benchmark Suite")
     if args.factor_determination:
         print("MODE: Factor Determination")
     elif args.ve_comparison:
         print("MODE: Variable Elimination Comparison")
-    elif args.only_dynus2:
-        print("MODE: DYNUS2 Only")
-    elif args.only_dynus_single:
-        print("MODE: DYNUS2 Single-Threaded Only")
+    elif args.only_sando:
+        print("MODE: SANDO2 Only")
+    elif args.only_sando_single:
+        print("MODE: SANDO2 Single-Threaded Only")
     elif args.safe_faster_only:
         print("MODE: Safe FASTER Only")
     print("="*80)
     print(f"\nWorkspace: {WORKSPACE_DIR}")
 
-    configs = get_benchmark_configs(args.factor_determination, args.ve_comparison, args.only_dynus2, args.only_dynus_single, args.safe_faster_only)
+    configs = get_benchmark_configs(args.factor_determination, args.ve_comparison, args.only_sando, args.only_sando_single, args.safe_faster_only)
     print(f"Total configurations: {len(configs)}")
 
     # Check workspace
@@ -390,7 +390,7 @@ def main():
             print(f"  {status}: {desc}")
 
         if not args.factor_determination:
-            data_dir = WORKSPACE_DIR / "src" / "dynus" / "benchmark_data"
+            data_dir = WORKSPACE_DIR / "src" / "sando" / "benchmark_data"
             if args.ve_comparison:
                 print(f"\nBenchmark data saved to:")
                 print(f"  {data_dir}/ve_benchmark/")

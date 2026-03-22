@@ -8,13 +8,13 @@ windows:
     panes:
       # fixed obstacles publisher
       - shell_command:
-        - python3 src/dynus/scripts/fixed_obstacles_publisher.py
+        - python3 src/sando/scripts/fixed_obstacles_publisher.py
 
       # rviz
       - shell_command:
-        - rviz2 -d src/dynus/rviz/dynus.rviz
+        - rviz2 -d src/sando/rviz/sando.rviz
 
       # run SFC generator
       - shell_command:
         - sleep 3
-        - ros2 run dynus corridor_generator_node --ros-args -p max_dist_vertexes:=3.0 -p num_P:=3 -p global_planner:=astar_heat -p global_planner_huristic_weight:=2.0
+        - ros2 run sando corridor_generator_node --ros-args -p max_dist_vertexes:=3.0 -p num_P:=3 -p global_planner:=astar_heat -p global_planner_huristic_weight:=2.0

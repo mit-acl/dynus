@@ -31,7 +31,7 @@
         "/home/kkondo/code/dynus_ws/src/acl-mapping/fla_utils/include/**",
         "/home/kkondo/code/dynus_ws/src/acl-mapping/global_mapper/include/**",
         "/home/kkondo/code/dynus_ws/src/acl-mapping/global_mapper_ros/include/**",
-        "/home/kkondo/code/dynus_ws/src/dynus/include/**",
+        "/home/kkondo/code/dynus_ws/src/sando/include/**",
         "/home/kkondo/code/dynus_ws/src/gazebo_ros_pkgs/gazebo_plugins/include/**",
         "/home/kkondo/code/dynus_ws/src/gazebo_ros_pkgs/gazebo_ros/include/**",
         "/home/kkondo/code/dynus_ws/src/livox_laser_simulation_ros2/include/**",

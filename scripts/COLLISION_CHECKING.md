@@ -1,11 +1,11 @@
-# DYNUS Collision Checking Guide
+# SANDO Collision Checking Guide
 
 This guide explains how to use the collision checking system to verify trajectory safety.
 
 ## Overview
 
 The collision checking system performs post-flight analysis to detect collisions between the drone trajectory and obstacles, accounting for:
-- **Drone bounding box**: Size of the drone (from `drone_bbox` in dynus.yaml)
+- **Drone bounding box**: Size of the drone (from `drone_bbox` in sando.yaml)
 - **Obstacle bounding boxes**: Different sizes for each obstacle type (cubes, pillars, walls)
 - **Dynamic obstacle motion**: Trefoil knot trajectories for moving obstacles
 - **Safety margins**: Optional additional clearance requirements
@@ -43,11 +43,11 @@ python3 scripts/check_collisions.py \
     --obstacles path/to/obstacles.json \
     --drone-bbox 0.3 0.3 0.15
 
-# Or load drone bbox from dynus.yaml
+# Or load drone bbox from sando.yaml
 python3 scripts/check_collisions.py \
     --trajectory path/to/trajectory.csv \
     --obstacles path/to/obstacles.json \
-    --dynus-yaml config/dynus.yaml
+    --sando-yaml config/sando.yaml
 ```
 
 ## Saving Obstacle Data
@@ -110,9 +110,9 @@ This creates a JSON file with all obstacle information:
 
 ### Drone Bounding Box
 
-Configured in `config/dynus.yaml`:
+Configured in `config/sando.yaml`:
 ```yaml
-dynus:
+sando:
   ros__parameters:
     drone_bbox: [0.3, 0.3, 0.15]  # [hx, hy, hz] half-extents in meters
 ```
@@ -375,7 +375,7 @@ ros2 topic echo /obstacles --once
 **Solution**: Verify bbox configuration
 ```bash
 # Check drone bbox in config
-grep -A 3 "drone_bbox" config/dynus.yaml
+grep -A 3 "drone_bbox" config/sando.yaml
 
 # Verify obstacle sizes match simulation
 python3 scripts/save_obstacles.py --output obs_verify.json --duration 3.0

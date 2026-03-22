@@ -1,6 +1,6 @@
-# DYNUS Local Trajectory Benchmark Suite
+# SANDO Local Trajectory Benchmark Suite
 
-This directory contains tools for running and analyzing local trajectory optimization benchmarks for the DYNUS paper.
+This directory contains tools for running and analyzing local trajectory optimization benchmarks for the SANDO paper.
 
 ## Quick Start
 
@@ -8,17 +8,17 @@ This directory contains tools for running and analyzing local trajectory optimiz
 
 ```bash
 cd /home/kkondo/code/dynus_ws
-python3 src/dynus/benchmarking/run_benchmark_suite.py
+python3 src/sando/benchmarking/run_benchmark_suite.py
 ```
 
 This will automatically run:
-- **DYNUS2 multi-threaded** for N = 4, 5, 6
-- **DYNUS2 single-threaded** for N = 4, 5, 6
+- **SANDO2 multi-threaded** for N = 4, 5, 6
+- **SANDO2 single-threaded** for N = 4, 5, 6
 - **FASTER (original)** single-threaded for N = 6
 
 Results are saved to:
-- `src/dynus/benchmark_data/single_thread/`
-- `src/dynus/benchmark_data/multi_thread/`
+- `src/sando/benchmark_data/single_thread/`
+- `src/sando/benchmark_data/multi_thread/`
 
 **Note:** Each benchmark configuration will run sequentially. The entire suite takes approximately 15-30 minutes depending on your system.
 
@@ -27,11 +27,11 @@ Results are saved to:
 After benchmarks complete:
 
 ```bash
-python3 src/dynus/benchmarking/generate_latex_table.py
+python3 src/sando/benchmarking/generate_latex_table.py
 ```
 
 This creates:
-- LaTeX table at: `~/paper_writing/DYNUS_v3/tables/standardized_benchmark.tex`
+- LaTeX table at: `~/paper_writing/SANDO_v3/tables/standardized_benchmark.tex`
 - Formatted with `\best{}` and `\worst{}` highlighting
 
 ### Step 3: Analyze Data (Optional)
@@ -39,7 +39,7 @@ This creates:
 For more detailed analysis and plots:
 
 ```bash
-jupyter notebook src/dynus/benchmarking/local_traj_benchmark.ipynb
+jupyter notebook src/sando/benchmarking/local_traj_benchmark.ipynb
 ```
 
 The notebook will automatically load data from the CSV files.
@@ -68,16 +68,16 @@ The notebook will automatically load data from the CSV files.
 
 Benchmark results are saved as CSV files in:
 ```
-src/dynus/benchmark_data/
+src/sando/benchmark_data/
 ├── single_thread/
-│   ├── dynus_4_benchmark.csv
-│   ├── dynus_5_benchmark.csv
-│   ├── dynus_6_benchmark.csv
+│   ├── sando_4_benchmark.csv
+│   ├── sando_5_benchmark.csv
+│   ├── sando_6_benchmark.csv
 │   └── faster_6_benchmark.csv
 └── multi_thread/
-    ├── dynus_4_benchmark.csv
-    ├── dynus_5_benchmark.csv
-    └── dynus_6_benchmark.csv
+    ├── sando_4_benchmark.csv
+    ├── sando_5_benchmark.csv
+    └── sando_6_benchmark.csv
 ```
 
 Each CSV contains:
@@ -98,8 +98,8 @@ Edit `run_benchmark_suite.py` and modify the `BENCHMARK_CONFIGS` list:
 ```python
 BENCHMARK_CONFIGS = [
     # (use_single_threaded, planner_names, num_N_list, description)
-    (False, ["dynus2"], [4, 5, 6], "DYNUS2 multi-threaded"),
-    (True, ["dynus2"], [7, 8], "DYNUS2 single-threaded (N=7,8)"),
+    (False, ["sando"], [4, 5, 6], "SANDO2 multi-threaded"),
+    (True, ["sando"], [7, 8], "SANDO2 single-threaded (N=7,8)"),
     # Add more configurations...
 ]
 ```
@@ -132,10 +132,10 @@ Then include the table:
 
 ### "No data loaded" error
 - Make sure you ran `run_benchmark_suite.py` first
-- Check that CSV files exist in `src/dynus/benchmark_data/`
+- Check that CSV files exist in `src/sando/benchmark_data/`
 
 ### ROS2 launch fails
-- Ensure workspace is built: `colcon build --packages-select dynus`
+- Ensure workspace is built: `colcon build --packages-select sando`
 - Source the workspace: `source install/setup.bash`
 
 ### Missing columns in CSV
@@ -147,9 +147,9 @@ Then include the table:
 
 For the paper table, you should see:
 - **Success rates** around 77-100%
-- **DYNUS2 multi** having lowest `total_opt_runtime_ms` (parallelization benefit)
-- **DYNUS2 single** having competitive `per_opt_runtime_ms`
-- **Zero violations** for DYNUS (safe corridor)
+- **SANDO2 multi** having lowest `total_opt_runtime_ms` (parallelization benefit)
+- **SANDO2 single** having competitive `per_opt_runtime_ms`
+- **Zero violations** for SANDO (safe corridor)
 - **Some velocity violations** for FASTER (original)
 
 ## Notes

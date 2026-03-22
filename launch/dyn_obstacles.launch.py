@@ -147,7 +147,7 @@ def _spawn_static_block(context):
         print("[dyn_obstacles][spawn] num_obstacles:", num_obstacles,
               "seed:", seed, "spawn_interval:", spawn_interval)
 
-    urdf_path = os.path.join(get_package_share_directory('dynus'), 'urdf', urdf_xacro)
+    urdf_path = os.path.join(get_package_share_directory('sando'), 'urdf', urdf_xacro)
 
     # Get dynamic_ratio to determine which obstacles are static vs dynamic
     dynamic_ratio = _as(context, 'dynamic_ratio', float, 0.5)
@@ -316,7 +316,7 @@ def _maybe_launch_forest_node(context):
     }
 
     forest_node = Node(
-        package='dynus',
+        package='sando',
         executable='dynamic_forest_node',
         name='dynamic_forest_trajs',
         output='screen',

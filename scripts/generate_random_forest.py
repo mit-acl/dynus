@@ -4,7 +4,7 @@ Run Gazebo first:
   ros2 launch gazebo_ros gazebo.launch.py
 
 Then:
-  ros2 run dynus generate_random_forest.py --ros-args -p difficulty:=hard -p min_clearance:=1.5 -p shape_mode:=mixed -p box_probability:=0.5
+  ros2 run sando generate_random_forest.py --ros-args -p difficulty:=hard -p min_clearance:=1.5 -p shape_mode:=mixed -p box_probability:=0.5
 
 Add this to .world for ROS2 bridge:
   <plugin name="disable_physics" filename="libdisable_physics.so"/>
@@ -20,13 +20,13 @@ Add this to .world for ROS2 bridge:
 Usage:
 
 # all boxes
-ros2 run dynus generate_random_forest.py --ros-args -p shape_mode:=box
+ros2 run sando generate_random_forest.py --ros-args -p shape_mode:=box
 
 # mixed (70% boxes), random yaw, 1.5 m clearance
-ros2 run dynus generate_random_forest.py --ros-args -p shape_mode:=mixed -p box_probability:=0.7 -p min_clearance:=1.5
+ros2 run sando generate_random_forest.py --ros-args -p shape_mode:=mixed -p box_probability:=0.7 -p min_clearance:=1.5
 
-# used in dynus paper benchmarking
-colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select dynus && . install/setup.bash && ros2 run dynus generate_random_forest.py --ros-args -p shape_mode:=cylindar -p min_clearance:=1.5 -p difficulty:=hard
+# used in sando paper benchmarking
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select sando && . install/setup.bash && ros2 run sando generate_random_forest.py --ros-args -p shape_mode:=cylindar -p min_clearance:=1.5 -p difficulty:=hard
 
 Parameters (new ones starred ★):
 - seed (int)

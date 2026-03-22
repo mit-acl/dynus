@@ -8,7 +8,7 @@ SETUP_BASH="install/setup.bash"
 OUTPUT_BASE="benchmark_data/sweep_$(date +%Y%m%d_%H%M%S)"
 
 echo "============================================"
-echo "DYNUS Benchmark Sweep"
+echo "SANDO Benchmark Sweep"
 echo "============================================"
 echo "Output directory: $OUTPUT_BASE"
 echo ""
@@ -30,7 +30,7 @@ run_config() {
     echo "Args: $extra_args"
     echo "--------------------------------------------"
 
-    python3 src/dynus/scripts/run_benchmark.py \
+    python3 src/sando/scripts/run_benchmark.py \
         --setup-bash "$SETUP_BASH" \
         --num-trials "$num_trials" \
         --config-name "$config_name" \
@@ -88,7 +88,7 @@ echo ""
 echo "Generating comparison plots..."
 
 # Generate comparison visualizations
-python3 src/dynus/scripts/analyze_benchmark.py \
+python3 src/sando/scripts/analyze_benchmark.py \
     "$OUTPUT_BASE/*/benchmark_*.csv" \
     --plot \
     --output "$OUTPUT_BASE/comparison_all.png"
@@ -97,8 +97,8 @@ echo ""
 echo "Results saved to: $OUTPUT_BASE"
 echo ""
 echo "To analyze individual configurations:"
-echo "  python3 src/dynus/scripts/analyze_benchmark.py $OUTPUT_BASE/baseline/benchmark_*.csv --plot"
+echo "  python3 src/sando/scripts/analyze_benchmark.py $OUTPUT_BASE/baseline/benchmark_*.csv --plot"
 echo ""
 echo "To generate detailed report:"
-echo "  python3 src/dynus/scripts/analyze_benchmark.py $OUTPUT_BASE/*/benchmark_*.csv --report"
+echo "  python3 src/sando/scripts/analyze_benchmark.py $OUTPUT_BASE/*/benchmark_*.csv --report"
 echo ""

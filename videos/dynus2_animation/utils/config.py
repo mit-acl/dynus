@@ -1,4 +1,4 @@
-"""Shared constants: colors, positions, and corridor definitions for the DYNUS2 animation."""
+"""Shared constants: colors, positions, and corridor definitions for the SANDO2 animation."""
 
 from manim import *
 import numpy as np

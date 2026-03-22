@@ -10,7 +10,7 @@
 
 """Forward one agent's position as another agent's goal.
 
-Used in adversarial hover-avoidance testing: a "chaser" DYNUS agent
+Used in adversarial hover-avoidance testing: a "chaser" SANDO agent
 continuously receives the "evader" agent's current position as its
 navigation goal.
 """

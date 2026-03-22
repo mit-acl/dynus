@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate LaTeX table from benchmark data for DYNUS paper
+Generate LaTeX table from benchmark data for SANDO paper
 
 This script reads the CSV benchmark data and generates a properly formatted
 LaTeX table with best/worst highlighting.
@@ -14,9 +14,9 @@ import numpy as np
 from pathlib import Path
 
 # Configuration
-ROOT_PATH = Path("/home/kkondo/code/dynus_ws/src/dynus/benchmark_data")
-OUTPUT_FILE = Path("/home/kkondo/paper_writing/DYNUS_v3/tables/standardized_benchmark.tex")
-VE_OUTPUT_FILE = Path("/home/kkondo/paper_writing/DYNUS_v3/tables/ve_benchmark.tex")
+ROOT_PATH = Path("/home/kkondo/code/dynus_ws/src/sando/benchmark_data")
+OUTPUT_FILE = Path("/home/kkondo/paper_writing/SANDO_v3/tables/standardized_benchmark.tex")
+VE_OUTPUT_FILE = Path("/home/kkondo/paper_writing/SANDO_v3/tables/ve_benchmark.tex")
 
 # Data files to load
 DATA_FILES = {
@@ -29,14 +29,14 @@ DATA_FILES = {
     ("single", "safe_faster", 4): "single_thread/safe_faster_4_benchmark.csv",
     ("single", "safe_faster", 5): "single_thread/safe_faster_5_benchmark.csv",
     ("single", "safe_faster", 6): "single_thread/safe_faster_6_benchmark.csv",
-    # DYNUS2 single
-    ("single", "dynus2", 4): "single_thread/dynus2_4_benchmark.csv",
-    ("single", "dynus2", 5): "single_thread/dynus2_5_benchmark.csv",
-    ("single", "dynus2", 6): "single_thread/dynus2_6_benchmark.csv",
-    # DYNUS2 multi
-    ("multi", "dynus2", 4): "multi_thread/dynus2_4_benchmark.csv",
-    ("multi", "dynus2", 5): "multi_thread/dynus2_5_benchmark.csv",
-    ("multi", "dynus2", 6): "multi_thread/dynus2_6_benchmark.csv",
+    # SANDO2 single
+    ("single", "sando", 4): "single_thread/sando_4_benchmark.csv",
+    ("single", "sando", 5): "single_thread/sando_5_benchmark.csv",
+    ("single", "sando", 6): "single_thread/sando_6_benchmark.csv",
+    # SANDO2 multi
+    ("multi", "sando", 4): "multi_thread/sando_4_benchmark.csv",
+    ("multi", "sando", 5): "multi_thread/sando_5_benchmark.csv",
+    ("multi", "sando", 6): "multi_thread/sando_6_benchmark.csv",
 }
 
 # SUPER data: loaded from external CSV files (L2 and Linf norm variants)
@@ -172,8 +172,8 @@ def load_and_process_data():
         elif planner == "safe_faster":
             alg_name = "FASTER"
             alg_variant = "(CP)"
-        else:  # dynus2
-            alg_name = "DYNUS"
+        else:  # sando
+            alg_name = "SANDO"
             alg_variant = ""
 
         rows.append({
@@ -244,8 +244,8 @@ def format_value(val, best, worst, precision=1, force_best_when_all_equal=False)
         return formatted
 
 
-def generate_dynus_rows_only(df):
-    """Generate only DYNUS rows (not full table) for manual insertion"""
+def generate_sando_rows_only(df):
+    """Generate only SANDO rows (not full table) for manual insertion"""
 
     # (column_name, latex_header, higher_is_better, precision, force_best_when_all_equal)
     columns_config = [
@@ -260,26 +260,26 @@ def generate_dynus_rows_only(df):
         ("acc_jerk_viol", "$\\rho_{\\mathrm{acc/jerk}}$ [\\%]", False, 1, True),
     ]
 
-    # Filter to DYNUS only
-    df_dynus = df[df["Algorithm"] == "DYNUS"].copy()
+    # Filter to SANDO only
+    df_sando = df[df["Algorithm"] == "SANDO"].copy()
 
-    if df_dynus.empty:
-        return "% No DYNUS data found"
+    if df_sando.empty:
+        return "% No SANDO data found"
 
-    # Find best/worst across ALL data (not just DYNUS) for fair comparison
+    # Find best/worst across ALL data (not just SANDO) for fair comparison
     best_worst = {}
     for col_name, _, higher_better, _, _ in columns_config:
         best, worst = find_best_worst(df, col_name, higher_better)
         best_worst[col_name] = (best, worst)
 
     latex = []
-    latex.append("% ========== DYNUS ROWS ONLY (copy into main table) ==========")
-    latex.append("% Replace existing DYNUS rows with these updated values")
+    latex.append("% ========== SANDO ROWS ONLY (copy into main table) ==========")
+    latex.append("% Replace existing SANDO rows with these updated values")
     latex.append("")
 
     # Group by N
-    for N_val in sorted(df_dynus["N"].unique()):
-        df_n = df_dynus[df_dynus["N"] == N_val].copy()
+    for N_val in sorted(df_sando["N"].unique()):
+        df_n = df_sando[df_sando["N"] == N_val].copy()
 
         # Sort: multi-thread first, then single-thread
         df_n = df_n.sort_values("Thread", ascending=False)  # multi before single
@@ -290,7 +290,7 @@ def generate_dynus_rows_only(df):
             thread = row["Thread"]
 
             # Build row (no N column - assume it's handled by multirow in main table)
-            row_str = f"      DYNUS & {thread} &"
+            row_str = f"      SANDO & {thread} &"
 
             for col_name, _, _, precision, force_best in columns_config:
                 val = row[col_name]
@@ -438,15 +438,15 @@ def generate_latex_table(df):
     for N_val in sorted(df_rest["N"].unique()):
         df_n = df_rest[df_rest["N"] == N_val].copy()
 
-        # Sort by: FASTER (orig.), FASTER (CP), DYNUS single, DYNUS multi
+        # Sort by: FASTER (orig.), FASTER (CP), SANDO single, SANDO multi
         def sort_key(row):
             if row["Algorithm"] == "FASTER" and row["Variant"] == "(orig.)":
                 return (0, 0)
             elif row["Algorithm"] == "FASTER" and row["Variant"] == "(CP)":
                 return (0, 1)
-            elif row["Algorithm"] == "DYNUS" and row["Thread"] == "single":
+            elif row["Algorithm"] == "SANDO" and row["Thread"] == "single":
                 return (1, 0)
-            elif row["Algorithm"] == "DYNUS" and row["Thread"] == "multi":
+            elif row["Algorithm"] == "SANDO" and row["Thread"] == "multi":
                 return (1, 1)
             else:
                 return (3, 0)
@@ -454,15 +454,15 @@ def generate_latex_table(df):
         df_n["sort_key"] = df_n.apply(sort_key, axis=1)
         df_n = df_n.sort_values("sort_key").drop(columns=["sort_key"])
 
-        # Count FASTER and DYNUS rows for multirow
+        # Count FASTER and SANDO rows for multirow
         faster_rows = df_n[df_n["Algorithm"] == "FASTER"]
         n_faster = len(faster_rows)
-        dynus_rows = df_n[df_n["Algorithm"] == "DYNUS"]
-        n_dynus = len(dynus_rows)
+        sando_rows = df_n[df_n["Algorithm"] == "SANDO"]
+        n_sando = len(sando_rows)
 
         first_in_group = True
         first_faster = True
-        first_dynus = True
+        first_sando = True
         for _, row in df_n.iterrows():
             # Algorithm name
             alg = row["Algorithm"]
@@ -483,13 +483,13 @@ def generate_latex_table(df):
                     alg_col1 = ""
                     thread_cell = ""
                 alg_cell = f"{alg_col1} & {variant}"
-            elif alg == "DYNUS":
-                if first_dynus and n_dynus > 1:
-                    alg_cell = f"\\multicolumn{{2}}{{c}}{{\\multirow{{{n_dynus}}}{{*}}{{DYNUS2}}}}"
-                    first_dynus = False
-                elif first_dynus:
-                    alg_cell = "\\multicolumn{2}{c}{DYNUS2}"
-                    first_dynus = False
+            elif alg == "SANDO":
+                if first_sando and n_sando > 1:
+                    alg_cell = f"\\multicolumn{{2}}{{c}}{{\\multirow{{{n_sando}}}{{*}}{{SANDO2}}}}"
+                    first_sando = False
+                elif first_sando:
+                    alg_cell = "\\multicolumn{2}{c}{SANDO2}"
+                    first_sando = False
                 else:
                     alg_cell = "\\multicolumn{2}{c}{}"
             else:
@@ -537,17 +537,17 @@ def generate_latex_table(df):
 def load_ve_data():
     """Load variable elimination benchmark data.
 
-    VE=yes rows come from the standardized benchmark (multi_thread/dynus_N_benchmark.csv)
+    VE=yes rows come from the standardized benchmark (multi_thread/sando_N_benchmark.csv)
     so that both tables share the same data.  VE=no rows come from ve_benchmark/.
     """
-    # VE=yes: use DYNUS2 (dynamic k-factor) multi-threaded data
+    # VE=yes: use SANDO2 (dynamic k-factor) multi-threaded data
     ve_yes_files = {
-        N: ROOT_PATH / f"multi_thread/dynus2_{N}_benchmark.csv"
+        N: ROOT_PATH / f"multi_thread/sando_{N}_benchmark.csv"
         for N in [4, 5, 6]
     }
-    # VE=no: dedicated without-VE runs for DYNUS2
+    # VE=no: dedicated without-VE runs for SANDO2
     ve_no_files = {
-        N: ROOT_PATH / f"ve_benchmark/dynus2_{N}_without_ve_benchmark.csv"
+        N: ROOT_PATH / f"ve_benchmark/sando_{N}_without_ve_benchmark.csv"
         for N in [4, 5, 6]
     }
 
@@ -558,7 +558,7 @@ def load_ve_data():
             file_list.append((N, "yes", fp))
         else:
             # Fall back to ve_benchmark with_ve file if multi_thread doesn't exist
-            fallback = ROOT_PATH / f"ve_benchmark/dynus2_{N}_with_ve_benchmark.csv"
+            fallback = ROOT_PATH / f"ve_benchmark/sando_{N}_with_ve_benchmark.csv"
             if fallback.exists():
                 file_list.append((N, "yes", fallback))
             else:
@@ -758,7 +758,7 @@ def generate_ve_latex_table(df):
     return "\n".join(latex)
 
 
-UNKNOWN_DYNAMIC_OUTPUT_FILE = Path("/home/kkondo/paper_writing/DYNUS_v3/tables/unknown_dynamic_sim.tex")
+UNKNOWN_DYNAMIC_OUTPUT_FILE = Path("/home/kkondo/paper_writing/SANDO_v3/tables/unknown_dynamic_sim.tex")
 
 
 def load_unknown_dynamic_data():
@@ -883,7 +883,7 @@ def generate_unknown_dynamic_latex_table(df):
     latex = []
     latex.append("\\begin{table}")
     latex.append("  \\caption{Benchmark results in unknown dynamic environments. "
-                 "DYNUS navigates using only pointcloud sensing (no ground truth obstacle trajectories). "
+                 "SANDO navigates using only pointcloud sensing (no ground truth obstacle trajectories). "
                  "We highlight the \\best{best} and \\worst{worst} value for each environment.}")
     latex.append("  \\label{tab:unknown_dynamic_benchmark}")
     latex.append("  \\centering")
@@ -963,7 +963,7 @@ def main():
     skip_ve = "--no-ve" in sys.argv
 
     print("="*80)
-    print("DYNUS LaTeX Table Generator")
+    print("SANDO LaTeX Table Generator")
     print("="*80)
 
     # ========== Generate Standardized Benchmark Table ==========
@@ -992,15 +992,15 @@ def main():
         print(f"\n✓ Full LaTeX table saved to: {OUTPUT_FILE}")
         print(f"  Include in paper: \\input{{{OUTPUT_FILE.name}}}")
 
-        # Generate DYNUS-only rows
-        print("\nGenerating DYNUS-only rows...")
-        dynus_rows = generate_dynus_rows_only(df)
+        # Generate SANDO-only rows
+        print("\nGenerating SANDO-only rows...")
+        sando_rows = generate_sando_rows_only(df)
 
-        # Save DYNUS-only rows
-        dynus_only_file = OUTPUT_FILE.parent / "dynus_rows_only.tex"
-        dynus_only_file.write_text(dynus_rows)
+        # Save SANDO-only rows
+        sando_only_file = OUTPUT_FILE.parent / "sando_rows_only.tex"
+        sando_only_file.write_text(sando_rows)
 
-        print(f"\n✓ DYNUS-only rows saved to: {dynus_only_file}")
+        print(f"\n✓ SANDO-only rows saved to: {sando_only_file}")
         print(f"\n{'='*80}")
         print("USAGE INSTRUCTIONS:")
         print("="*80)
@@ -1008,8 +1008,8 @@ def main():
         print(f"  \\input{{{OUTPUT_FILE.name}}}")
         print("\nOption 2: Update existing table (preserves other planners)")
         print(f"  1. Open your existing table file")
-        print(f"  2. Find all lines containing 'DYNUS'")
-        print(f"  3. Replace them with contents from: {dynus_only_file.name}")
+        print(f"  2. Find all lines containing 'SANDO'")
+        print(f"  3. Replace them with contents from: {sando_only_file.name}")
         print(f"  4. Make sure multirow{{N}} values match your table structure")
         print("="*80)
 

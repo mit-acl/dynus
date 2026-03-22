@@ -8,7 +8,7 @@ This launch file creates a lightweight simulation environment without Gazebo:
 3. Spawns dynamic/static obstacles (RViz markers only, no physics)
 
 Usage:
-    ros2 launch dynus rviz_only.launch.py num_obstacles:=50
+    ros2 launch sando rviz_only.launch.py num_obstacles:=50
 """
 
 import os
@@ -44,7 +44,7 @@ def generate_launch_description():
         DeclareLaunchArgument('publish_tf', default_value='true',
                               description='Publish TF for dynamic obstacles'),
         DeclareLaunchArgument('rviz_config',
-                              default_value=os.path.join(get_package_share_directory('dynus'), 'rviz', 'dynus.rviz'),
+                              default_value=os.path.join(get_package_share_directory('sando'), 'rviz', 'sando.rviz'),
                               description='Path to RViz config file'),
     ]
 
@@ -62,7 +62,7 @@ def generate_launch_description():
     # Include dyn_obstacles.launch.py (skip Gazebo, let rviz_only handle RViz)
     dyn_obstacles = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            PathJoinSubstitution([FindPackageShare('dynus'), 'launch', 'dyn_obstacles.launch.py'])
+            PathJoinSubstitution([FindPackageShare('sando'), 'launch', 'dyn_obstacles.launch.py'])
         ),
         launch_arguments={
             'skip_gazebo': 'true',

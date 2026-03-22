@@ -9,9 +9,9 @@ windows:
       # base station
       # - shell_command:
       - shell_command:
-        - ros2 launch dynus simulator.launch.py
+        - ros2 launch sando simulator.launch.py
 
-      # run benchmark (dynus2, faster)
+      # run benchmark (sando, faster)
       - shell_command:
         - sleep 5
-        - ros2 launch dynus local_traj_benchmark.launch.py
+        - ros2 launch sando local_traj_benchmark.launch.py

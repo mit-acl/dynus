@@ -15,15 +15,15 @@ DOCKER_RUN = xhost + && docker run -it \
 	--network=host \
 	--env="DISPLAY" \
 	--env="QT_X11_NO_MITSHM=1" \
-	--rm dynus
+	--rm sando
 
 # ---- Build ----
 
 build:
-	docker build -t dynus .
+	docker build -t sando .
 
 build-no-cache:
-	docker build --build-arg DUMMY=`date +%s` -t dynus .
+	docker build --build-arg DUMMY=`date +%s` -t sando .
 
 # ---- Demo mode: pre-configured scenarios with automatic goal ----
 # Usage: make run-demo SCENARIO=static_easy
@@ -75,4 +75,4 @@ shell:
 		--network=host \
 		--env="DISPLAY" \
 		--env="QT_X11_NO_MITSHM=1" \
-		--rm --entrypoint /bin/bash dynus
+		--rm --entrypoint /bin/bash sando

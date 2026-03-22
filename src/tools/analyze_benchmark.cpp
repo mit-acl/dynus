@@ -1013,9 +1013,9 @@ static void save_statistics_csv(const Statistics& s, const fs::path& output_path
 // LaTeX table generation
 // ============================================================================
 
-static std::string generate_dynus_row(const Statistics& s, const std::string& case_name,
+static std::string generate_sando_row(const Statistics& s, const std::string& case_name,
                                         const std::string& table_type,
-                                        const std::string& algo_name = "DYNUS") {
+                                        const std::string& algo_name = "SANDO") {
   std::ostringstream oss;
   oss << std::fixed;
 
@@ -1086,14 +1086,14 @@ static std::string generate_dynus_row(const Statistics& s, const std::string& ca
 }
 
 static std::string generate_new_unknown_dynamic_table(const std::string& case_name,
-                                                       const std::string& dynus_row) {
+                                                       const std::string& sando_row) {
   std::string dashes = "{-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} \\\\";
   std::vector<std::string> cases = {"Easy", "Medium", "Hard"};
 
   std::ostringstream oss;
   oss << "\\begin{table*}\n"
       << "  \\caption{Benchmark results in unknown dynamic environments. "
-      << "DYNUS navigates using only pointcloud sensing (no ground truth obstacle trajectories). "
+      << "SANDO navigates using only pointcloud sensing (no ground truth obstacle trajectories). "
       << "We report success rate, computation time, flight performance, smoothness, safety, "
       << "and constraint violation metrics.}\n"
       << "  \\label{tab:unknown_dynamic_benchmark}\n"
@@ -1131,7 +1131,7 @@ static std::string generate_new_unknown_dynamic_table(const std::string& case_na
 
   for (auto& c : cases) {
     if (c == case_name) {
-      oss << dynus_row << "\n";
+      oss << sando_row << "\n";
     } else {
       oss << "      " << c << " & " << dashes << "\n";
     }
@@ -1146,10 +1146,10 @@ static std::string generate_new_unknown_dynamic_table(const std::string& case_na
   return oss.str();
 }
 
-static std::string generate_new_dynamic_table(const std::string& dynus_row) {
+static std::string generate_new_dynamic_table(const std::string& sando_row) {
   std::ostringstream oss;
   oss << "\\begin{table*}\n"
-      << "  \\caption{Dynamic obstacle benchmarking results: DYNUS performance with moving obstacles. "
+      << "  \\caption{Dynamic obstacle benchmarking results: SANDO performance with moving obstacles. "
       << "We report success rate, computation time, flight performance, smoothness, safety, "
       << "and constraint violation metrics.}\n"
       << "  \\label{tab:dynamic_benchmark}\n"
@@ -1183,7 +1183,7 @@ static std::string generate_new_dynamic_table(const std::string& dynus_row) {
       << "      $\\rho_{\\mathrm{jerk}}$ [\\%]\n"
       << "      \\\\\n"
       << "      \\midrule\n"
-      << dynus_row << "\n"
+      << sando_row << "\n"
       << "      \\bottomrule\n"
       << "    \\end{tabular}\n"
       << "  }\n"
@@ -1194,7 +1194,7 @@ static std::string generate_new_dynamic_table(const std::string& dynus_row) {
 }
 
 static std::string generate_new_static_table(const std::string& case_name,
-                                               const std::string& /*dynus_row*/,
+                                               const std::string& /*sando_row*/,
                                                const std::string& data_values) {
   std::string dashes = "{-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} \\\\";
   std::vector<std::string> cases = {"Easy", "Medium", "Hard"};
@@ -1242,9 +1242,9 @@ static std::string generate_new_static_table(const std::string& case_name,
     oss << "       & FASTER & Hard & $L_\\infty$ & " << dashes << "\n";
 
     if (cases[i] == case_name) {
-      oss << "       & DYNUS & Hard & $L_\\infty$ & " << data_values << "\n";
+      oss << "       & SANDO & Hard & $L_\\infty$ & " << data_values << "\n";
     } else {
-      oss << "       & DYNUS & Hard & $L_\\infty$ & " << dashes << "\n";
+      oss << "       & SANDO & Hard & $L_\\infty$ & " << dashes << "\n";
     }
   }
 
@@ -1259,9 +1259,9 @@ static std::string generate_new_static_table(const std::string& case_name,
 
 static std::string update_existing_table(const fs::path& tex_path,
                                           const std::string& case_name,
-                                          const std::string& dynus_row,
+                                          const std::string& sando_row,
                                           const std::string& table_type,
-                                          const std::string& algo_name = "DYNUS") {
+                                          const std::string& algo_name = "SANDO") {
   std::ifstream f(tex_path);
   if (!f.is_open()) return "";
 
@@ -1294,20 +1294,20 @@ static std::string update_existing_table(const fs::path& tex_path,
     // Case 1: algo_name row on same line as multirow
     if (line.find(case_name) != std::string::npos && line.find(algo_name) != std::string::npos &&
         line.find("&") != std::string::npos && line.find("multirow") != std::string::npos) {
-      updated_lines.push_back(dynus_row);
+      updated_lines.push_back(sando_row);
       row_updated = true;
     }
     // Case 2: algo_name row in separate line (dynamic/static table)
     else if (current_case == case_name && line.find(algo_name) != std::string::npos &&
              line.find("&") != std::string::npos && line.find("\\\\") != std::string::npos &&
              line.find("multirow") == std::string::npos) {
-      updated_lines.push_back(dynus_row);
+      updated_lines.push_back(sando_row);
       row_updated = true;
     }
     // Case 3: unknown_dynamic format
     else if (table_type == "unknown_dynamic" && stripped.find(case_name) == 0 &&
              stripped.find("&") != std::string::npos && stripped.find("\\\\") != std::string::npos) {
-      updated_lines.push_back(dynus_row);
+      updated_lines.push_back(sando_row);
       row_updated = true;
     }
     else {
@@ -1339,7 +1339,7 @@ static std::string update_existing_table(const fs::path& tex_path,
           }
         } else if (in_target_case) {
           // We've entered the next case — insert before this line
-          updated_lines.insert(updated_lines.begin() + static_cast<long>(i), dynus_row);
+          updated_lines.insert(updated_lines.begin() + static_cast<long>(i), sando_row);
           inserted = true;
           break;
         }
@@ -1350,7 +1350,7 @@ static std::string update_existing_table(const fs::path& tex_path,
         size_t ts = trimmed.find_first_not_of(" \t");
         if (ts != std::string::npos) trimmed = trimmed.substr(ts);
         if (trimmed.find("\\midrule") == 0 || trimmed.find("\\bottomrule") == 0) {
-          updated_lines.insert(updated_lines.begin() + static_cast<long>(i), dynus_row);
+          updated_lines.insert(updated_lines.begin() + static_cast<long>(i), sando_row);
           inserted = true;
           break;
         }
@@ -1360,7 +1360,7 @@ static std::string update_existing_table(const fs::path& tex_path,
       // Fallback: insert before last \bottomrule
       for (int i = static_cast<int>(updated_lines.size()) - 1; i >= 0; i--) {
         if (updated_lines[i].find("\\bottomrule") != std::string::npos) {
-          updated_lines.insert(updated_lines.begin() + i, dynus_row);
+          updated_lines.insert(updated_lines.begin() + i, sando_row);
           break;
         }
       }
@@ -1380,27 +1380,27 @@ static std::string update_existing_table(const fs::path& tex_path,
 static std::string generate_latex_table(const Statistics& s, const std::string& case_name,
                                          const fs::path& existing_file,
                                          const std::string& table_type,
-                                         const std::string& algo_name = "DYNUS") {
-  std::string dynus_row = generate_dynus_row(s, case_name, table_type, algo_name);
+                                         const std::string& algo_name = "SANDO") {
+  std::string sando_row = generate_sando_row(s, case_name, table_type, algo_name);
 
   // Try updating existing table
   if (fs::exists(existing_file)) {
     std::cout << "  Found existing table, updating " << case_name << " + " << algo_name << " row...\n";
-    std::string updated = update_existing_table(existing_file, case_name, dynus_row, table_type, algo_name);
+    std::string updated = update_existing_table(existing_file, case_name, sando_row, table_type, algo_name);
     if (!updated.empty()) return updated;
   }
 
   // Generate new table
   if (table_type == "static") {
-    // Extract data_values from dynus_row (everything after the 4th &)
+    // Extract data_values from sando_row (everything after the 4th &)
     // For simplicity, just generate with full row
     std::string data_values;
     int amp_count = 0;
-    for (size_t i = 0; i < dynus_row.size(); i++) {
-      if (dynus_row[i] == '&') {
+    for (size_t i = 0; i < sando_row.size(); i++) {
+      if (sando_row[i] == '&') {
         amp_count++;
         if (amp_count == 4) {
-          data_values = dynus_row.substr(i + 1);
+          data_values = sando_row.substr(i + 1);
           // Trim leading whitespace
           size_t s = data_values.find_first_not_of(" \t");
           if (s != std::string::npos) data_values = data_values.substr(s);
@@ -1408,11 +1408,11 @@ static std::string generate_latex_table(const Statistics& s, const std::string& 
         }
       }
     }
-    return generate_new_static_table(case_name, dynus_row, data_values);
+    return generate_new_static_table(case_name, sando_row, data_values);
   } else if (table_type == "unknown_dynamic") {
-    return generate_new_unknown_dynamic_table(case_name, dynus_row);
+    return generate_new_unknown_dynamic_table(case_name, sando_row);
   } else {
-    return generate_new_dynamic_table(dynus_row);
+    return generate_new_dynamic_table(sando_row);
   }
 }
 
@@ -1422,7 +1422,7 @@ static std::string generate_latex_table(const Statistics& s, const std::string& 
 
 static Statistics analyze_single_case(const fs::path& data_dir, const std::string& output_name,
                                        const fs::path& latex_output, const std::string& table_type,
-                                       Vec3 goal_pos, const std::string& algo_name = "DYNUS",
+                                       Vec3 goal_pos, const std::string& algo_name = "SANDO",
                                        bool skip_latex = false) {
   // Extract case name
   std::string dir_name = data_dir.filename().string();
@@ -1796,8 +1796,8 @@ static std::vector<BatchRowData> parse_unknown_dynamic_table(const std::string& 
   return rows;
 }
 
-// Merge new DYNUS rows into existing dynamic table, replacing old DYNUS rows
-// and updating multirow counts. case_rows maps case_name -> dynus_row string.
+// Merge new SANDO rows into existing dynamic table, replacing old SANDO rows
+// and updating multirow counts. case_rows maps case_name -> sando_row string.
 static std::string merge_dynamic_table(const std::string& tex_path,
                                         const std::map<std::string, std::vector<std::string>>& case_rows) {
   std::ifstream file(tex_path);
@@ -1814,7 +1814,7 @@ static std::string merge_dynamic_table(const std::string& tex_path,
   std::vector<std::string> lines;
   while (std::getline(iss, line)) lines.push_back(line);
 
-  // Pass 1: Remove all old DYNUS rows and track which cases lost rows
+  // Pass 1: Remove all old SANDO rows and track which cases lost rows
   std::map<std::string, int> rows_removed;
   std::string current_case;
   std::vector<std::string> filtered;
@@ -1829,7 +1829,7 @@ static std::string merge_dynamic_table(const std::string& tex_path,
       }
     }
 
-    if (l.find("DYNUS") != std::string::npos && l.find("&") != std::string::npos &&
+    if (l.find("SANDO") != std::string::npos && l.find("&") != std::string::npos &&
         l.find("\\\\") != std::string::npos && l.find("caption") == std::string::npos) {
       rows_removed[current_case]++;
       continue;
@@ -1837,7 +1837,7 @@ static std::string merge_dynamic_table(const std::string& tex_path,
     filtered.push_back(l);
   }
 
-  // Pass 2: Insert new DYNUS rows before midrule/bottomrule, update multirow counts
+  // Pass 2: Insert new SANDO rows before midrule/bottomrule, update multirow counts
   std::vector<std::string> result;
   current_case.clear();
   bool in_case = false;
@@ -1929,7 +1929,7 @@ static std::string generate_unknown_dynamic_batch_table(const std::vector<BatchR
   std::ostringstream oss;
   oss << "\\begin{table*}\n"
       << "  \\caption{Benchmark results in unknown dynamic environments. "
-      << "DYNUS navigates using only pointcloud sensing (no ground truth obstacle trajectories).";
+      << "SANDO navigates using only pointcloud sensing (no ground truth obstacle trajectories).";
   std::string segment_label = use_p_label ? "$P$" : "$N$";
   if (has_heat_weight_col) {
     oss << " We compare different heat map weights ($w$) and trajectory segment counts (" << segment_label << ").";
@@ -2061,7 +2061,7 @@ static std::string generate_unknown_dynamic_batch_table(const std::vector<BatchR
 
 struct TemporalAblationRow {
   std::string case_name;   // Easy, Medium, Hard
-  std::string sfc_mode;    // "Worst-Case" or "DYNUS2 (STSFC)"
+  std::string sfc_mode;    // "Worst-Case" or "SANDO2 (STSFC)"
   int n_segments = 2;      // N value
   Statistics stats;
 };
@@ -2223,7 +2223,7 @@ struct Args {
   bool all_cases = false;
   std::string table_type = "dynamic";
   Vec3 goal_pos = {105.0, 0.0, 2.0};
-  std::string algo_name = "DYNUS";
+  std::string algo_name = "SANDO";
   std::string single_config;   // process only this config subdir
   std::string merge_table;     // path to existing .tex table to merge into
   std::string data_dir2;       // second data directory (for temporal ablation)
@@ -2238,7 +2238,7 @@ static void print_usage() {
             << "  --all-cases           Analyze all cases (easy, medium, hard)\n"
             << "  --table-type TYPE     Table format: dynamic, static, unknown_dynamic, temporal_ablation (default: dynamic)\n"
             << "  --goal-pos X Y Z      Goal position (default: 105.0 0.0 2.0)\n"
-            << "  --algo-name NAME      Algorithm name in LaTeX table (default: DYNUS)\n"
+            << "  --algo-name NAME      Algorithm name in LaTeX table (default: SANDO)\n"
             << "  --single-config NAME  Process only this config subdir (e.g. inflate_unknown_voxels_heat_w_5_N_2)\n"
             << "  --merge-table PATH    Merge new config into existing .tex table (recomputes best/worst)\n"
             << "  --data-dir2 DIR       Second data directory (for temporal_ablation: STSFC data)\n"
@@ -2292,7 +2292,7 @@ static Args parse_args(int argc, char** argv) {
 int main(int argc, char** argv) {
   auto args = parse_args(argc, argv);
 
-  fs::path latex_output = fs::path("/home/kkondo/paper_writing/DYNUS_v3/tables") / args.latex_name;
+  fs::path latex_output = fs::path("/home/kkondo/paper_writing/SANDO_v3/tables") / args.latex_name;
 
   if (args.all_cases) {
     fs::path base_dir(args.data_dir);
@@ -2575,7 +2575,7 @@ int main(int argc, char** argv) {
         {base_dir, "Worst-Case"}
       };
       if (!args.data_dir2.empty()) {
-        source_dirs.push_back({fs::path(args.data_dir2), "DYNUS2 (STSFC)"});
+        source_dirs.push_back({fs::path(args.data_dir2), "SANDO2 (STSFC)"});
       }
 
       std::vector<TemporalAblationRow> all_rows;
@@ -2688,7 +2688,7 @@ int main(int argc, char** argv) {
     // Dynamic merge-table mode: process cases, then merge into existing table
     if (args.table_type == "dynamic" && !args.merge_table.empty()) {
       std::string sep(80, '=');
-      // Check for N_* subdirectories (multiple DYNUS variants)
+      // Check for N_* subdirectories (multiple SANDO variants)
       std::vector<std::pair<std::string, fs::path>> n_configs; // (label_suffix, dir)
       for (auto& entry : fs::directory_iterator(base_dir)) {
         if (!entry.is_directory()) continue;
@@ -2701,13 +2701,13 @@ int main(int argc, char** argv) {
       }
       std::sort(n_configs.begin(), n_configs.end());
 
-      std::map<std::string, std::vector<std::string>> dynus_rows;
+      std::map<std::string, std::vector<std::string>> sando_rows;
 
       if (!n_configs.empty()) {
-        // Multiple DYNUS variants (N_2, N_3, etc.)
+        // Multiple SANDO variants (N_2, N_3, etc.)
         for (auto& [n_label, n_dir] : n_configs) {
           std::string n_val = n_label.substr(2); // "2" from "N_2"
-          std::string algo = "DYNUS ($N$=" + n_val + ")";
+          std::string algo = "SANDO ($N$=" + n_val + ")";
 
           std::cout << "\n" << sep << "\n";
           std::cout << "PROCESSING: " << n_label << " -> " << algo << "\n";
@@ -2727,26 +2727,26 @@ int main(int argc, char** argv) {
               auto stats = analyze_single_case(case_dir, args.output_name, latex_output,
                                                 args.table_type, args.goal_pos, algo, true);
               std::string case_name = extract_case_name(case_dir);
-              std::string row = generate_dynus_row(stats, case_name, args.table_type, algo);
-              dynus_rows[case_name].push_back(row);
+              std::string row = generate_sando_row(stats, case_name, args.table_type, algo);
+              sando_rows[case_name].push_back(row);
               std::cout << "  " << case_name << " row: " << row << "\n\n";
             }
           }
         }
       } else {
-        // Single DYNUS variant (flat structure)
+        // Single SANDO variant (flat structure)
         for (auto& case_dir : case_dirs) {
           auto stats = analyze_single_case(case_dir, args.output_name, latex_output,
                                             args.table_type, args.goal_pos, args.algo_name, true);
           std::string case_name = extract_case_name(case_dir);
-          std::string row = generate_dynus_row(stats, case_name, args.table_type, args.algo_name);
-          dynus_rows[case_name].push_back(row);
+          std::string row = generate_sando_row(stats, case_name, args.table_type, args.algo_name);
+          sando_rows[case_name].push_back(row);
           std::cout << "  " << case_name << " row: " << row << "\n\n";
         }
       }
 
       std::cout << "Merging into: " << args.merge_table << "\n";
-      std::string merged = merge_dynamic_table(args.merge_table, dynus_rows);
+      std::string merged = merge_dynamic_table(args.merge_table, sando_rows);
       if (!merged.empty()) {
         fs::create_directories(latex_output.parent_path());
         std::ofstream tex_file(latex_output);
@@ -2769,7 +2769,7 @@ int main(int argc, char** argv) {
 
     std::string sep(80, '=');
     std::cout << sep << "\n";
-    std::cout << "DYNUS BENCHMARK ANALYZER (C++) - ALL CASES\n";
+    std::cout << "SANDO BENCHMARK ANALYZER (C++) - ALL CASES\n";
     std::cout << sep << "\n\n";
     std::cout << "Found " << case_dirs.size() << " case(s) to analyze:\n";
     for (auto& d : case_dirs) std::cout << "  - " << d.filename().string() << "\n";

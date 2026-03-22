@@ -22,7 +22,7 @@ public:
   DGPPlanner(std::string global_planner, bool verbose, double v_max, double a_max, double j_max, int dgp_timeout_duration_ms, double w_unknown, double w_align, double decay_len_cells, double w_side, int los_cells = 3, double min_len = 0.5, double min_turn = 10.0);
 
   // Set map util for collistion checking
-  void setMapUtil(const std::shared_ptr<dynus::MapUtil<3>> &map_util);
+  void setMapUtil(const std::shared_ptr<sando::MapUtil<3>> &map_util);
   /**
    * @brief Status of the planner
    *
@@ -70,9 +70,9 @@ public:
 
 protected:
   // Assume using 3D voxel map for all 2d and 3d planning
-  std::shared_ptr<dynus::VoxelMapUtil> map_util_;
+  std::shared_ptr<sando::VoxelMapUtil> map_util_;
   // The planner
-  std::shared_ptr<dynus::GraphSearch> graph_search_;
+  std::shared_ptr<sando::GraphSearch> graph_search_;
   // Raw path from planner
   vec_Vecf<3> raw_path_;
   // Modified path for future usage

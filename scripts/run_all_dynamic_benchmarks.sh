@@ -4,7 +4,7 @@
 # Each planner starts only after the previous one completes.
 #
 # Usage:
-#   bash src/dynus/scripts/run_all_dynamic_benchmarks.sh
+#   bash src/sando/scripts/run_all_dynamic_benchmarks.sh
 #
 # Run from: ~/code/dynus_ws
 
@@ -23,17 +23,17 @@ echo "  Logs: $LOG_DIR"
 echo "============================================================"
 echo ""
 
-# ── 1. DYNUS ──────────────────────────────────────────────────
+# ── 1. SANDO ──────────────────────────────────────────────────
 echo "============================================================"
-echo "  [1/4] DYNUS - Dynamic Benchmark"
+echo "  [1/4] SANDO - Dynamic Benchmark"
 echo "  Directory: ~/code/dynus_ws"
 echo "  Started: $(date)"
 echo "============================================================"
 
 cd "$HOME/code/dynus_ws"
-colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select dynus \
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select sando \
   && . install/setup.bash \
-  && python3 src/dynus/scripts/run_benchmark.py \
+  && python3 src/sando/scripts/run_benchmark.py \
        --setup-bash install/setup.bash \
        --mode rviz-only \
        --cases easy medium hard \
@@ -42,10 +42,10 @@ colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select dynus \
        --start 0.0 0.0 2.0 \
        --goal 105.0 0.0 2.0 \
        --timeout 100 \
-  2>&1 | tee "$LOG_DIR/dynus.log"
+  2>&1 | tee "$LOG_DIR/sando.log"
 
 echo ""
-echo "  [1/4] DYNUS complete: $(date)"
+echo "  [1/4] SANDO complete: $(date)"
 echo ""
 
 # ── 2. I-MPC ──────────────────────────────────────────────────

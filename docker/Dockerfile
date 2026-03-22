@@ -1,7 +1,7 @@
 FROM ros:humble
 
 LABEL Maintainer="Kota Kondo <kkondo@mit.edu>" \
-      Description="Ubuntu 22.04, ROS2 humble for DYNUS"
+      Description="Ubuntu 22.04, ROS2 humble for SANDO"
 
 # Set environment variables
 ##########################################
@@ -56,14 +56,14 @@ ENV PATH="${PATH}:${GUROBI_HOME}/bin"
 ENV LD_LIBRARY_PATH="${GUROBI_HOME}/lib"
 COPY gurobi.lic /opt/gurobi1103/
 
-# Install DYNUS and dependencies
+# Install SANDO and dependencies
 ##########################################
 RUN mkdir -p /home/kkondo/code/dynus_ws/src
 WORKDIR /home/kkondo/code/dynus_ws/src
 # dummy arg to invalidate cache and build from here
 ARG DUMMY=unknown
-RUN DUMMY=${DUMMY} git clone https://github.com/mit-acl/dynus.git
-WORKDIR /home/kkondo/code/dynus_ws/src/dynus
+RUN DUMMY=${DUMMY} git clone https://github.com/mit-acl/dynus.git sando
+WORKDIR /home/kkondo/code/dynus_ws/src/sando
 RUN git switch dev && git checkout d0fafa56d11aa0cc21c4f6710adb15603f442776
 WORKDIR /home/kkondo/code/dynus_ws/src
 RUN git clone https://github.com/kotakondo/dynus_interfaces.git && \
@@ -148,6 +148,6 @@ RUN echo 'alias tks="tmux kill-server"' >> ~/.bashrc
 
 # Set up Entry Point
 # ##########################################
-COPY ./dynus.sh /
-RUN chmod +x /dynus.sh
-ENTRYPOINT ["/dynus.sh"]
+COPY ./sando.sh /
+RUN chmod +x /sando.sh
+ENTRYPOINT ["/sando.sh"]

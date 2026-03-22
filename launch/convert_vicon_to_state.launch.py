@@ -17,7 +17,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         Node(
-            package='dynus',
+            package='sando',
             executable='convert_vicon_to_state', 
             name='convert_vicon_to_state',
             remappings=[

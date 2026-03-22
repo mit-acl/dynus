@@ -1,5 +1,5 @@
 """
-Scene 4: DYNUS2's Solution — Spatio-Temporal Safe Flight Corridors
+Scene 4: SANDO2's Solution — Spatio-Temporal Safe Flight Corridors
 
 Animation sequence:
 1. Dynamic obstacle (double circle) + O^d label

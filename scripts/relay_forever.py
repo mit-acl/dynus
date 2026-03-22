@@ -4,7 +4,7 @@ Relay node that republishes markers/polyhedrons with lifetime=0 (forever).
 Useful when playing back bags so markers don't disappear on pause.
 
 Usage:
-  ros2 run dynus relay_forever.py --ros-args -p namespace:=PX03
+  ros2 run sando relay_forever.py --ros-args -p namespace:=PX03
   # or directly:
   python3 relay_forever.py --ros-args -p namespace:=PX03
 """

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DYNUS Benchmarking Script
+SANDO Benchmarking Script
 
 This script runs multiple simulations with different configurations and collects
 comprehensive performance metrics including:
@@ -48,13 +48,13 @@ from dynus_interfaces.msg import DynTraj, State, Goal
 
 
 def update_num_p_in_yaml(yaml_path: str, num_p: int):
-    """Update the num_P parameter in a dynus.yaml file using text replacement.
+    """Update the num_P parameter in a sando.yaml file using text replacement.
 
     This preserves comments and formatting by doing a regex substitution
     rather than re-serializing the YAML.
 
     Args:
-        yaml_path: Path to dynus.yaml config file
+        yaml_path: Path to sando.yaml config file
         num_p: New value for num_P
     """
     import re
@@ -75,16 +75,16 @@ def update_num_p_in_yaml(yaml_path: str, num_p: int):
 
 
 def set_num_p_everywhere(num_p: int):
-    """Update num_P in both src and install copies of dynus.yaml.
+    """Update num_P in both src and install copies of sando.yaml.
 
     Args:
         num_p: New value for num_P
     """
     script_dir = Path(__file__).parent
-    src_yaml = script_dir.parent / "config" / "dynus.yaml"
+    src_yaml = script_dir.parent / "config" / "sando.yaml"
     # Find the install yaml relative to the workspace
     ws_dir = script_dir.parent.parent.parent  # dynus_ws
-    install_yaml = ws_dir / "install" / "dynus" / "share" / "dynus" / "config" / "dynus.yaml"
+    install_yaml = ws_dir / "install" / "sando" / "share" / "sando" / "config" / "sando.yaml"
 
     for yaml_path in [src_yaml, install_yaml]:
         if yaml_path.exists():
@@ -93,17 +93,17 @@ def set_num_p_everywhere(num_p: int):
             print(f"Warning: {yaml_path} not found, skipping")
 
 
-def load_dynus_params_from_yaml(yaml_path: str) -> dict:
-    """Load DYNUS parameters from dynus.yaml
+def load_sando_params_from_yaml(yaml_path: str) -> dict:
+    """Load SANDO parameters from sando.yaml
 
     Args:
-        yaml_path: Path to dynus.yaml config file
+        yaml_path: Path to sando.yaml config file
 
     Returns:
         Dictionary with keys: drone_bbox (half-extents), v_max, a_max, j_max, global_planner
 
     Note:
-        drone_bbox in dynus.yaml contains FULL sizes, so we divide by 2 to get half-extents
+        drone_bbox in sando.yaml contains FULL sizes, so we divide by 2 to get half-extents
     """
     defaults = {
         'drone_bbox': (0.1, 0.1, 0.1),  # half-extents
@@ -117,12 +117,12 @@ def load_dynus_params_from_yaml(yaml_path: str) -> dict:
         with open(yaml_path, 'r') as f:
             config = yaml.safe_load(f)
 
-        # Look for parameters in dynus_node.ros__parameters
+        # Look for parameters in sando_node.ros__parameters
         params = None
-        if 'dynus_node' in config and 'ros__parameters' in config['dynus_node']:
-            params = config['dynus_node']['ros__parameters']
-        elif 'dynus' in config and 'ros__parameters' in config['dynus']:
-            params = config['dynus']['ros__parameters']
+        if 'sando_node' in config and 'ros__parameters' in config['sando_node']:
+            params = config['sando_node']['ros__parameters']
+        elif 'sando' in config and 'ros__parameters' in config['sando']:
+            params = config['sando']['ros__parameters']
 
         if params is None:
             print(f"Warning: ros__parameters not found in {yaml_path}, using defaults")
@@ -165,11 +165,11 @@ def load_dynus_params_from_yaml(yaml_path: str) -> dict:
 
 
 def check_lingering_processes() -> bool:
-    """Check if any dynus ROS nodes are still running (excludes benchmark script)"""
+    """Check if any sando ROS nodes are still running (excludes benchmark script)"""
     try:
         # Check for specific ROS executables, not Python scripts
         result = subprocess.run(
-            ["pgrep", "-x", "fake_sim|dynamic_forest_node|dynus_node|rviz2|goal_sender"],
+            ["pgrep", "-x", "fake_sim|dynamic_forest_node|sando_node|rviz2|goal_sender"],
             capture_output=True,
             text=True
         )
@@ -179,14 +179,14 @@ def check_lingering_processes() -> bool:
         return False
 
 
-def kill_all_dynus_processes():
-    """Aggressively kill all dynus-related ROS processes (but not benchmark script)"""
+def kill_all_sando_processes():
+    """Aggressively kill all sando-related ROS processes (but not benchmark script)"""
     # Kill tmux session first (this kills everything inside tmux)
-    subprocess.run(["tmux", "kill-session", "-t", "dynus_sim"],
+    subprocess.run(["tmux", "kill-session", "-t", "sando_sim"],
                   stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
     # Kill specific ROS node executables by exact name
-    for process_name in ["rviz2", "fake_sim", "dynamic_forest_node", "dynus_node", "goal_sender",
+    for process_name in ["rviz2", "fake_sim", "dynamic_forest_node", "sando_node", "goal_sender",
                          "gzserver", "gzclient", "ruby"]:
         subprocess.run(["pkill", "-9", "-x", process_name],
                       stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
@@ -200,7 +200,7 @@ def kill_all_dynus_processes():
                   stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
     # Kill ros2 launch processes (but be specific)
-    for pattern in ["ros2 launch dynus", "ros2 launch.*rviz", "ros2 launch.*onboard"]:
+    for pattern in ["ros2 launch sando", "ros2 launch.*rviz", "ros2 launch.*onboard"]:
         subprocess.run(["pkill", "-9", "-f", pattern],
                       stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
@@ -650,25 +650,25 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
 
     # Thorough cleanup before starting new trial
     print("  Pre-trial cleanup...")
-    kill_all_dynus_processes()
+    kill_all_sando_processes()
     print("  Cleanup complete")
 
-    # Load parameters from dynus.yaml
-    yaml_path = Path(__file__).parent.parent / "config" / "dynus.yaml"
-    dynus_params = load_dynus_params_from_yaml(str(yaml_path))
+    # Load parameters from sando.yaml
+    yaml_path = Path(__file__).parent.parent / "config" / "sando.yaml"
+    sando_params = load_sando_params_from_yaml(str(yaml_path))
 
     # Use yaml parameters instead of command-line args
-    v_max_actual = dynus_params['v_max']
-    a_max_actual = dynus_params['a_max']
-    j_max_actual = dynus_params['j_max']
-    global_planner = dynus_params.get('global_planner', 'astar_heat')
+    v_max_actual = sando_params['v_max']
+    a_max_actual = sando_params['a_max']
+    j_max_actual = sando_params['j_max']
+    global_planner = sando_params.get('global_planner', 'astar_heat')
 
-    print(f"Using parameters from dynus.yaml:")
+    print(f"Using parameters from sando.yaml:")
     print(f"  global_planner: {global_planner}")
     print(f"  v_max: {v_max_actual} m/s")
     print(f"  a_max: {a_max_actual} m/s²")
     print(f"  j_max: {j_max_actual} m/s³")
-    print(f"  drone_bbox: {dynus_params['drone_bbox']} (half-extents)\n")
+    print(f"  drone_bbox: {sando_params['drone_bbox']} (half-extents)\n")
 
     # Set ROS_DOMAIN_ID to match the simulation (run_sim.py uses 7)
     os.environ['ROS_DOMAIN_ID'] = '20'
@@ -992,7 +992,7 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
             pass
 
         # Comprehensive cleanup using helper function
-        kill_all_dynus_processes()
+        kill_all_sando_processes()
         print("  Cleanup complete")
 
         # Print trial summary (will be updated by caller with run number)
@@ -1028,7 +1028,7 @@ def save_results(metrics_list: List[BenchmarkMetrics], output_dir: Path, config_
 
 def main():
     parser = argparse.ArgumentParser(
-        description='DYNUS Benchmark Runner',
+        description='SANDO Benchmark Runner',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__
     )
@@ -1127,21 +1127,21 @@ def main():
         '--v-max',
         type=float,
         default=None,
-        help='[DEPRECATED] Maximum velocity - now loaded from dynus.yaml'
+        help='[DEPRECATED] Maximum velocity - now loaded from sando.yaml'
     )
 
     parser.add_argument(
         '--a-max',
         type=float,
         default=None,
-        help='[DEPRECATED] Maximum acceleration - now loaded from dynus.yaml'
+        help='[DEPRECATED] Maximum acceleration - now loaded from sando.yaml'
     )
 
     parser.add_argument(
         '--j-max',
         type=float,
         default=None,
-        help='[DEPRECATED] Maximum jerk - now loaded from dynus.yaml'
+        help='[DEPRECATED] Maximum jerk - now loaded from sando.yaml'
     )
 
     parser.add_argument(
@@ -1197,11 +1197,11 @@ def main():
     else:
         cases_to_run = [c for c in args.cases if c != 'all']
 
-    # Determine num_P sweep values (default: no sweep, use whatever is in dynus.yaml)
+    # Determine num_P sweep values (default: no sweep, use whatever is in sando.yaml)
     num_p_values = args.num_p_values if args.num_p_values else [None]
 
     print(f"\n{'='*80}")
-    print("DYNUS BENCHMARK")
+    print("SANDO BENCHMARK")
     print(f"{'='*80}")
     print(f"Configuration: {args.config_name}")
     print(f"Mode: {args.mode}")
@@ -1217,15 +1217,15 @@ def main():
     # Read original num_P so we can restore it after the sweep
     original_num_p = None
     if args.num_p_values:
-        src_yaml = Path(__file__).parent.parent / "config" / "dynus.yaml"
+        src_yaml = Path(__file__).parent.parent / "config" / "sando.yaml"
         if src_yaml.exists():
             with open(src_yaml, 'r') as f:
                 _cfg = yaml.safe_load(f)
             _params = None
-            if 'dynus_node' in _cfg and 'ros__parameters' in _cfg['dynus_node']:
-                _params = _cfg['dynus_node']['ros__parameters']
-            elif 'dynus' in _cfg and 'ros__parameters' in _cfg['dynus']:
-                _params = _cfg['dynus']['ros__parameters']
+            if 'sando_node' in _cfg and 'ros__parameters' in _cfg['sando_node']:
+                _params = _cfg['sando_node']['ros__parameters']
+            elif 'sando' in _cfg and 'ros__parameters' in _cfg['sando']:
+                _params = _cfg['sando']['ros__parameters']
             if _params:
                 original_num_p = _params.get('num_P')
 
@@ -1281,7 +1281,7 @@ def main():
                 print(f"Output directory: {output_dir}")
                 print(f"{'='*80}\n")
 
-                # Create CSV directory for DYNUS benchmark data
+                # Create CSV directory for SANDO benchmark data
                 csv_dir = output_dir / "csv"
                 csv_dir.mkdir(parents=True, exist_ok=True)
 

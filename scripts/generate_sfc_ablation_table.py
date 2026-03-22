@@ -13,20 +13,20 @@ import os
 # Configuration: (label, velocity, data_dir)
 CONFIGS = [
     ("Worst-Case", 2.5, os.path.expanduser(
-        "~/code/dynus_ws/src/dynus/benchmark_data/dynamic_worst_case/vel_2.5/hard")),
-    ("DYNUS2 (STSFC)", 2.5, os.path.expanduser(
-        "~/code/dynus_ws/src/dynus/benchmark_data/dynamic/vel_2.5/hard_20260307_133859")),
+        "~/code/dynus_ws/src/sando/benchmark_data/dynamic_worst_case/vel_2.5/hard")),
+    ("SANDO2 (STSFC)", 2.5, os.path.expanduser(
+        "~/code/dynus_ws/src/sando/benchmark_data/dynamic/vel_2.5/hard_20260307_133859")),
     ("Worst-Case", 5.0, os.path.expanduser(
-        "~/code/dynus_ws/src/dynus/benchmark_data/dynamic_worst_case/vel_5/N_3/hard")),
-    ("DYNUS2 (STSFC)", 5.0, os.path.expanduser(
-        "~/code/dynus_ws/src/dynus/benchmark_data/dynamic/vel_5/N_3/hard_20260306_170520")),
+        "~/code/dynus_ws/src/sando/benchmark_data/dynamic_worst_case/vel_5/N_3/hard")),
+    ("SANDO2 (STSFC)", 5.0, os.path.expanduser(
+        "~/code/dynus_ws/src/sando/benchmark_data/dynamic/vel_5/N_3/hard_20260306_170520")),
 ]
 
 ANALYZE_BIN = os.path.expanduser(
-    "~/code/dynus_ws/install/dynus/lib/dynus/analyze_benchmark")
+    "~/code/dynus_ws/install/sando/lib/sando/analyze_benchmark")
 
 OUTPUT_TEX = os.path.expanduser(
-    "~/paper_writing/DYNUS_v3/tables/sfc_ablation.tex")
+    "~/paper_writing/SANDO_v3/tables/sfc_ablation.tex")
 
 
 def run_analysis(data_dir):

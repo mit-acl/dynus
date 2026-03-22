@@ -159,7 +159,7 @@ if __name__ == "__main__":
         "--bag_path",
         type=str,
         help="Path to save the bag",
-        default="/home/kkondo/data/multi_dynus",
+        default="/home/kkondo/data/multi_sando",
     )
     parser.add_argument(
         "--agents",

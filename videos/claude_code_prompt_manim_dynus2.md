@@ -1,8 +1,8 @@
-# DYNUS2 Spatio-Temporal SFC Animation — Manim Project Prompt
+# SANDO2 Spatio-Temporal SFC Animation — Manim Project Prompt
 
 ## Context
 
-I'm creating a YouTube explainer video for our paper DYNUS2, a UAV trajectory planner for dynamic unknown environments. I need a Manim Community Edition animation that explains how our **Spatio-Temporal Safe Flight Corridors (STSFC)** with **heat-map-based MIQP assignment** work, and why they outperform conventional spatial-only corridor approaches when dynamic obstacles are present.
+I'm creating a YouTube explainer video for our paper SANDO2, a UAV trajectory planner for dynamic unknown environments. I need a Manim Community Edition animation that explains how our **Spatio-Temporal Safe Flight Corridors (STSFC)** with **heat-map-based MIQP assignment** work, and why they outperform conventional spatial-only corridor approaches when dynamic obstacles are present.
 
 The animation should recreate and animate the concepts from our paper figure (attached as `spatioTemporalSFCWhyHeatMap.svg`). Use `manim` (Community Edition, install via `pip install manim`).
 
@@ -10,7 +10,7 @@ The animation should recreate and animate the concepts from our paper figure (at
 
 ## Figure Description (what the SVG shows)
 
-The figure is a **2-row × 3-column** layout comparing "Other Approaches" (left column) vs "DYNUS2" (middle = 3D view, right = 2D MIQP view):
+The figure is a **2-row × 3-column** layout comparing "Other Approaches" (left column) vs "SANDO2" (middle = 3D view, right = 2D MIQP view):
 
 ### Top Row (time t = t₀, initial plan succeeds for both approaches):
 
@@ -23,7 +23,7 @@ The figure is a **2-row × 3-column** layout comparing "Other Approaches" (left 
      - **Blue parallelogram polytopes** (safe flight corridors) enclosing the trajectory — these are spatial-only, not accounting for time
    - Label: **"A → G Succeeds"**
 
-2. **Top-Middle — "DYNUS2" 3D view at t₀**:
+2. **Top-Middle — "SANDO2" 3D view at t₀**:
    - The SAME 2D scene but now extruded into a **3D spatio-temporal** space (x, y on the ground plane, **time n** going vertically upward, n = 0, 1, 2, 3)
    - The safe flight corridors are now **colored 3D polytopes at different time layers**:
      - **Magenta** polytopes at n=0 (bottom time layer)
@@ -36,7 +36,7 @@ The figure is a **2-row × 3-column** layout comparing "Other Approaches" (left 
    - Static obstacles O^s are still present at the base
    - Label: **"A → G Succeeds"**
 
-3. **Top-Right — "DYNUS2" 2D flattened MIQP view at t₀**:
+3. **Top-Right — "SANDO2" 2D flattened MIQP view at t₀**:
    - A 2D plot with **x-axis** = spatial progress along trajectory (showing A, x₁, x₂, x₃, G), **y-axis** = time index **n** (0, 1, 2, 3)
    - The corridors C[i][j] are drawn as colored parallelogram regions in this (progress, n) space
    - Shows the **MIQP assignment**: which control point belongs to which corridor
@@ -50,13 +50,13 @@ The figure is a **2-row × 3-column** layout comparing "Other Approaches" (left 
    - The old spatial-only corridors **no longer contain a valid path** because they didn't account for the obstacle's future motion
    - Label: **"Replan A' → G' Fails"** (in red, indicating failure)
 
-5. **Bottom-Middle — "DYNUS2" 3D view at t₁**:
+5. **Bottom-Middle — "SANDO2" 3D view at t₁**:
    - Same 3D spatio-temporal view but with **new corridors** C'[i][j] computed for the replan
    - The dynamic obstacle has moved, but the spatio-temporal corridors adapt because they encode time
    - New trajectory with control points x'₀, x'₁, x'₂, x'₃ and a waypoint W'₁
-   - Label: **"Replan A' → G' Succeeds"** (showing DYNUS2 handles it)
+   - Label: **"Replan A' → G' Succeeds"** (showing SANDO2 handles it)
 
-6. **Bottom-Right — "DYNUS2" 2D MIQP view at t₁**:
+6. **Bottom-Right — "SANDO2" 2D MIQP view at t₁**:
    - Updated MIQP assignment view with new corridors C'[i][j]
 
 ### Legend:
@@ -93,7 +93,7 @@ Break the video into these scenes. Each scene should be a separate Manim `Scene`
 4. Text: "Dynamic obstacle moves → Spatial corridors become invalid!"
 5. Red text: **"Replan A' → G' Fails ✗"**
 
-### Scene 4: "DYNUS2's Solution: Spatio-Temporal SFC" (~15-20 seconds) ← MOST IMPORTANT SCENE
+### Scene 4: "SANDO2's Solution: Spatio-Temporal SFC" (~15-20 seconds) ← MOST IMPORTANT SCENE
 1. **Transition from 2D to 3D**: Start from the 2D scene and smoothly **extrude upward** along a new vertical **time axis (n)**
    - Camera rotates from top-down 2D view to angled 3D perspective
    - As the camera rotates, the time axis appears with labels n = 0, 1, 2, 3
@@ -105,7 +105,7 @@ Break the video into these scenes. Each scene should be a separate Manim `Scene`
    - Each is a 3D parallelotope at its respective time layer
 3. Show the dynamic obstacle's **predicted future positions** as concentric circles growing at each time layer (r₀ < r₁ < r₂ < r₃), illustrating increasing uncertainty over time
 4. Draw the 3D trajectory curve threading through the corridors from bottom (A, n=0) to top (G, n=3)
-5. Text: "DYNUS2: Spatio-Temporal Safe Flight Corridors avoid future obstacle positions"
+5. Text: "SANDO2: Spatio-Temporal Safe Flight Corridors avoid future obstacle positions"
 
 ### Scene 5: "The 2D MIQP Assignment View" (~10 seconds)
 1. Transition/split to show the flattened 2D (progress × time) view
@@ -114,7 +114,7 @@ Break the video into these scenes. Each scene should be a separate Manim `Scene`
 4. Show assignment text: x₀ ⊆ C[0][0], x₁ ⊆ C[1][1], etc.
 5. Text: "MIQP optimally assigns control points to corridors"
 
-### Scene 6: "Replanning Succeeds with DYNUS2" (~10 seconds)
+### Scene 6: "Replanning Succeeds with SANDO2" (~10 seconds)
 1. Back to 3D view
 2. Animate dynamic obstacle moving (same motion as Scene 3)
 3. Old corridors fade out, NEW spatio-temporal corridors C'[i][j] fade in
@@ -167,7 +167,7 @@ Also note: since background is white, all default text/axes should be black. Set
 ## Code Organization
 
 ```
-dynus2_animation/
+sando_animation/
 ├── scenes/
 │   ├── scene1_problem_setup.py
 │   ├── scene2_spatial_corridors.py
@@ -217,5 +217,5 @@ done
 
 Final concatenation (with ffmpeg):
 ```bash
-ffmpeg -f concat -i filelist.txt -c copy dynus2_explainer.mp4
+ffmpeg -f concat -i filelist.txt -c copy sando_explainer.mp4
 ```

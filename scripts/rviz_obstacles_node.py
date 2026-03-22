@@ -8,7 +8,7 @@ This node creates dynamic and static obstacles that:
 3. Much lighter than full Gazebo simulation
 
 Usage:
-    ros2 run dynus rviz_obstacles_node --ros-args \
+    ros2 run sando rviz_obstacles_node --ros-args \
         -p total_num_obs:=50 \
         -p dynamic_ratio:=0.65 \
         -p x_min:=2.0 -p x_max:=75.0 \

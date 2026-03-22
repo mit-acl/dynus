@@ -7,7 +7,7 @@
 
 #include <iostream>
 #include "dgp/data_type.hpp"
-#include <dynus/dynus_type.hpp>
+#include <sando/sando_type.hpp>
 #include <pcl/kdtree/kdtree_flann.h>
 #include "timer.hpp"
 #include <omp.h>
@@ -16,7 +16,7 @@
 #include <functional>
 #include <cstdint>
 
-namespace dynus
+namespace sando
 {
 
   // The type of map data Tmap is defined as a 1D array
@@ -1705,6 +1705,6 @@ namespace dynus
   };
 
   typedef MapUtil<3> VoxelMapUtil;
-} // namespace dynus
+} // namespace sando
 
 #endif

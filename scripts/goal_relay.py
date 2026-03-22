@@ -14,7 +14,7 @@ from geometry_msgs.msg import PoseStamped
 
 
 class GoalRelay(Node):
-    """Relay RViz '2D Nav Goal' clicks to the DYNUS planner's term_goal topic.
+    """Relay RViz '2D Nav Goal' clicks to the SANDO planner's term_goal topic.
 
     RViz publishes on /goal_pose (z=0 for 2D goals). This node overrides z
     with a configurable flight altitude and republishes on /NX01/term_goal.

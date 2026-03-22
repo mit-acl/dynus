@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DYNUS Dynamic Benchmark Analyzer
+SANDO Dynamic Benchmark Analyzer
 
 Analyzes benchmark data from dynamic obstacle benchmarks and generates:
 1. Statistical summary (console output)
@@ -1134,7 +1134,7 @@ def save_statistics_csv(stats: dict, output_path: Path):
 
 def generate_latex_table(stats: dict, config_name: str = "default", case_name: str = "Unknown",
                          existing_file: Path = None, table_type: str = 'dynamic') -> str:
-    """Generate LaTeX table with benchmark results, updating only matching case+DYNUS row if table exists.
+    """Generate LaTeX table with benchmark results, updating only matching case+SANDO row if table exists.
 
     Args:
         stats: Dictionary of computed statistics
@@ -1163,8 +1163,8 @@ def generate_latex_table(stats: dict, config_name: str = "default", case_name: s
                        f"\\best{{{travel_time:.1f}}} & {{{path_length:.1f}}} & \\best{{{jerk_integral:.1f}}} & "
                        f"{{{vel_viol:.1f}}} & {{{acc_viol:.1f}}} & {{{jerk_viol:.1f}}} \\\\")
 
-        # DYNUS row (5th in block, no multirow): 2 constraint columns
-        dynus_row = f"       & DYNUS & Hard & $L_\\infty$ & {data_values}"
+        # SANDO row (5th in block, no multirow): 2 constraint columns
+        sando_row = f"       & SANDO & Hard & $L_\\infty$ & {data_values}"
     elif table_type == 'unknown_dynamic':
         # Unknown dynamic table: no Algorithm column, just Env | data...
         per_opt_time = stats.get('avg_local_traj_time_mean', 0)
@@ -1177,7 +1177,7 @@ def generate_latex_table(stats: dict, config_name: str = "default", case_name: s
                        f"{travel_time:.1f} & {path_length:.1f} & {jerk_integral:.1f} & {min_dist_str} & "
                        f"{vel_viol:.1f} & {acc_viol:.1f} & {jerk_viol:.1f} \\\\")
 
-        dynus_row = f"      {case_name} & {data_values}"
+        sando_row = f"      {case_name} & {data_values}"
     else:
         # Dynamic table columns: Env & Algorithm(2cols) & R_succ & T_per_opt & T_trav & L_path & S_jerk & d_min & rho_vel & rho_acc & rho_jerk
         per_opt_time = stats.get('avg_local_traj_time_mean', 0)
@@ -1188,11 +1188,11 @@ def generate_latex_table(stats: dict, config_name: str = "default", case_name: s
                        f"{travel_time:.1f} & {path_length:.1f} & {jerk_integral:.1f} & {min_dist_str} & "
                        f"{vel_viol:.1f} & {acc_viol:.1f} & {jerk_viol:.1f} \\\\")
 
-        dynus_row = f"      & \\multicolumn{{2}}{{c}}{{DYNUS}} & {data_values}"
+        sando_row = f"      & \\multicolumn{{2}}{{c}}{{SANDO}} & {data_values}"
 
     # --- Try to update existing table ---
     if existing_file and existing_file.exists():
-        print(f"  Found existing table, updating {case_name} + DYNUS row...")
+        print(f"  Found existing table, updating {case_name} + SANDO row...")
         try:
             content = existing_file.read_text()
             lines = content.split('\n')
@@ -1212,22 +1212,22 @@ def generate_latex_table(stats: dict, config_name: str = "default", case_name: s
                     if match in valid_cases:
                         current_case = match
 
-                # Case 1: DYNUS row on same line as multirow (old broken dynamic table format)
-                if case_name in line and 'DYNUS' in line and '&' in line and 'multirow' in line:
-                    # Replace with correct format (no multirow, use multicolumn for DYNUS)
-                    updated_lines.append(dynus_row)
-                    print(f"  Updated {case_name} + DYNUS row (fixed multirow→multicolumn format)")
+                # Case 1: SANDO row on same line as multirow (old broken dynamic table format)
+                if case_name in line and 'SANDO' in line and '&' in line and 'multirow' in line:
+                    # Replace with correct format (no multirow, use multicolumn for SANDO)
+                    updated_lines.append(sando_row)
+                    print(f"  Updated {case_name} + SANDO row (fixed multirow→multicolumn format)")
                     row_updated = True
 
-                # Case 2: DYNUS row in a separate line (static table format)
-                elif current_case == case_name and 'DYNUS' in line and '&' in line and '\\\\' in line and 'multirow' not in line:
-                    updated_lines.append(dynus_row)
-                    print(f"  Updated {case_name} + DYNUS row (multi-algorithm format)")
+                # Case 2: SANDO row in a separate line (static table format)
+                elif current_case == case_name and 'SANDO' in line and '&' in line and '\\\\' in line and 'multirow' not in line:
+                    updated_lines.append(sando_row)
+                    print(f"  Updated {case_name} + SANDO row (multi-algorithm format)")
                     row_updated = True
 
-                # Case 3: unknown_dynamic format - rows start with case name directly (no DYNUS, no multirow)
+                # Case 3: unknown_dynamic format - rows start with case name directly (no SANDO, no multirow)
                 elif table_type == 'unknown_dynamic' and stripped.startswith(case_name) and '&' in stripped and '\\\\' in stripped:
-                    updated_lines.append(dynus_row)
+                    updated_lines.append(sando_row)
                     print(f"  Updated {case_name} row (unknown_dynamic format)")
                     row_updated = True
 
@@ -1235,10 +1235,10 @@ def generate_latex_table(stats: dict, config_name: str = "default", case_name: s
                     updated_lines.append(line)
 
             if not row_updated:
-                print(f"  Warning: No matching {case_name} + DYNUS row found, appending before \\bottomrule...")
+                print(f"  Warning: No matching {case_name} + SANDO row found, appending before \\bottomrule...")
                 for i in range(len(updated_lines) - 1, -1, -1):
                     if '\\bottomrule' in updated_lines[i]:
-                        updated_lines.insert(i, dynus_row)
+                        updated_lines.insert(i, sando_row)
                         break
 
             return '\n'.join(updated_lines)
@@ -1247,14 +1247,14 @@ def generate_latex_table(stats: dict, config_name: str = "default", case_name: s
 
     # --- Generate new table ---
     if table_type == 'static':
-        return _generate_new_static_table(case_name, dynus_row, data_values)
+        return _generate_new_static_table(case_name, sando_row, data_values)
     elif table_type == 'unknown_dynamic':
-        return _generate_new_unknown_dynamic_table(case_name, dynus_row, data_values)
+        return _generate_new_unknown_dynamic_table(case_name, sando_row, data_values)
     else:
-        return _generate_new_dynamic_table(case_name, dynus_row, data_values)
+        return _generate_new_dynamic_table(case_name, sando_row, data_values)
 
 
-def _generate_new_static_table(case_name: str, dynus_row: str, data_values: str) -> str:
+def _generate_new_static_table(case_name: str, sando_row: str, data_values: str) -> str:
     """Generate a new static forest benchmark LaTeX table with competitor placeholders"""
 
     dashes = "{-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} \\\\"
@@ -1263,7 +1263,7 @@ def _generate_new_static_table(case_name: str, dynus_row: str, data_values: str)
     latex = []
     latex.append("\\begin{table*}")
     latex.append("  \\caption{Benchmark results against state-of-the-art methods in static environments. "
-                 "DYNUS outperforms the other methods in terms of travel time and achieves a 100\\% success rate. "
+                 "SANDO outperforms the other methods in terms of travel time and achieves a 100\\% success rate. "
                  "Since SUPER performs global path planning for both exploratory and safe trajectories, "
                  "we list the corresponding computation times as {Exploratory | Safe} in the Global Path Planning Computation Time column.}")
     latex.append("  \\label{tab:static_benchmark}")
@@ -1303,17 +1303,17 @@ def _generate_new_static_table(case_name: str, dynus_row: str, data_values: str)
             latex.append("      \\midrule")
             latex.append("")
 
-        # 5 rows per env: EGO-Swarm2, SUPER (L2), SUPER (Linf), FASTER, DYNUS
+        # 5 rows per env: EGO-Swarm2, SUPER (L2), SUPER (Linf), FASTER, SANDO
         latex.append(f"      \\multirow{{5}}{{*}}{{{case}}} & EGO-Swarm2 & Soft & $L_\\infty$ & {dashes}")
         latex.append(f"       & \\multirow{{2}}{{*}}{{SUPER}} & Soft & $L_2$ & {dashes}")
         latex.append(f"       & & Soft & $L_\\infty$ & {dashes}")
         latex.append(f"       & FASTER & Hard & $L_\\infty$ & {dashes}")
 
-        # DYNUS row — fill with data if this is the matching case, otherwise placeholder
+        # SANDO row — fill with data if this is the matching case, otherwise placeholder
         if case == case_name:
-            latex.append(f"       & DYNUS & Hard & $L_\\infty$ & {data_values}")
+            latex.append(f"       & SANDO & Hard & $L_\\infty$ & {data_values}")
         else:
-            latex.append(f"       & DYNUS & Hard & $L_\\infty$ & {dashes}")
+            latex.append(f"       & SANDO & Hard & $L_\\infty$ & {dashes}")
 
     latex.append("      \\bottomrule")
     latex.append("    \\end{tabular}")
@@ -1324,12 +1324,12 @@ def _generate_new_static_table(case_name: str, dynus_row: str, data_values: str)
     return "\n".join(latex)
 
 
-def _generate_new_dynamic_table(case_name: str, dynus_row: str, data_values: str) -> str:
+def _generate_new_dynamic_table(case_name: str, sando_row: str, data_values: str) -> str:
     """Generate a new dynamic obstacle benchmark LaTeX table"""
 
     latex = []
     latex.append("\\begin{table*}")
-    latex.append("  \\caption{Dynamic obstacle benchmarking results: DYNUS performance with moving obstacles. "
+    latex.append("  \\caption{Dynamic obstacle benchmarking results: SANDO performance with moving obstacles. "
                  "We report success rate, computation time, flight performance, smoothness, safety, and constraint violation metrics.}")
     latex.append("  \\label{tab:dynamic_benchmark}")
     latex.append("  \\centering")
@@ -1366,7 +1366,7 @@ def _generate_new_dynamic_table(case_name: str, dynus_row: str, data_values: str
     latex.append("      \\\\")
     latex.append("      \\midrule")
 
-    latex.append(dynus_row)
+    latex.append(sando_row)
 
     latex.append("      \\bottomrule")
     latex.append("    \\end{tabular}")
@@ -1377,7 +1377,7 @@ def _generate_new_dynamic_table(case_name: str, dynus_row: str, data_values: str
     return "\n".join(latex)
 
 
-def _generate_new_unknown_dynamic_table(case_name: str, dynus_row: str, data_values: str) -> str:
+def _generate_new_unknown_dynamic_table(case_name: str, sando_row: str, data_values: str) -> str:
     """Generate a new unknown dynamic obstacle benchmark LaTeX table.
 
     Columns:
@@ -1390,7 +1390,7 @@ def _generate_new_unknown_dynamic_table(case_name: str, dynus_row: str, data_val
     latex = []
     latex.append("\\begin{table*}")
     latex.append("  \\caption{Benchmark results in unknown dynamic environments. "
-                 "DYNUS navigates using only pointcloud sensing (no ground truth obstacle trajectories). "
+                 "SANDO navigates using only pointcloud sensing (no ground truth obstacle trajectories). "
                  "We report success rate, computation time, flight performance, smoothness, safety, and constraint violation metrics.}")
     latex.append("  \\label{tab:unknown_dynamic_benchmark}")
     latex.append("  \\centering")
@@ -1430,7 +1430,7 @@ def _generate_new_unknown_dynamic_table(case_name: str, dynus_row: str, data_val
 
     for case in cases:
         if case == case_name:
-            latex.append(dynus_row)
+            latex.append(sando_row)
         else:
             latex.append(f"      {case} & {dashes}")
 
@@ -1511,7 +1511,7 @@ def analyze_single_case(data_dir: Path, output_name: str, config_name: str, late
     if data_dir.is_dir():
         bags_dir = data_dir / "bags"
         if bags_dir.exists() and HAS_ROSBAG:
-            # Default drone bbox (can be loaded from dynus.yaml if needed)
+            # Default drone bbox (can be loaded from sando.yaml if needed)
             drone_bbox = (0.1, 0.1, 0.1)  # half-extents
 
             if table_type == 'unknown_dynamic':
@@ -1543,8 +1543,8 @@ def analyze_single_case(data_dir: Path, output_name: str, config_name: str, late
                 }
                 csv_filename = case_csv_map.get(case_name)
                 if csv_filename:
-                    dynus_pkg_dir = Path(__file__).parent.parent
-                    obstacle_csv_path = dynus_pkg_dir / "benchmark_data" / "static" / csv_filename
+                    sando_pkg_dir = Path(__file__).parent.parent
+                    obstacle_csv_path = sando_pkg_dir / "benchmark_data" / "static" / csv_filename
                     print(f"\nAnalyzing static collisions from rosbags (obstacles: {obstacle_csv_path.name})...")
 
                     for idx, row in df.iterrows():
@@ -1647,7 +1647,7 @@ def analyze_single_case(data_dir: Path, output_name: str, config_name: str, late
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Analyze DYNUS dynamic benchmark data',
+        description='Analyze SANDO dynamic benchmark data',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__
     )
@@ -1729,7 +1729,7 @@ def main():
             return
 
         print("="*80)
-        print("DYNUS DYNAMIC BENCHMARK ANALYZER - ALL CASES")
+        print("SANDO DYNAMIC BENCHMARK ANALYZER - ALL CASES")
         print("="*80)
         print(f"\nFound {len(case_dirs)} case(s) to analyze:")
         for d in case_dirs:
@@ -1737,7 +1737,7 @@ def main():
         print()
 
         # Analyze each case
-        latex_output = Path("/home/kkondo/paper_writing/DYNUS_v3/tables") / args.latex_name
+        latex_output = Path("/home/kkondo/paper_writing/SANDO_v3/tables") / args.latex_name
         goal_pos = tuple(args.goal_pos)
         for case_dir in case_dirs:
             analyze_single_case(case_dir, args.output_name, args.config_name, latex_output,
@@ -1751,7 +1751,7 @@ def main():
 
     else:
         # Single case analysis
-        latex_output = Path("/home/kkondo/paper_writing/DYNUS_v3/tables") / args.latex_name
+        latex_output = Path("/home/kkondo/paper_writing/SANDO_v3/tables") / args.latex_name
         goal_pos = tuple(args.goal_pos)
         analyze_single_case(Path(args.data_dir), args.output_name, args.config_name, latex_output,
                             table_type=args.table_type, goal_pos=goal_pos)

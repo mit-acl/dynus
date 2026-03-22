@@ -5,7 +5,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
     return LaunchDescription([
         Node(
-            package="dynus",
+            package="sando",
             executable="temporal_layered_corridor_test_node",
             name="temporal_layered_corridor_test_node",
             output="screen",

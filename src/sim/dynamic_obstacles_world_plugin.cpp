@@ -2,14 +2,14 @@
  * @brief Gazebo WorldPlugin that spawns and moves all dynamic obstacles
  *        from a single plugin instance (replaces N per-model ModelPlugins).
  *
- * Reads obstacle definitions from a JSON file (/tmp/dynus_obstacles.json by
+ * Reads obstacle definitions from a JSON file (/tmp/sando_obstacles.json by
  * default).  On first update after the file is found it inserts lightweight
  * SDF box models and then moves every model each physics step via
  * Model::SetWorldPose().
  *
  * Load in a .world file:
  *   <plugin name="dyn_obs" filename="libdynamic_obstacles_world_plugin.so">
- *     <json_path>/tmp/dynus_obstacles.json</json_path>
+ *     <json_path>/tmp/sando_obstacles.json</json_path>
  *   </plugin>
  */
 
@@ -264,7 +264,7 @@ private:
     physics::WorldPtr     world_;
     event::ConnectionPtr  update_conn_;
     std::vector<DynObs>   obstacles_;
-    std::string           json_path_{"/tmp/dynus_obstacles.json"};
+    std::string           json_path_{"/tmp/sando_obstacles.json"};
     bool json_loaded_{false};
     bool models_resolved_{false};
     int  poll_counter_{0};
