@@ -2,23 +2,26 @@
 
 If you like this project, please consider starring ⭐ the repo!
 
-### **Submitted to the IEEE Robotics and Automation Letters (RA-L)**
+### **Submitted to the IEEE Transactions on Robotics (T-RO)**
 
-| **Spatiotemporal SFC** | **Hardware Heatmap** |
-| ------------------------- | ------------------------- |
-| <video src="https://github.com/user-attachments/assets/7279e010-bde3-4061-9a28-07a145092276" width="360" autoplay loop muted></video> | <video src="https://github.com/user-attachments/assets/f9bf40c3-18ec-498c-80f7-e7ff92dcb2a6" width="360" autoplay loop muted></video> |
-
-| **Sim Interactive** | **Sim Static** |
-| ------------------------- | ------------------------- |
-| <video src="https://github.com/user-attachments/assets/6718410a-aa0d-4726-a6ca-605a22e25b2c" width="360" autoplay loop muted></video> | <video src="https://github.com/user-attachments/assets/61e676a6-4b03-480a-90b3-4dafb19d7198" width="360" autoplay loop muted></video> |
-
-| **Sim Dynamic** | **Hardware Single Dynamic** |
-| ------------------------- | ------------------------- |
-| <video src="https://github.com/user-attachments/assets/f672ad26-3e06-4cbf-99d2-fd6b2eaeac1d" width="360" autoplay loop muted></video> | <video src="https://github.com/user-attachments/assets/3a6a9805-078e-4b12-bc5e-d3421edce9cf" width="360" autoplay loop muted></video> |
-
-| **Hardware Multiple Dynamic** | **Hardware Dynamic + Static** |
-| ------------------------- | ------------------------- |
-| <video src="https://github.com/user-attachments/assets/aac54514-d8fb-4aa7-8304-63ffc71c2bad" width="360" autoplay loop muted></video> | <video src="https://github.com/user-attachments/assets/175d183b-60ea-40a3-92ae-1ece3cdf40e6" width="360" autoplay loop muted></video> |
+<table>
+<tr>
+<td width="50%"><b>Spatiotemporal SFC</b><br><img src="https://github.com/user-attachments/assets/7279e010-bde3-4061-9a28-07a145092276" width="100%"></td>
+<td width="50%"><b>Hardware Heatmap</b><br><img src="https://github.com/user-attachments/assets/f9bf40c3-18ec-498c-80f7-e7ff92dcb2a6" width="100%"></td>
+</tr>
+<tr>
+<td width="50%"><b>Sim Interactive</b><br><img src="https://github.com/user-attachments/assets/6718410a-aa0d-4726-a6ca-605a22e25b2c" width="100%"></td>
+<td width="50%"><b>Sim Static</b><br><img src="https://github.com/user-attachments/assets/61e676a6-4b03-480a-90b3-4dafb19d7198" width="100%"></td>
+</tr>
+<tr>
+<td width="50%"><b>Sim Dynamic</b><br><img src="https://github.com/user-attachments/assets/f672ad26-3e06-4cbf-99d2-fd6b2eaeac1d" width="100%"></td>
+<td width="50%"><b>Hardware Single Dynamic</b><br><img src="https://github.com/user-attachments/assets/3a6a9805-078e-4b12-bc5e-d3421edce9cf" width="100%"></td>
+</tr>
+<tr>
+<td width="50%"><b>Hardware Multiple Dynamic</b><br><img src="https://github.com/user-attachments/assets/aac54514-d8fb-4aa7-8304-63ffc71c2bad" width="100%"></td>
+<td width="50%"><b>Hardware Dynamic + Static</b><br><img src="https://github.com/user-attachments/assets/175d183b-60ea-40a3-92ae-1ece3cdf40e6" width="100%"></td>
+</tr>
+</table>
 
 ## Paper
 
