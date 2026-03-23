@@ -9,21 +9,19 @@
  * -------------------------------------------------------------------------- */
 
 #include <cstring>
+#include <decomp_ros_msgs/msg/polyhedron_array.hpp>
 #include <filesystem>
 #include <iostream>
 #include <map>
+#include <rclcpp/serialization.hpp>
+#include <rosbag2_cpp/reader.hpp>
+#include <rosbag2_cpp/writer.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
 #include <set>
 #include <string>
 #include <vector>
-
-#include <rosbag2_cpp/reader.hpp>
-#include <rosbag2_cpp/writer.hpp>
-#include <rclcpp/serialization.hpp>
-
 #include <visualization_msgs/msg/marker.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
-#include <sensor_msgs/msg/point_cloud2.hpp>
-#include <decomp_ros_msgs/msg/polyhedron_array.hpp>
 
 namespace fs = std::filesystem;
 
@@ -64,9 +62,8 @@ static rclcpp::SerializedMessage wrap_bag_msg(
 
 // Deserialize, modify, reserialize, and write back into bag_msg
 template <typename MsgT>
-void transform_in_place(
-    std::shared_ptr<rosbag2_storage::SerializedBagMessage>& bag_msg,
-    std::function<void(MsgT&)> modifier) {
+void transform_in_place(std::shared_ptr<rosbag2_storage::SerializedBagMessage>& bag_msg,
+                        std::function<void(MsgT&)> modifier) {
   rclcpp::Serialization<MsgT> serializer;
   auto serialized_in = wrap_bag_msg(bag_msg);
   MsgT msg;
@@ -99,8 +96,7 @@ static void filter_pc_z(sensor_msgs::msg::PointCloud2& cloud, float z_max) {
     std::memcpy(&z, &cloud.data[i * point_step + z_offset], sizeof(float));
     if (z <= z_max) {
       if (kept != i) {
-        std::memcpy(&cloud.data[kept * point_step],
-                     &cloud.data[i * point_step], point_step);
+        std::memcpy(&cloud.data[kept * point_step], &cloud.data[i * point_step], point_step);
       }
       ++kept;
     }
@@ -167,8 +163,7 @@ int main(int argc, char** argv) {
   auto duration = make_duration(lifetime_sec);
   std::cout << "Marker lifetime: " << lifetime_sec << "s\n";
   if (use_z_filter) {
-    std::cout << "Z-filter: z_max=" << z_max << " on " << pc_topics.size()
-              << " topics\n";
+    std::cout << "Z-filter: z_max=" << z_max << " on " << pc_topics.size() << " topics\n";
   }
 
   // Open reader
@@ -179,8 +174,7 @@ int main(int argc, char** argv) {
   auto metadata = reader.get_metadata();
   std::map<std::string, std::string> topic_type_map;
   for (const auto& topic_info : metadata.topics_with_message_count) {
-    topic_type_map[topic_info.topic_metadata.name] =
-        topic_info.topic_metadata.type;
+    topic_type_map[topic_info.topic_metadata.name] = topic_info.topic_metadata.type;
   }
 
   // Open writer
@@ -204,10 +198,9 @@ int main(int argc, char** argv) {
     bool did_modify = false;
 
     if (type_str == "visualization_msgs/msg/MarkerArray") {
-      transform_in_place<visualization_msgs::msg::MarkerArray>(
-          bag_msg, [&](auto& msg) {
-            for (auto& m : msg.markers) m.lifetime = duration;
-          });
+      transform_in_place<visualization_msgs::msg::MarkerArray>(bag_msg, [&](auto& msg) {
+        for (auto& m : msg.markers) m.lifetime = duration;
+      });
       did_modify = true;
 
     } else if (type_str == "visualization_msgs/msg/Marker") {
@@ -232,13 +225,11 @@ int main(int argc, char** argv) {
     writer.write(bag_msg);
 
     if (count % 10000 == 0) {
-      std::cout << "  Processed " << count << " messages (" << modified
-                << " modified)...\n";
+      std::cout << "  Processed " << count << " messages (" << modified << " modified)...\n";
     }
   }
 
-  std::cout << "Done! Processed " << count << " messages total, " << modified
-            << " modified.\n";
+  std::cout << "Done! Processed " << count << " messages total, " << modified << " modified.\n";
   std::cout << "Output bag: " << output_path << "\n";
 
   return 0;

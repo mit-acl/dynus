@@ -12,18 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#pragma once
 
-#ifndef GAZEBO_PLUGINS__GAZEBO_ROS_IMU_SENSOR_HPP_
-#define GAZEBO_PLUGINS__GAZEBO_ROS_IMU_SENSOR_HPP_
+#include <memory>
+#include <sensor_msgs/msg/imu.hpp>
+#include <string>
 
 #include "sim/ImuSensorPlugin.hh"
-#include <sensor_msgs/msg/imu.hpp>
 
-#include <string>
-#include <memory>
-
-namespace gazebo_plugins
-{
+namespace gazebo_plugins {
 
 class GazeboRosImuSensorPrivate;
 
@@ -45,9 +42,8 @@ class GazeboRosImuSensorPrivate;
     </sensor>
   \endcode
 */
-class GazeboRosImuSensor : public gazebo::SensorPlugin
-{
-public:
+class GazeboRosImuSensor : public gazebo::SensorPlugin {
+ public:
   /// Constructor.
   GazeboRosImuSensor();
   /// Destructor.
@@ -56,11 +52,9 @@ public:
   // Documentation Inherited
   void Load(gazebo::sensors::SensorPtr _sensor, sdf::ElementPtr _sdf) override;
 
-private:
+ private:
   /// Private data pointer
   std::unique_ptr<GazeboRosImuSensorPrivate> impl_;
 };
 
 }  // namespace gazebo_plugins
-
-#endif  // GAZEBO_PLUGINS__GAZEBO_ROS_IMU_SENSOR_HPP_

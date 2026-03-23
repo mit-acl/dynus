@@ -1,8 +1,6 @@
-# SANDO: Safe Autonomous Trajectory Planning for Dynamic Unknown Environments #
+# SANDO: Safe Autonomous Trajectory Planning for Dynamic Unknown Environments
 
-If you like this project, please consider starring ⭐ the repo!
-
-### **Submitted to the IEEE Transactions on Robotics (T-RO)**
+**Submitted to the IEEE Transactions on Robotics (T-RO)**
 
 <table>
 <tr>
@@ -23,9 +21,11 @@ If you like this project, please consider starring ⭐ the repo!
 </tr>
 </table>
 
-## Paper
+SANDO plans safe, dynamically-feasible trajectories for UAVs in environments with both static and dynamic obstacles, including previously unseen ones detected at runtime via onboard sensors.
 
-SANDO: Safe Autonomous Trajectory Planning for Dynamic Unknown Environments is available [https://arxiv.org/abs/2511.10822](https://arxiv.org/abs/2511.10822)!
+**Full video:** [https://youtu.be/Pvb-VPUdLvg](https://youtu.be/Pvb-VPUdLvg)
+
+**Paper:** [https://arxiv.org/abs/2511.10822](https://arxiv.org/abs/2511.10822)
 
 ```bibtex
 @article{kondo2026sando,
@@ -33,623 +33,227 @@ SANDO: Safe Autonomous Trajectory Planning for Dynamic Unknown Environments is a
 }
 ```
 
-## Video
+If you like this project, please consider starring the repo!
 
-The full video is available [https://youtu.be/Pvb-VPUdLvg](https://youtu.be/Pvb-VPUdLvg).
+## Quick Start (Docker)
 
-## Interactive Demo
+```bash
+git clone https://github.com/mit-acl/dynus.git sando && cd sando/docker
+make build                         # ~15 min first time
+make run-interactive               # click goals in RViz!
+```
 
-SANDO includes a built-in interactive mode where you can click goals in RViz and watch the drone navigate through dynamic obstacles in real time. See the [Run Simulation](#use-docker-recommended) section for instructions.
+## What You Can Do
+
+SANDO provides **four simulation modes** at three difficulty levels (50 / 100 / 200 obstacles):
+
+| Mode | Description | Engine |
+|------|-------------|--------|
+| `interactive` | Click goals in RViz, drone navigates around obstacles | RViz-only |
+| `static` | Pre-defined static forest | Gazebo |
+| `dynamic` | Known dynamic obstacles | RViz-only |
+| `unknown_dynamic` | Unknown obstacles detected via pointcloud | Gazebo |
+
+**Docker:**
+```bash
+make run-interactive                           # click goals in RViz
+make run-demo SCENARIO=static_easy             # auto-goal demo
+make run-demo SCENARIO=dynamic_hard            # 200 dynamic obstacles
+make run-demo SCENARIO=unknown_dynamic_medium  # perception-in-the-loop
+```
+
+**Native:**
+```bash
+python3 src/sando/scripts/run_sim.py -m interactive -s install/setup.bash
+python3 src/sando/scripts/run_sim.py -m static -d easy -s install/setup.bash
+python3 src/sando/scripts/run_sim.py -m dynamic -d hard -s install/setup.bash
+python3 src/sando/scripts/run_sim.py -m unknown_dynamic -d medium -s install/setup.bash
+```
 
 ## Setup
 
-SANDO has been tested on both Docker and native installations on Ubuntu 22.04 with ROS 2 Humble.
+### Docker (Recommended)
 
-### Use Docker (Recommended)
-
-1. **Install Docker:**  
-   Follow the [official Docker installation guide for Ubuntu](https://docs.docker.com/engine/install/ubuntu/).
-
-2. **Clone the Repository and Navigate to the Docker Folder:**
+1. Install [Docker](https://docs.docker.com/engine/install/ubuntu/)
+2. Clone and build:
    ```bash
-   mkdir -p ~/code/ws/src
-   cd ~/code/ws/src
    git clone https://github.com/mit-acl/dynus.git sando
    cd sando/docker
+   make build
    ```
-
-3. **BUILD:**
-    - Navigate to the docker folder in your sando repo (eg. `cd ~/code/ws/src/sando/docker/`) and run this
-      ```bash
-      make build
-      ```
-
-4. **Run Simulation**
-
-    SANDO provides four simulation modes with three difficulty levels:
-
-    | Mode | Description |
-    |------|-------------|
-    | `static` | Static forest obstacles (Gazebo) |
-    | `dynamic` | Known dynamic obstacles (RViz-only, lightweight) |
-    | `unknown_dynamic` | Unknown dynamic obstacles detected via pointcloud (Gazebo) |
-    | `interactive` | Click-to-goal with obstacles in a 30x30m arena (RViz-only) |
-
-    | Difficulty | Obstacles |
-    |------------|-----------|
-    | `easy` | 50 |
-    | `medium` | 100 |
-    | `hard` | 200 |
-
-    **Demo modes** (goal is sent automatically):
-    ```bash
-    make run-demo SCENARIO=static_easy
-    make run-demo SCENARIO=dynamic_hard
-    make run-demo SCENARIO=unknown_dynamic_medium
-    ```
-
-    **Interactive mode** (click goals in RViz using "2D Nav Goal"):
-    ```bash
-    make run-interactive
-    make run-interactive NUM_OBSTACLES=100   # customize obstacle count
-    ```
-
-    **Convenience aliases:**
-    ```bash
-    make run-static-easy
-    make run-static-medium
-    make run-static-hard
-    make run-dynamic-easy
-    make run-dynamic-medium
-    make run-dynamic-hard
-    make run-unknown-easy
-    make run-unknown-medium
-    make run-unknown-hard
-    ```
-
-    **Without GPU:**
-    ```bash
-    make run-demo SCENARIO=static_easy GPU=false
-    ```
-
-    **Debug shell:**
-    ```bash
-    make shell
-    ```
+3. Run any simulation mode above
 
 <details>
-  <summary><b>Useful Docker Commands</b></summary>
+<summary><b>Docker tips</b></summary>
 
-  - **Remove all caches:**
-    ```bash
-    docker builder prune
-    ```
+```bash
+make shell                         # debug shell inside container
+make run-demo SCENARIO=static_easy GPU=false  # without GPU
 
-  - **Remove all containers:**
-    ```bash
-    docker rm $(docker ps -a -q)
-    ```
+# Convenience aliases for all scenarios
+make run-static-easy
+make run-static-medium
+make run-static-hard
+make run-dynamic-easy
+make run-dynamic-medium
+make run-dynamic-hard
+make run-unknown-easy
+make run-unknown-medium
+make run-unknown-hard
 
-  - **Remove all images:**
-    ```bash
-    docker rmi $(docker images -q)
-    ```
+# Cleanup
+docker builder prune               # remove build caches
+docker rm $(docker ps -a -q)       # remove all containers
+docker rmi $(docker images -q)     # remove all images
+```
 
 </details>
 
 ### Native Installation
 
-1. **Clone the Repository and Navigate to the Workspace Folder:**
+1. Clone and run setup:
    ```bash
-   mkdir -p ~/code/ws
-   cd ~/code/ws
-   git clone https://github.com/mit-acl/dynus.git sando
-   cd sando
+   mkdir -p ~/code/ws && cd ~/code/ws
+   git clone https://github.com/mit-acl/dynus.git sando && cd sando
+   ./setup.sh    # installs ROS 2 Humble, Gurobi, and all dependencies
+   ```
+2. Source and run:
+   ```bash
+   cd ~/code/dynus_ws
+   source install/setup.bash
+   python3 src/sando/scripts/run_sim.py -m interactive -s install/setup.bash
    ```
 
-2. **Run the Setup Script:**
-   ```bash
-   ./setup.sh
-   ```
-   This script will first install ROS 2 Humble, then SANDO and its dependencies. Please note that this script modifies your `~/.bashrc` file.
+### System Requirements
 
- 3. **Run the Simulation**
+- **OS:** Ubuntu 22.04 (Docker works on any Linux/macOS)
+- **ROS:** ROS 2 Humble
+- **Optimizer:** [Gurobi](https://www.gurobi.com/) (free academic license available)
+- **Hardware:** 4+ CPU cores recommended; GPU optional (Gazebo rendering only)
 
-    Source the workspace and run simulations using `run_sim.py`:
-    ```bash
-    cd ~/code/dynus_ws
-    source install/setup.bash
-    ```
+## Configuration
 
-    **Demo modes** (goal is sent automatically):
-    ```bash
-    # Static forest environments (Gazebo)
-    python3 src/sando/scripts/run_sim.py -m static -d easy -s install/setup.bash
-    python3 src/sando/scripts/run_sim.py -m static -d medium -s install/setup.bash
-    python3 src/sando/scripts/run_sim.py -m static -d hard -s install/setup.bash
+All planner parameters are in `config/sando.yaml`, organized into three tiers:
 
-    # Known dynamic obstacles (RViz-only, lightweight)
-    python3 src/sando/scripts/run_sim.py -m dynamic -d easy -s install/setup.bash
-    python3 src/sando/scripts/run_sim.py -m dynamic -d hard -s install/setup.bash
+| Tier | Description | Examples |
+|------|-------------|---------|
+| **`[CONFIGURE]`** | Must set for your vehicle/environment | `v_max`, `a_max`, `drone_bbox`, `z_min`/`z_max`, `num_P`/`num_N` |
+| **`[TUNE]`** | Adjust for performance trade-offs | `inflation_hgp`, `sfc_size`, `goal_seen_radius`, `heat_alpha0/1` |
+| **`[INTERNAL]`** | Safe defaults, change only if needed | Algorithm internals, debug flags |
 
-    # Unknown dynamic obstacles (Gazebo + obstacle tracker)
-    python3 src/sando/scripts/run_sim.py -m unknown_dynamic -d medium -s install/setup.bash
-    ```
+Hardware-specific config: `config/sando_hw_quadrotor.yaml` (with inline comments explaining differences from simulation defaults).
 
-    **Interactive mode** (click goals in RViz using "2D Nav Goal"):
-    ```bash
-    python3 src/sando/scripts/run_sim.py -m interactive -s install/setup.bash
+<details>
+<summary><b>Key parameters to tune</b></summary>
 
-    # Customize obstacle count
-    python3 src/sando/scripts/run_sim.py -m interactive --num-obstacles 100 -s install/setup.bash
-    ```
+| Parameter | Default | Effect |
+|-----------|---------|--------|
+| `v_max` / `a_max` / `j_max` | 5.0 / 20.0 / 100.0 | Vehicle dynamic limits |
+| `num_P` / `num_N` | 3 / 5 | More polytopes/segments = smoother but slower |
+| `sfc_size` | [3.0, 3.0, 3.0] | Local planning window size (smaller = faster) |
+| `inflation_hgp` | 0.45 | Static obstacle buffer for global planning [m] |
+| `dynamic_factor_initial_mean` | 1.5 | Starting time-allocation factor (higher = more conservative) |
+| `goal_seen_radius` | 2.0 | Distance to stop replanning (too small = very hard to plan) |
+| `heat_alpha0` / `heat_alpha1` | 0.2 / 1.0 | Dynamic obstacle avoidance weights |
 
-## Benchmarking
+</details>
 
-This section describes the complete workflow for running local trajectory optimization benchmarks.
+<details>
+<summary><b>Benchmarking</b></summary>
 
-### Overview
-
-The benchmarking pipeline consists of three main steps:
-1. **Generate Safety Corridors**: Create standardized test cases with safe flight corridors
-2. **Run Benchmarks**: Execute trajectory optimization benchmarks (standardized and variable elimination)
-3. **Generate LaTeX Tables**: Process results and generate publication-ready tables
-
-### Step 1: Generate Safety Corridors
-
-Safety corridors define the collision-free space for trajectory optimization. Generate them once and reuse for all benchmarks.
+### Local Trajectory Benchmarking
 
 ```bash
-# Build the workspace
-cd ~/code/dynus_ws
-colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select sando
-
-# Source the workspace
+# 1. Generate safety corridors (once)
 source install/setup.bash
-
-# Generate safety corridors
 tmuxp load src/sando/launch/generate_sfc.yaml
+
+# 2. Run benchmarks
+cd src/sando/benchmarking
+python3 run_benchmark_suite.py                # standard benchmarks
+python3 run_benchmark_suite.py --ve-comparison  # variable elimination comparison
+
+# 3. Generate LaTeX tables
+python3 generate_latex_table.py --output tables/benchmark.tex
 ```
 
-**Output**: Safety corridor files (`.mysco2` format) saved to `src/sando/data/`
-
-**What it does**:
-- Launches simulator in background
-- Generates random start/goal pairs in standardized environment
-- Computes safe flight corridors using convex decomposition
-- Saves corridors as binary files for reproducible benchmarks
-
-### Step 2: Run Standardized Benchmarks
-
-Run comprehensive benchmarks comparing SANDO (single/multi-threaded) and FASTER (original).
+### Simulation Benchmarking (Dynamic & Static)
 
 ```bash
-cd ~/code/dynus_ws/src/sando/benchmarking
-
-# Run the full benchmark suite
-python3 run_benchmark_suite.py
-```
-
-**Output**: CSV files in `benchmark_data/`:
-- `single_thread/sando_N_benchmark.csv` (N=4,5,6)
-- `single_thread/original_faster_N_benchmark.csv` (N=4,5,6)
-- `multi_thread/sando_N_benchmark.csv` (N=4,5,6)
-
-**What it does**:
-- Tests multiple problem sizes (N=4,5,6 segments)
-- Compares single-threaded vs multi-threaded optimization
-- Measures computation time, success rate, trajectory quality, and constraint violations
-- Runs 100+ test cases per configuration
-
-**Options**:
-```bash
-# Factor determination mode (for tuning factor ranges)
-python3 run_benchmark_suite.py --factor-determination
-```
-
-### Step 3: Run Variable Elimination Benchmarks
-
-Compare SANDO with and without variable elimination to demonstrate its performance impact.
-
-```bash
-cd ~/code/dynus_ws/src/sando/benchmarking
-
-# Run VE comparison benchmark
-python3 run_benchmark_suite.py --ve-comparison
-```
-
-**Output**: CSV files in `benchmark_data/ve_benchmark/`:
-- `sando_N_with_ve_benchmark.csv` (N=4,5,6)
-- `sando_N_without_ve_benchmark.csv` (N=4,5,6)
-
-**What it does**:
-- Runs multi-threaded SANDO with variable elimination enabled
-- Runs multi-threaded SANDO with variable elimination disabled
-- Directly compares optimization speed for the same problem instances
-- Highlights the computational benefit of variable elimination
-
-### Step 4: Generate LaTeX Tables
-
-Process benchmark results and generate publication-ready LaTeX tables.
-
-```bash
-cd ~/code/dynus_ws/src/sando/benchmarking
-
-# Generate both standardized and VE benchmark tables
-python3 generate_latex_table.py
-```
-
-**Output**: LaTeX files in `/home/kkondo/paper_writing/SANDO_v3/tables/`:
-- `standardized_benchmark.tex` - Full comparison table
-- `ve_benchmark.tex` - Variable elimination comparison table
-
-**What it does**:
-- Loads CSV benchmark data
-- Computes statistics (mean, success rate, violations)
-- Generates formatted LaTeX tables with best/worst highlighting
-- Ready for direct inclusion in paper with `\input{}`
-
-### Step 5: Analyze Results (Optional)
-
-Use Jupyter notebook for detailed analysis and visualization.
-
-```bash
-cd ~/code/dynus_ws/src/sando/benchmarking
-
-# Open Jupyter notebook
-jupyter notebook local_traj_benchmark.ipynb
-```
-
-**Features**:
-- Load and analyze benchmark CSV data
-- Generate summary statistics tables
-- Create plots comparing different configurations
-- Export results for paper figures
-
-**How to use the notebook**:
-
-1. **Run the first cell** to load standardized benchmark data:
-   ```python
-   # The notebook automatically loads from:
-   # - single_thread/sando_N_benchmark.csv
-   # - single_thread/original_faster_N_benchmark.csv
-   # - multi_thread/sando_N_benchmark.csv
-   ```
-   This generates a unified summary table with statistics.
-
-2. **Run the VE benchmarking cell** (second cell) to load variable elimination data:
-   ```python
-   # Loads from ve_benchmark/ folder:
-   # - sando_N_with_ve_benchmark.csv
-   # - sando_N_without_ve_benchmark.csv
-   ```
-   This generates a comparison table showing VE impact.
-
-3. **Run visualization cells** to create plots (optional):
-   - Computation time vs N
-   - Success rates
-   - Trajectory quality metrics
-
-**Note**: The notebook expects the benchmark data to exist. Run Steps 2-3 first to generate the CSV files.
-
-### Step 6: Visualize Trajectories in RViz (Optional)
-
-Visualize and compare trajectories from different planners side-by-side in RViz.
-
-```bash
-cd ~/code/dynus_ws
-
-# Build if needed
-colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select sando
-
-# Source the workspace
-source install/setup.bash
-
-# Launch visualization
-tmuxp load src/sando/launch/visualize_local_trajs.yaml
-```
-
-**What it does**:
-- Reads saved trajectory files from `traj_dump/` directories
-- Loads the same test case for multiple planners
-- Displays trajectories with color-coded velocity profiles
-- Shows safe flight corridors and obstacle environment
-- Allows step-by-step comparison
-
-**Configuration**:
-- Edit `visualize_local_trajs.yaml` to specify which trajectories to load
-- Set `traj_dump_root_dirs_` to point to trajectory dump directories
-- Trajectories are automatically generated during benchmarks if `traj_dump_enable: true`
-
-**Controls in RViz**:
-- Use markers to select different test cases
-- Toggle trajectory visibility per planner
-- Inspect velocity, acceleration, and jerk profiles
-- Verify corridor constraints visually
-
-### Directory Structure
-
-```
-sando/
-├── benchmarking/
-│   ├── run_benchmark_suite.py          # Main benchmark runner
-│   ├── generate_latex_table.py         # Table generator
-│   ├── local_traj_benchmark.ipynb      # Analysis notebook
-│   └── ...
-├── benchmark_data/
-│   ├── single_thread/                  # Single-threaded results
-│   ├── multi_thread/                   # Multi-threaded results
-│   └── ve_benchmark/                   # Variable elimination results
-└── data/                               # Safety corridor files (.mysco2)
-```
-
-### Tips
-
-- **Build once**: Only rebuild when you modify C++ code
-- **Reuse corridors**: Generate safety corridors once, reuse for all benchmarks
-- **Run overnight**: Full benchmark suite takes several hours
-- **Check results**: Use notebook to verify data quality before generating tables
-- **VE comparison**: Run after standardized benchmarks to demonstrate algorithmic contribution
-
-## Simulation Benchmarking (Dynamic & Static Environments)
-
-This section describes how to run full end-to-end simulation benchmarks — launching the planner, flying through environments, and collecting metrics (success rate, computation time, travel time, path length, smoothness, constraint violations, collisions).
-
-There are two modes:
-- **Dynamic** (`rviz-only`): Procedurally generated obstacles (static + moving). Lightweight, no Gazebo.
-- **Static** (`gazebo`): Pre-defined forest worlds (`easy_forest.world`, `medium_forest.world`, `hard_forest.world`). Requires Gazebo.
-
-### Prerequisites
-
-**Docker (recommended):**
-
-```bash
-# Build the Docker image
-cd ~/code/ws/src/sando/docker
-make build
-
-# Run the container (GPU + display forwarding)
-make run
-
-# Inside the container, everything is already built. Rebuild if needed:
-cd /home/kkondo/code/dynus_ws
-colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select sando
-source install/setup.bash
-```
-
-**Native installation:**
-
-```bash
-cd ~/code/dynus_ws
-colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select sando
-source install/setup.bash
-```
-
-### Dynamic Obstacle Benchmark
-
-Runs in `rviz-only` mode with procedurally generated obstacles. Three difficulty cases:
-- **Easy**: 50 obstacles
-- **Medium**: 100 obstacles
-- **Hard**: 200 obstacles
-
-#### 1. Configure `sando.yaml`
-
-Make sure `environment_assumption` is set to `"dynamic"`:
-
-```bash
-# In src/sando/config/sando.yaml, verify:
-#   environment_assumption: "dynamic"
-```
-
-#### 2. Build
-
-```bash
-cd ~/code/dynus_ws
-colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select sando
-```
-
-#### 3. Run benchmark
-
-```bash
+# Dynamic obstacle benchmark
 python3 src/sando/scripts/run_benchmark.py \
-  --setup-bash install/setup.bash \
-  --mode rviz-only \
-  --cases easy medium hard \
-  --config-name dynamic \
-  --num-trials 10 \
-  --start 0.0 0.0 2.0 \
-  --goal 105.0 0.0 2.0 \
-  --timeout 50
-```
+  -s install/setup.bash --mode rviz-only \
+  --cases easy medium hard --config-name dynamic --num-trials 10
 
-#### 4. Analyze and generate LaTeX table
-
-```bash
-python3 src/sando/scripts/analyze_dynamic_benchmark.py \
-  --data-dir src/sando/benchmark_data/dynamic \
-  --all-cases \
-  --table-type dynamic \
-  --latex-name dynamic_benchmark.tex
-```
-
-### Static Forest Benchmark
-
-Runs in `gazebo` mode with pre-defined `.world` files. Three difficulty cases:
-- **Easy**: `easy_forest.world`
-- **Medium**: `medium_forest.world`
-- **Hard**: `hard_forest.world`
-
-#### 1. Configure `sando.yaml`
-
-Set `environment_assumption` to `"static"`:
-
-```bash
-# In src/sando/config/sando.yaml, set:
-#   environment_assumption: "static"
-```
-
-#### 2. Build
-
-```bash
-cd ~/code/dynus_ws
-colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select sando
-```
-
-#### 3. Run benchmark
-
-```bash
+# Static forest benchmark
 python3 src/sando/scripts/run_benchmark.py \
-  --setup-bash install/setup.bash \
-  --mode gazebo \
-  --cases easy medium hard \
-  --config-name static \
-  --num-trials 10 \
-  --start 0.0 0.0 2.0 \
-  --goal 105.0 0.0 2.0 \
-  --timeout 50
-```
+  -s install/setup.bash --mode gazebo \
+  --cases easy medium hard --config-name static --num-trials 10
 
-#### 4. Analyze and generate LaTeX table
-
-```bash
+# Analyze results
 python3 src/sando/scripts/analyze_dynamic_benchmark.py \
-  --data-dir src/sando/benchmark_data/static \
-  --all-cases \
-  --table-type static \
-  --latex-name static_benchmark.tex
+  --data-dir src/sando/benchmark_data/dynamic --all-cases \
+  --latex-dir /path/to/tables
 ```
 
-### Where Data Goes
+Results are saved to `benchmark_data/` with per-trial CSV, JSON, and ROS bag recordings.
 
-```
-src/sando/
-├── benchmark_data/
-│   ├── dynamic/                          # Dynamic obstacle benchmark results
-│   │   ├── easy_YYYYMMDD_HHMMSS/
-│   │   │   ├── benchmark_dynamic_*.csv   # Trial metrics (success, time, collisions, etc.)
-│   │   │   ├── benchmark_dynamic_*.json  # Same data in JSON format
-│   │   │   ├── csv/
-│   │   │   │   ├── num_0.csv             # Per-trial computation time breakdown
-│   │   │   │   ├── num_1.csv
-│   │   │   │   └── ...
-│   │   │   └── bags/                     # ROS2 bag recordings per trial
-│   │   │       ├── trial_0/
-│   │   │       └── ...
-│   │   ├── medium_YYYYMMDD_HHMMSS/
-│   │   └── hard_YYYYMMDD_HHMMSS/
-│   └── static/                           # Static forest benchmark results
-│       ├── easy_YYYYMMDD_HHMMSS/
-│       ├── medium_YYYYMMDD_HHMMSS/
-│       └── hard_YYYYMMDD_HHMMSS/
-```
+</details>
 
-**LaTeX tables** are written to: `/home/kkondo/paper_writing/SANDO_v3/tables/`
-- `dynamic_benchmark.tex` — Dynamic obstacle results
-- `static_benchmark.tex` — Static forest results
+<details>
+<summary><b>Hover avoidance testing</b></summary>
 
-### Benchmark CLI Reference
-
-**`run_benchmark.py`** options:
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--setup-bash` | Path to `install/setup.bash` (required) | — |
-| `--mode` | `rviz-only` or `gazebo` | `rviz-only` |
-| `--cases` | `easy`, `medium`, `hard`, or `all` | `all` |
-| `--config-name` | Name for output directory | `default` |
-| `--num-trials` | Trials per case | `5` |
-| `--start` | Start position (x y z) | `0 0 2` |
-| `--goal` | Goal position (x y z) | `105 0 2` |
-| `--timeout` | Seconds per trial | `120` |
-| `--env` | Override gazebo environment name | auto from case |
-| `--visualize` | Show RViz during benchmark | off |
-
-**`analyze_dynamic_benchmark.py`** options:
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--data-dir` | Path to benchmark data directory | — |
-| `--all-cases` | Analyze all cases in directory | off |
-| `--table-type` | `dynamic` or `static` | `dynamic` |
-| `--latex-name` | Output `.tex` filename | `dynamic_benchmark.tex` |
-| `--config-name` | Config name for table caption | `default` |
-
-### Quick Reference
+SANDO includes hover avoidance that detects nearby dynamic obstacles when the drone is hovering and autonomously evades them.
 
 ```bash
-# ── Dynamic benchmark (full pipeline) ──
-# 1. Set sando.yaml: environment_assumption: "dynamic"
-# 2. colcon build --packages-select sando
-# 3. python3 src/sando/scripts/run_benchmark.py --setup-bash install/setup.bash --mode rviz-only --cases easy medium hard --config-name dynamic --num-trials 10
-# 4. python3 src/sando/scripts/analyze_dynamic_benchmark.py --data-dir src/sando/benchmark_data/dynamic --all-cases --table-type dynamic --latex-name dynamic_benchmark.tex
-
-# ── Static benchmark (full pipeline) ──
-# 1. Set sando.yaml: environment_assumption: "static"
-# 2. colcon build --packages-select sando
-# 3. python3 src/sando/scripts/run_benchmark.py --setup-bash install/setup.bash --mode gazebo --cases easy medium hard --config-name static --num-trials 10
-# 4. python3 src/sando/scripts/analyze_dynamic_benchmark.py --data-dir src/sando/benchmark_data/static --all-cases --table-type static --latex-name static_benchmark.tex
-```
-
-## Hover Avoidance Testing
-
-SANDO includes a hover avoidance system that detects nearby dynamic obstacles when the drone is hovering at a reached goal and autonomously evades them. Two test modes are provided via `run_sim.py`.
-
-### Hover Test (Trefoil Obstacles)
-
-Spawns the drone in an empty world with 3 trefoil-knot obstacles orbiting nearby. The drone's goal equals its start position, so it immediately enters `GOAL_REACHED`. As obstacles pass close, the drone transitions to `HOVER_AVOIDING`, flies away, then returns when safe.
-
-```bash
-cd ~/code/dynus_ws
-colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select sando
-source install/setup.bash
-
-# Launch hover avoidance test
+# Hover test — trefoil obstacles orbit near a hovering drone
 python3 src/sando/scripts/run_sim.py --mode hover-test -s install/setup.bash
-```
 
-**What to expect in RViz:**
-- Red translucent spheres show the danger zone around each obstacle (radius = `hover_avoidance_d_trigger`)
-- An orange dot marks the hover position (the goal the drone returns to)
-- The drone evades when a red sphere covers the orange dot, then flies back when it clears
-
-**Expected console output cycle:**
-1. Drone starts at (0, 0, 2) and goal is sent to (0, 0, 2)
-2. `GOAL_REACHED` — drone hovers in place
-3. Obstacle approaches — `HOVER_AVOIDING` — drone moves away
-4. Obstacle recedes — `TRAVELING` — drone returns to hover position
-5. `GOAL_SEEN` — `GOAL_REACHED` — cycle repeats
-
-### Adversarial Test (Chaser vs. Evader)
-
-Spawns two SANDO agents: an evader (NX01, v_max=5.0 m/s) hovering in place and a chaser (NX02, v_max=1.0 m/s) that continuously navigates toward the evader. Both agents share trajectories, so the evader's hover avoidance triggers when the chaser approaches.
-
-```bash
-cd ~/code/dynus_ws
-colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select sando
-source install/setup.bash
-
-# Launch adversarial test
+# Adversarial test — chaser drone pursues an evader drone
 python3 src/sando/scripts/run_sim.py --mode adversarial-test -s install/setup.bash
 ```
 
-**What to expect:**
-- NX01 (evader) hovers at (0, 0, 2) and evades when NX02 gets close
-- NX02 (chaser) starts at (8, 0, 2) and slowly pursues NX01
-- A `chaser_goal_forwarder` node continuously sends NX01's position as NX02's goal
-
-### Configuration
-
-Hover avoidance parameters are in `src/sando/config/sando.yaml`:
-
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `hover_avoidance_enabled` | Enable/disable hover avoidance | `true` |
-| `hover_avoidance_d_trigger` | Danger radius around obstacles (m) | `4.0` |
-| `hover_avoidance_h` | Evasion distance (m) | `3.0` |
+| `hover_avoidance_enabled` | Enable/disable hover avoidance | `false` |
+| `hover_avoidance_d_trigger` | Danger radius [m] | `4.0` |
+| `hover_avoidance_h` | Evasion distance [m] | `3.0` |
 
-Both test modes support `--dry-run` to inspect the generated tmuxp YAML without launching:
+Both modes support `--dry-run` to inspect the generated tmuxp YAML without launching.
 
-```bash
-python3 src/sando/scripts/run_sim.py --mode hover-test -s install/setup.bash --dry-run
-python3 src/sando/scripts/run_sim.py --mode adversarial-test -s install/setup.bash --dry-run
-```
+</details>
+
+<details>
+<summary><b>Architecture overview</b></summary>
+
+### Planning Pipeline
+
+1. **Sensor Input** — Point cloud subscriptions update the voxel grid
+2. **HGP Manager** (`include/hgp/`) — Heat map-based global planner: voxel map, A* with heat costs, convex decomposition into safety corridors
+3. **SANDO Core** (`include/sando/sando.hpp`) — Planning orchestrator with state machine (YAWING → TRAVELING → GOAL_SEEN → GOAL_REACHED)
+4. **Gurobi Solver** (`include/sando/gurobi_solver.hpp`) — Local trajectory optimization using Hermite spline parameterization with dynamic factor adaptation
+5. **SANDO Node** (`src/sando/sando_node.cpp`) — ROS 2 node wrapper
+
+### Key Innovations
+
+- **Spatiotemporal safe flight corridors** — convex decomposition that accounts for obstacle motion over time
+- **Variable elimination** — reduces QP solve time by analytically eliminating dependent variables
+- **Dynamic factor adaptation** — automatically adjusts time-scaling for reliable convergence
+- **Dynamic heat maps** — soft-cost global planning that steers away from predicted obstacle trajectories
+
+</details>
+
+## Contributing
+
+Contributions are welcome! Please:
+
+1. Fork the repo and create a feature branch
+2. Follow the existing code style (Google C++ style via `.clang-format`, `ruff` for Python)
+3. Ensure the build passes: `colcon build --packages-select sando`
+4. Submit a pull request with a clear description of changes
+
+For bug reports and feature requests, please open a [GitHub Issue](https://github.com/mit-acl/dynus/issues).
+
+## License
+
+BSD 3-Clause License. See [LICENSE](LICENSE) for details.

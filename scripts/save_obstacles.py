@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------------
+# Copyright 2025, Kota Kondo, Aerospace Controls Laboratory
+# Massachusetts Institute of Technology
+# All Rights Reserved
+# Authors: Kota Kondo, et al.
+# See LICENSE file for the license information
+# ----------------------------------------------------------------------------
 """
 SANDO Obstacle Data Saver
 
@@ -14,7 +21,7 @@ import argparse
 import json
 import sys
 import time
-from typing import List, Dict
+from typing import Dict
 
 import rclpy
 from rclpy.node import Node
@@ -25,16 +32,13 @@ class ObstacleSaver(Node):
     """ROS2 node to capture and save obstacle information from /trajs"""
 
     def __init__(self, traj_topic: str = "/trajs"):
-        super().__init__('obstacle_saver')
+        super().__init__("obstacle_saver")
 
         self.obstacles = {}  # Dict to store unique obstacles
 
         # Subscribe to DynTraj messages
         self.sub_trajs = self.create_subscription(
-            DynTraj,
-            traj_topic,
-            self.traj_callback,
-            10
+            DynTraj, traj_topic, self.traj_callback, 10
         )
 
         self.get_logger().info(f"Subscribed to {traj_topic}")
@@ -58,29 +62,25 @@ class ObstacleSaver(Node):
 
         # Extract obstacle data
         obs_data = {
-            'id': obs_id,
-            'position': [
-                msg.pos.x,
-                msg.pos.y,
-                msg.pos.z
-            ],
-            'half_extents': half_extents,
-            'is_dynamic': msg.mode == 'analytic' and len(msg.function) > 0,
-            'obstacle_id': msg.id,
+            "id": obs_id,
+            "position": [msg.pos.x, msg.pos.y, msg.pos.z],
+            "half_extents": half_extents,
+            "is_dynamic": msg.mode == "analytic" and len(msg.function) > 0,
+            "obstacle_id": msg.id,
         }
 
         # Add analytical expressions if available
         if len(msg.function) >= 3:
-            obs_data['function'] = {
-                'x': msg.function[0],
-                'y': msg.function[1],
-                'z': msg.function[2]
+            obs_data["function"] = {
+                "x": msg.function[0],
+                "y": msg.function[1],
+                "z": msg.function[2],
             }
         if len(msg.velocity) >= 3:
-            obs_data['velocity'] = {
-                'vx': msg.velocity[0],
-                'vy': msg.velocity[1],
-                'vz': msg.velocity[2]
+            obs_data["velocity"] = {
+                "vx": msg.velocity[0],
+                "vy": msg.velocity[1],
+                "vz": msg.velocity[2],
             }
 
         # Store or update obstacle
@@ -89,39 +89,40 @@ class ObstacleSaver(Node):
     def get_obstacle_data(self) -> Dict:
         """Get collected obstacle data"""
         return {
-            'obstacles': list(self.obstacles.values()),
-            'num_obstacles': len(self.obstacles),
-            'num_dynamic': sum(1 for o in self.obstacles.values() if o['is_dynamic']),
-            'num_static': sum(1 for o in self.obstacles.values() if not o['is_dynamic'])
+            "obstacles": list(self.obstacles.values()),
+            "num_obstacles": len(self.obstacles),
+            "num_dynamic": sum(1 for o in self.obstacles.values() if o["is_dynamic"]),
+            "num_static": sum(
+                1 for o in self.obstacles.values() if not o["is_dynamic"]
+            ),
         }
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Save obstacle data from ROS topics',
+        description="Save obstacle data from ROS topics",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__
+        epilog=__doc__,
     )
 
     parser.add_argument(
-        '--output', '-o',
+        "--output", "-o", type=str, required=True, help="Output JSON file path"
+    )
+
+    parser.add_argument(
+        "--topic",
+        "-t",
         type=str,
-        required=True,
-        help='Output JSON file path'
+        default="/trajs",
+        help="DynTraj topic (default: /trajs)",
     )
 
     parser.add_argument(
-        '--topic', '-t',
-        type=str,
-        default='/trajs',
-        help='DynTraj topic (default: /trajs)'
-    )
-
-    parser.add_argument(
-        '--duration', '-d',
+        "--duration",
+        "-d",
         type=float,
         default=5.0,
-        help='Duration to collect data in seconds (default: 5.0)'
+        help="Duration to collect data in seconds (default: 5.0)",
     )
 
     args = parser.parse_args()
@@ -147,7 +148,7 @@ def main():
     print(f"  Static: {data['num_static']}")
 
     # Save to JSON
-    with open(args.output, 'w') as f:
+    with open(args.output, "w") as f:
         json.dump(data, f, indent=2)
 
     print(f"\nObstacle data saved to: {args.output}")
@@ -159,5 +160,5 @@ def main():
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

@@ -1,64 +1,90 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------------
+# Copyright 2025, Kota Kondo, Aerospace Controls Laboratory
+# Massachusetts Institute of Technology
+# All Rights Reserved
+# Authors: Kota Kondo, et al.
+# See LICENSE file for the license information
+# ----------------------------------------------------------------------------
 """Unified benchmark runner for SANDO, I-MPC, FAPP, and Ego-Swarm2 planners."""
 
 import argparse
 import glob
 import os
-import signal
 import subprocess
 import time
 
 TEST_TIMEOUT = 5  # seconds per command in --test mode
 
-PLANNERS = {
-    "sando": {
-        "name": "SANDO",
-        "key": "sando",
-        "working_dir": "/home/kkondo/code/dynus_ws",
-        "benchmark_cmd": (
-            "colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select sando"
-            " && . install/setup.bash"
-            " && python3 src/sando/scripts/run_benchmark.py"
-            " --setup-bash install/setup.bash"
-            " --num-trials {num_trials}"
-            " --start-seed {seed_start}"
-        ),
-        "analysis_cmd": (
-            ". install/setup.bash"
-            " && python3 src/sando/scripts/analyze_dynamic_benchmark.py"
-            " --data-dir {data_dir}"
-        ),
-        "data_base_dir": "src/sando/benchmark_data/default",
-        "data_glob_pattern": "*",
-    },
-    "impc": {
-        "name": "I-MPC",
-        "key": "impc",
-        "working_dir": "/home/kkondo/code/ip-mpc_ws/Intent-MPC/docker",
-        "benchmark_cmd": "make run-benchmark-sweep NUM_TRIALS={num_trials}",
-        "analysis_cmd": "make analyze-benchmark-sweep",
-        "data_base_dir": "../data",
-        "data_glob_pattern": "benchmark_wa*",
-    },
-    "fapp": {
-        "name": "FAPP",
-        "key": "fapp",
-        "working_dir": "/home/kkondo/code/fapp_ws/src/FAPP/docker",
-        "benchmark_cmd": "make run-benchmark-sweep NUM_TRIALS={num_trials}",
-        "analysis_cmd": "make analyze-benchmark-sweep",
-        "data_base_dir": "../data",
-        "data_glob_pattern": "benchmark_wt*",
-    },
-    "ego": {
-        "name": "EGO-Swarm v2",
-        "key": "ego",
-        "working_dir": "/home/kkondo/code/ego_swarm_v2_ws/src/EGO-Planner-v2/docker",
-        "benchmark_cmd": "make run-dynamic-benchmark-sweep NUM_TRIALS={num_trials}",
-        "analysis_cmd": "make analyze-dynamic-sweep",
-        "data_base_dir": "../data_dynamic",
-        "data_glob_pattern": "benchmark_*_wt*",
-    },
-}
+def _get_planner_configs():
+    """Build planner configs using environment variables for workspace paths.
+
+    Set these environment variables to override the default working directories:
+        SANDO_WORKSPACE_DIR  - SANDO workspace (default: auto-detect from script location)
+        IMPC_WORKSPACE_DIR   - I-MPC workspace
+        FAPP_WORKSPACE_DIR   - FAPP workspace
+        EGO_WORKSPACE_DIR    - EGO-Swarm v2 workspace
+    """
+    _sando_ws = os.environ.get(
+        "SANDO_WORKSPACE_DIR",
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")),
+    )
+    _impc_ws = os.environ.get("IMPC_WORKSPACE_DIR", "")
+    _fapp_ws = os.environ.get("FAPP_WORKSPACE_DIR", "")
+    _ego_ws = os.environ.get("EGO_WORKSPACE_DIR", "")
+
+    return {
+        "sando": {
+            "name": "SANDO",
+            "key": "sando",
+            "working_dir": _sando_ws,
+            "benchmark_cmd": (
+                "colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release --packages-select sando"
+                " && . install/setup.bash"
+                " && python3 src/sando/scripts/run_benchmark.py"
+                " --setup-bash install/setup.bash"
+                " --num-trials {num_trials}"
+                " --start-seed {seed_start}"
+            ),
+            "analysis_cmd": (
+                ". install/setup.bash"
+                " && python3 src/sando/scripts/analyze_dynamic_benchmark.py"
+                " --data-dir {data_dir}"
+            ),
+            "data_base_dir": "src/sando/benchmark_data/default",
+            "data_glob_pattern": "*",
+        },
+        "impc": {
+            "name": "I-MPC",
+            "key": "impc",
+            "working_dir": os.path.join(_impc_ws, "docker") if _impc_ws else "",
+            "benchmark_cmd": "make run-benchmark-sweep NUM_TRIALS={num_trials}",
+            "analysis_cmd": "make analyze-benchmark-sweep",
+            "data_base_dir": "../data",
+            "data_glob_pattern": "benchmark_wa*",
+        },
+        "fapp": {
+            "name": "FAPP",
+            "key": "fapp",
+            "working_dir": os.path.join(_fapp_ws, "docker") if _fapp_ws else "",
+            "benchmark_cmd": "make run-benchmark-sweep NUM_TRIALS={num_trials}",
+            "analysis_cmd": "make analyze-benchmark-sweep",
+            "data_base_dir": "../data",
+            "data_glob_pattern": "benchmark_wt*",
+        },
+        "ego": {
+            "name": "EGO-Swarm v2",
+            "key": "ego",
+            "working_dir": os.path.join(_ego_ws, "docker") if _ego_ws else "",
+            "benchmark_cmd": "make run-dynamic-benchmark-sweep NUM_TRIALS={num_trials}",
+            "analysis_cmd": "make analyze-dynamic-sweep",
+            "data_base_dir": "../data_dynamic",
+            "data_glob_pattern": "benchmark_*_wt*",
+        },
+    }
+
+
+PLANNERS = _get_planner_configs()
 
 PLANNER_ORDER = ["sando", "impc", "fapp", "ego"]
 
@@ -94,8 +120,12 @@ def _run_cmd(cmd, cwd, timeout=None):
     TimeoutExpired is raised.
     """
     proc = subprocess.run(
-        cmd, shell=True, cwd=cwd, check=True,
-        timeout=timeout, start_new_session=True,
+        cmd,
+        shell=True,
+        cwd=cwd,
+        check=True,
+        timeout=timeout,
+        start_new_session=True,
     )
 
 
@@ -106,9 +136,7 @@ def run_benchmark(planner, num_trials, seed_start, timeout=None):
         The path to the output data directory.
     """
     before_time = time.time()
-    cmd = planner["benchmark_cmd"].format(
-        num_trials=num_trials, seed_start=seed_start
-    )
+    cmd = planner["benchmark_cmd"].format(num_trials=num_trials, seed_start=seed_start)
     print(f"\n>>> Running benchmark: {cmd}")
     print(f">>> Working dir: {planner['working_dir']}\n")
     _run_cmd(cmd, cwd=planner["working_dir"], timeout=timeout)
@@ -179,7 +207,9 @@ def main():
     args = parser.parse_args()
 
     if args.test:
-        print(f"*** TEST MODE: each command will run for {TEST_TIMEOUT}s then move on ***\n")
+        print(
+            f"*** TEST MODE: each command will run for {TEST_TIMEOUT}s then move on ***\n"
+        )
 
     selected = [PLANNERS[k] for k in args.planners]
 
@@ -199,8 +229,9 @@ def main():
             timeout = TEST_TIMEOUT if args.test else None
             t0 = time.time()
             try:
-                data_dir = run_benchmark(planner, args.num_trials, args.seed_start,
-                                         timeout=timeout)
+                data_dir = run_benchmark(
+                    planner, args.num_trials, args.seed_start, timeout=timeout
+                )
                 elapsed = time.time() - t0
                 results[key] = {
                     "benchmark": "SUCCESS",
@@ -262,16 +293,14 @@ def main():
             if data_dir is None:
                 result["analysis"] = "SKIPPED"
                 print(
-                    f"\n>>> Skipping analysis for {planner['name']}"
-                    " (no data directory)"
+                    f"\n>>> Skipping analysis for {planner['name']} (no data directory)"
                 )
                 continue
 
             if result.get("benchmark") == "FAILED":
                 result["analysis"] = "SKIPPED"
                 print(
-                    f"\n>>> Skipping analysis for {planner['name']}"
-                    " (benchmark failed)"
+                    f"\n>>> Skipping analysis for {planner['name']} (benchmark failed)"
                 )
                 continue
 
@@ -328,9 +357,7 @@ def main():
             f" {data_dir_display}"
         )
     print("=" * 66)
-    latex_path = (
-        "/home/kkondo/paper_writing/SANDO_v3/tables/dynamic_benchmark.tex"
-    )
+    latex_path = "(set --latex-dir to specify output location)/dynamic_benchmark.tex"
     print(f"LaTeX table: {latex_path}")
     print("=" * 66)
 

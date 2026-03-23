@@ -17,4 +17,4 @@ windows:
       # run SFC generator
       - shell_command:
         - sleep 3
-        - ros2 run sando corridor_generator_node --ros-args -p max_dist_vertexes:=3.0 -p num_P:=3 -p global_planner:=astar_heat -p global_planner_huristic_weight:=2.0
+        - ros2 run sando corridor_generator_node --ros-args -p max_dist_vertexes:=3.0 -p num_P:=3 -p global_planner:=astar_heat -p global_planner_heuristic_weight:=2.0

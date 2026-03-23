@@ -22,21 +22,20 @@ from dynus_interfaces.msg import State
 
 
 class ChaserGoalForwarder(Node):
-
     def __init__(self):
-        super().__init__('chaser_goal_forwarder')
+        super().__init__("chaser_goal_forwarder")
 
         # Parameters
-        self.evader_ns = self.declare_parameter('evader_ns', 'NX01').value
-        self.chaser_ns = self.declare_parameter('chaser_ns', 'NX02').value
-        self.rate_hz = self.declare_parameter('rate_hz', 2.0).value
+        self.evader_ns = self.declare_parameter("evader_ns", "NX01").value
+        self.chaser_ns = self.declare_parameter("chaser_ns", "NX02").value
+        self.rate_hz = self.declare_parameter("rate_hz", 2.0).value
 
         # State from evader
         self._evader_state = None
         self._state_received = False
         self.create_subscription(
             State,
-            f'/{self.evader_ns}/state',
+            f"/{self.evader_ns}/state",
             self._state_cb,
             10,
         )
@@ -44,7 +43,7 @@ class ChaserGoalForwarder(Node):
         # Goal publisher for chaser
         self._pub = self.create_publisher(
             PoseStamped,
-            f'/{self.chaser_ns}/term_goal',
+            f"/{self.chaser_ns}/term_goal",
             10,
         )
 
@@ -53,18 +52,18 @@ class ChaserGoalForwarder(Node):
         self.create_timer(1.0 / self.rate_hz, self._publish_goal)
 
         self.get_logger().info(
-            f'[chaser_goal_forwarder] Subscribing to /{self.evader_ns}/state'
+            f"[chaser_goal_forwarder] Subscribing to /{self.evader_ns}/state"
         )
         self.get_logger().info(
-            f'[chaser_goal_forwarder] Publishing to /{self.chaser_ns}/term_goal '
-            f'at {self.rate_hz} Hz'
+            f"[chaser_goal_forwarder] Publishing to /{self.chaser_ns}/term_goal "
+            f"at {self.rate_hz} Hz"
         )
 
     def _state_cb(self, msg: State):
         if not self._state_received:
             self.get_logger().info(
-                f'[chaser_goal_forwarder] First state received from /{self.evader_ns}: '
-                f'({msg.pos.x:.2f}, {msg.pos.y:.2f}, {msg.pos.z:.2f})'
+                f"[chaser_goal_forwarder] First state received from /{self.evader_ns}: "
+                f"({msg.pos.x:.2f}, {msg.pos.y:.2f}, {msg.pos.z:.2f})"
             )
             self._state_received = True
         self._evader_state = msg
@@ -74,12 +73,12 @@ class ChaserGoalForwarder(Node):
             self._count += 1
             if self._count % 10 == 0:
                 self.get_logger().warn(
-                    f'[chaser_goal_forwarder] No state from /{self.evader_ns} yet '
-                    f'(waited {self._count / self.rate_hz:.0f}s)'
+                    f"[chaser_goal_forwarder] No state from /{self.evader_ns} yet "
+                    f"(waited {self._count / self.rate_hz:.0f}s)"
                 )
             return
         goal = PoseStamped()
-        goal.header.frame_id = 'map'
+        goal.header.frame_id = "map"
         goal.header.stamp = self.get_clock().now().to_msg()
         goal.pose.position.x = self._evader_state.pos.x
         goal.pose.position.y = self._evader_state.pos.y
@@ -87,8 +86,8 @@ class ChaserGoalForwarder(Node):
         goal.pose.orientation.w = 1.0
         self._pub.publish(goal)
         self.get_logger().info(
-            f'[chaser_goal_forwarder] Published goal to /{self.chaser_ns}: '
-            f'({goal.pose.position.x:.2f}, {goal.pose.position.y:.2f}, {goal.pose.position.z:.2f})'
+            f"[chaser_goal_forwarder] Published goal to /{self.chaser_ns}: "
+            f"({goal.pose.position.x:.2f}, {goal.pose.position.y:.2f}, {goal.pose.position.z:.2f})"
         )
 
 
@@ -100,5 +99,5 @@ def main(args=None):
     rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

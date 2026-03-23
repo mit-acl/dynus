@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------------
+# Copyright 2025, Kota Kondo, Aerospace Controls Laboratory
+# Massachusetts Institute of Technology
+# All Rights Reserved
+# Authors: Kota Kondo, et al.
+# See LICENSE file for the license information
+# ----------------------------------------------------------------------------
 """
 Run Gazebo first:
   ros2 launch gazebo_ros gazebo.launch.py
@@ -41,6 +48,7 @@ Parameters (new ones starred ★):
 ★ box_width_min/max, box_depth_min/max (m)  # footprint size ranges for boxes
 ★ yaw_random (bool)                          # random yaw for boxes
 """
+
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Pose
@@ -52,40 +60,92 @@ import time
 import csv
 import os
 
+
 # ---------- helpers ----------
 def yaw_to_quat(yaw: float):
     s = math.sin(0.5 * yaw)
     c = math.cos(0.5 * yaw)
     return 0.0, 0.0, s, c
 
+
 class GazeboPrimitiveSpawner:
     def __init__(self, node: Node):
         self.node = node
-        self.client = node.create_client(SpawnEntity, 'spawn_entity')
+        self.client = node.create_client(SpawnEntity, "spawn_entity")
         while not self.client.wait_for_service(timeout_sec=1.0):
-            self.node.get_logger().info('Waiting for spawn_entity service...')
+            self.node.get_logger().info("Waiting for spawn_entity service...")
 
-    def spawn_cylinder(self, name: str, frame_id: str, x: float, y: float, z: float,
-                       radius: float, height: float, mass: float = 2.0):
-        self._spawn_primitive(name, False, frame_id, x, y, z,
-                              0.0, 0.0, 0.0, 1.0,
-                              radius, height, depth=1.0, mass=mass)
+    def spawn_cylinder(
+        self,
+        name: str,
+        frame_id: str,
+        x: float,
+        y: float,
+        z: float,
+        radius: float,
+        height: float,
+        mass: float = 2.0,
+    ):
+        self._spawn_primitive(
+            name,
+            False,
+            frame_id,
+            x,
+            y,
+            z,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            radius,
+            height,
+            depth=1.0,
+            mass=mass,
+        )
 
-    def spawn_box(self, name: str, frame_id: str, x: float, y: float, z: float,
-                  width: float, depth: float, height: float,
-                  yaw: float = 0.0, mass: float = 2.0):
+    def spawn_box(
+        self,
+        name: str,
+        frame_id: str,
+        x: float,
+        y: float,
+        z: float,
+        width: float,
+        depth: float,
+        height: float,
+        yaw: float = 0.0,
+        mass: float = 2.0,
+    ):
         qx, qy, qz, qw = yaw_to_quat(yaw)
-        self._spawn_primitive(name, True, frame_id, x, y, z,
-                              qx, qy, qz, qw,
-                              width, height, depth, mass)
+        self._spawn_primitive(
+            name, True, frame_id, x, y, z, qx, qy, qz, qw, width, height, depth, mass
+        )
 
-    def _spawn_primitive(self, name: str, do_cube: bool, frame_id: str,
-                         x: float, y: float, z: float,
-                         qx: float, qy: float, qz: float, qw: float,
-                         width_or_radius: float, height: float, depth: float, mass: float):
+    def _spawn_primitive(
+        self,
+        name: str,
+        do_cube: bool,
+        frame_id: str,
+        x: float,
+        y: float,
+        z: float,
+        qx: float,
+        qy: float,
+        qz: float,
+        qw: float,
+        width_or_radius: float,
+        height: float,
+        depth: float,
+        mass: float,
+    ):
         pose = Pose()
-        pose.position.x = x; pose.position.y = y; pose.position.z = z
-        pose.orientation.x = qx; pose.orientation.y = qy; pose.orientation.z = qz; pose.orientation.w = qw
+        pose.position.x = x
+        pose.position.y = y
+        pose.position.z = z
+        pose.orientation.x = qx
+        pose.orientation.y = qy
+        pose.orientation.z = qz
+        pose.orientation.w = qw
 
         if do_cube:
             geometry_str = f"<box><size>{width_or_radius} {depth} {height}</size></box>"
@@ -138,9 +198,10 @@ class GazeboPrimitiveSpawner:
         future = self.client.call_async(request)
         rclpy.spin_until_future_complete(self.node, future)
 
+
 class ForestSpawner(Node):
     def __init__(self):
-        super().__init__('create_random_forest')
+        super().__init__("create_random_forest")
 
         # ---------------- Params ----------------
         self.declare_parameter("seed", 0)
@@ -152,8 +213,8 @@ class ForestSpawner(Node):
         self.declare_parameter("shrink_min_radius", -1.0)  # <= 0 → use kMinRadius
 
         # shape/mix params
-        self.declare_parameter("shape_mode", "cylinder")     # "cylinder" | "box" | "mixed"
-        self.declare_parameter("box_probability", 0.5)       # used when shape_mode="mixed"
+        self.declare_parameter("shape_mode", "cylinder")  # "cylinder" | "box" | "mixed"
+        self.declare_parameter("box_probability", 0.5)  # used when shape_mode="mixed"
         self.declare_parameter("box_width_min", 1.0)
         self.declare_parameter("box_width_max", 3.0)
         self.declare_parameter("box_depth_min", 10.0)
@@ -164,9 +225,15 @@ class ForestSpawner(Node):
         difficulty = str(self.get_parameter("difficulty").value)
         self.min_clearance = max(0.0, float(self.get_parameter("min_clearance").value))
         self.max_place_tries = int(self.get_parameter("max_place_tries").value)
-        self.shrink_after_ratio = min(max(float(self.get_parameter("shrink_after_ratio").value), 0.0), 1.0)
-        self.shrink_rate = min(max(float(self.get_parameter("shrink_rate").value), 0.05), 0.999)
-        self.param_shrink_min_radius = float(self.get_parameter("shrink_min_radius").value)
+        self.shrink_after_ratio = min(
+            max(float(self.get_parameter("shrink_after_ratio").value), 0.0), 1.0
+        )
+        self.shrink_rate = min(
+            max(float(self.get_parameter("shrink_rate").value), 0.05), 0.999
+        )
+        self.param_shrink_min_radius = float(
+            self.get_parameter("shrink_min_radius").value
+        )
 
         self.shape_mode = str(self.get_parameter("shape_mode").value).lower()
         self.box_probability = float(self.get_parameter("box_probability").value)
@@ -177,33 +244,41 @@ class ForestSpawner(Node):
         self.box_d_max = float(self.get_parameter("box_depth_max").value)
         self.yaw_random = bool(self.get_parameter("yaw_random").value)
 
+        # --- CSV output directory ---
+        self.declare_parameter("csv_dir", "")
+        csv_dir = self.get_parameter("csv_dir").value
+        if not csv_dir:
+            csv_dir = os.path.join(os.path.expanduser("~"), "data")
+
         # --- Difficulty & density ---
         self.dynamic = False
         if difficulty == "easy":
             self.density = 0.05
-            CSV_PATH = "/home/kkondo/data/easy_forest_obstacle_parameters.csv"
+            CSV_PATH = os.path.join(csv_dir, "easy_forest_obstacle_parameters.csv")
         elif difficulty == "medium":
             self.density = 0.1
-            CSV_PATH = "/home/kkondo/data/medium_forest_obstacle_parameters.csv"
+            CSV_PATH = os.path.join(csv_dir, "medium_forest_obstacle_parameters.csv")
         elif difficulty == "hard":
             self.density = 0.2
-            CSV_PATH = "/home/kkondo/data/hard_forest_obstacle_parameters.csv"
+            CSV_PATH = os.path.join(csv_dir, "hard_forest_obstacle_parameters.csv")
         elif difficulty == "dynamic":
             self.density = 0.05
             self.dynamic = True
             self.dynamic_min_x = 35.0
             self.dynamic_max_x = 65.0
-            CSV_PATH = "/home/kkondo/data/dynamic_forest_obstacle_parameters.csv"
+            CSV_PATH = os.path.join(csv_dir, "dynamic_forest_obstacle_parameters.csv")
         else:
-            self.get_logger().warn(f"Unknown difficulty '{difficulty}', defaulting to medium.")
+            self.get_logger().warn(
+                f"Unknown difficulty '{difficulty}', defaulting to medium."
+            )
             self.density = 0.1
-            CSV_PATH = "/home/kkondo/data/medium_forest_obstacle_parameters.csv"
+            CSV_PATH = os.path.join(csv_dir, "medium_forest_obstacle_parameters.csv")
 
         # Map bounds
         self.min_x = 3.0
         self.max_x = 103.0
         self.min_y = -20.0
-        self.max_y =  20.0
+        self.max_y = 20.0
         self.size_z = 5.0
 
         usable_area = (self.max_x - self.min_x) * (self.max_y - self.min_y)
@@ -213,7 +288,11 @@ class ForestSpawner(Node):
             f"Seed: {seed}, Difficulty: {difficulty}, min_clearance: {self.min_clearance} m, "
             f"max_place_tries: {self.max_place_tries}, shrink_after_ratio: {self.shrink_after_ratio}, "
             f"shrink_rate: {self.shrink_rate}, shape_mode: {self.shape_mode}, box_prob: {self.box_probability}"
-            + (f", dynamic-free zone: [{self.dynamic_min_x},{self.dynamic_max_x}]" if self.dynamic else "")
+            + (
+                f", dynamic-free zone: [{self.dynamic_min_x},{self.dynamic_max_x}]"
+                if self.dynamic
+                else ""
+            )
         )
         self.get_logger().info(
             f"Usable area: {usable_area:.2f} m^2 | Target density: {self.density:.3f} → Target area: {target_area:.2f} m^2"
@@ -234,8 +313,14 @@ class ForestSpawner(Node):
         self.kMaxRadius = 1.5
 
         # Shrink thresholds
-        self.shrink_min_radius = self.param_shrink_min_radius if self.param_shrink_min_radius > 0.0 else self.kMinRadius
-        self.shrink_threshold = max(1, int(self.max_place_tries * self.shrink_after_ratio))
+        self.shrink_min_radius = (
+            self.param_shrink_min_radius
+            if self.param_shrink_min_radius > 0.0
+            else self.kMinRadius
+        )
+        self.shrink_threshold = max(
+            1, int(self.max_place_tries * self.shrink_after_ratio)
+        )
 
         occupied_area = 0.0
         marker_array = MarkerArray()
@@ -244,7 +329,7 @@ class ForestSpawner(Node):
         placed = []
 
         def valid_with_clearance(x, y, eff_r):
-            for (xj, yj, rj) in placed:
+            for xj, yj, rj in placed:
                 if math.hypot(x - xj, y - yj) < (eff_r + rj + self.min_clearance):
                     return False
             return True
@@ -253,7 +338,20 @@ class ForestSpawner(Node):
         os.makedirs(os.path.dirname(CSV_PATH), exist_ok=True)
         with open(CSV_PATH, "w", newline="") as csvfile:
             csv_writer = csv.writer(csvfile)
-            csv_writer.writerow(["id", "shape", "x", "y", "z", "radius", "width", "depth", "height", "yaw"])
+            csv_writer.writerow(
+                [
+                    "id",
+                    "shape",
+                    "x",
+                    "y",
+                    "z",
+                    "radius",
+                    "width",
+                    "depth",
+                    "height",
+                    "yaw",
+                ]
+            )
 
             while occupied_area < target_area:
                 height = random.uniform(self.kMinHeight, self.kMaxHeight)
@@ -263,7 +361,11 @@ class ForestSpawner(Node):
                 if self.shape_mode == "box":
                     shape = "box"
                 elif self.shape_mode == "mixed":
-                    shape = "box" if (random.random() < self.box_probability) else "cylinder"
+                    shape = (
+                        "box"
+                        if (random.random() < self.box_probability)
+                        else "cylinder"
+                    )
 
                 # --- sample initial footprint ---
                 if shape == "cylinder":
@@ -274,7 +376,7 @@ class ForestSpawner(Node):
                     width = random.uniform(self.box_w_min, self.box_w_max)
                     depth = random.uniform(self.box_d_min, self.box_d_max)
                     radius = None
-                    yaw = (random.uniform(-math.pi, math.pi) if self.yaw_random else 0.0)
+                    yaw = random.uniform(-math.pi, math.pi) if self.yaw_random else 0.0
 
                 # --- place with retries + shrinking ---
                 placed_ok = False
@@ -283,8 +385,14 @@ class ForestSpawner(Node):
                 for attempt in range(1, self.max_place_tries + 1):
                     # Shrink if struggling
                     if attempt >= self.shrink_threshold:
-                        if shape == "cylinder" and radius is not None and radius > self.shrink_min_radius + 1e-9:
-                            new_r = max(radius * self.shrink_rate, self.shrink_min_radius)
+                        if (
+                            shape == "cylinder"
+                            and radius is not None
+                            and radius > self.shrink_min_radius + 1e-9
+                        ):
+                            new_r = max(
+                                radius * self.shrink_rate, self.shrink_min_radius
+                            )
                             if new_r < radius - 1e-9:
                                 if not shrunk_once:
                                     self.get_logger().info(
@@ -321,7 +429,10 @@ class ForestSpawner(Node):
 
                     # Respect dynamic free band in x
                     if self.dynamic:
-                        if not (pos_x + eff_r <= self.dynamic_min_x or pos_x - eff_r >= self.dynamic_max_x):
+                        if not (
+                            pos_x + eff_r <= self.dynamic_min_x
+                            or pos_x - eff_r >= self.dynamic_max_x
+                        ):
                             continue
 
                     if valid_with_clearance(pos_x, pos_y, eff_r):
@@ -338,11 +449,31 @@ class ForestSpawner(Node):
                 # ---- spawn into Gazebo ----
                 pos_z = height / 2.0
                 if shape == "cylinder":
-                    self.spawner.spawn_cylinder(str(n_objs), "world", pos_x, pos_y, pos_z, radius, height, mass=2.0)
+                    self.spawner.spawn_cylinder(
+                        str(n_objs),
+                        "world",
+                        pos_x,
+                        pos_y,
+                        pos_z,
+                        radius,
+                        height,
+                        mass=2.0,
+                    )
                     area = math.pi * radius * radius
                     placed.append((pos_x, pos_y, radius))
                 else:
-                    self.spawner.spawn_box(str(n_objs), "world", pos_x, pos_y, pos_z, width, depth, height, yaw=yaw, mass=2.0)
+                    self.spawner.spawn_box(
+                        str(n_objs),
+                        "world",
+                        pos_x,
+                        pos_y,
+                        pos_z,
+                        width,
+                        depth,
+                        height,
+                        yaw=yaw,
+                        mass=2.0,
+                    )
                     area = width * depth
                     eff_r = 0.5 * math.hypot(width, depth)
                     placed.append((pos_x, pos_y, eff_r))
@@ -351,29 +482,72 @@ class ForestSpawner(Node):
 
                 # ---- CSV + RViz marker ----
                 if shape == "cylinder":
-                    csv_writer.writerow([n_objs, "cylinder", pos_x, pos_y, pos_z, radius, 0.0, 0.0, height, 0.0])
+                    csv_writer.writerow(
+                        [
+                            n_objs,
+                            "cylinder",
+                            pos_x,
+                            pos_y,
+                            pos_z,
+                            radius,
+                            0.0,
+                            0.0,
+                            height,
+                            0.0,
+                        ]
+                    )
                     marker = Marker()
                     marker.header.frame_id = "world"
                     marker.header.stamp = self.get_clock().now().to_msg()
-                    marker.ns = "obstacles"; marker.id = n_objs
-                    marker.type = Marker.CYLINDER; marker.action = Marker.ADD
-                    marker.pose.position.x = pos_x; marker.pose.position.y = pos_y; marker.pose.position.z = pos_z
+                    marker.ns = "obstacles"
+                    marker.id = n_objs
+                    marker.type = Marker.CYLINDER
+                    marker.action = Marker.ADD
+                    marker.pose.position.x = pos_x
+                    marker.pose.position.y = pos_y
+                    marker.pose.position.z = pos_z
                     marker.pose.orientation.w = 1.0
-                    marker.scale.x = 2 * radius; marker.scale.y = 2 * radius; marker.scale.z = height
+                    marker.scale.x = 2 * radius
+                    marker.scale.y = 2 * radius
+                    marker.scale.z = height
                 else:
                     qx, qy, qz, qw = yaw_to_quat(yaw)
-                    csv_writer.writerow([n_objs, "box", pos_x, pos_y, pos_z, 0.0, width, depth, height, yaw])
+                    csv_writer.writerow(
+                        [
+                            n_objs,
+                            "box",
+                            pos_x,
+                            pos_y,
+                            pos_z,
+                            0.0,
+                            width,
+                            depth,
+                            height,
+                            yaw,
+                        ]
+                    )
                     marker = Marker()
                     marker.header.frame_id = "world"
                     marker.header.stamp = self.get_clock().now().to_msg()
-                    marker.ns = "obstacles"; marker.id = n_objs
-                    marker.type = Marker.CUBE; marker.action = Marker.ADD
-                    marker.pose.position.x = pos_x; marker.pose.position.y = pos_y; marker.pose.position.z = pos_z
-                    marker.pose.orientation.x = qx; marker.pose.orientation.y = qy
-                    marker.pose.orientation.z = qz; marker.pose.orientation.w = qw
-                    marker.scale.x = width; marker.scale.y = depth; marker.scale.z = height
+                    marker.ns = "obstacles"
+                    marker.id = n_objs
+                    marker.type = Marker.CUBE
+                    marker.action = Marker.ADD
+                    marker.pose.position.x = pos_x
+                    marker.pose.position.y = pos_y
+                    marker.pose.position.z = pos_z
+                    marker.pose.orientation.x = qx
+                    marker.pose.orientation.y = qy
+                    marker.pose.orientation.z = qz
+                    marker.pose.orientation.w = qw
+                    marker.scale.x = width
+                    marker.scale.y = depth
+                    marker.scale.z = height
 
-                marker.color.r = 0.0; marker.color.g = 1.0; marker.color.b = 0.0; marker.color.a = 1.0
+                marker.color.r = 0.0
+                marker.color.g = 1.0
+                marker.color.b = 0.0
+                marker.color.a = 1.0
                 marker_array.markers.append(marker)
 
                 n_objs += 1
@@ -386,18 +560,23 @@ class ForestSpawner(Node):
                     f"({completion_pct:.1f}% of target)  occupied={occupied_area:.2f}/{target_area:.2f} m^2"
                 )
 
-        self.get_logger().info(f"Final density: {(occupied_area/usable_area):.4f} "
-                               f"({min(occupied_area/target_area*100.0,100.0):.1f}% of target)")
-        self.get_logger().info(f"Total occupied area = {occupied_area:.2f} m^2, Number of objects: {n_objs}")
+        self.get_logger().info(
+            f"Final density: {(occupied_area / usable_area):.4f} "
+            f"({min(occupied_area / target_area * 100.0, 100.0):.1f}% of target)"
+        )
+        self.get_logger().info(
+            f"Total occupied area = {occupied_area:.2f} m^2, Number of objects: {n_objs}"
+        )
         time.sleep(3)
         self.get_logger().info("Publishing marker array for visualization.")
         self.marker_pub.publish(marker_array)
 
     def delete_model(self, model_name: str):
-        delete_client = self.create_client(DeleteEntity, 'delete_entity')
+        delete_client = self.create_client(DeleteEntity, "delete_entity")
         while not delete_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info('Waiting for delete_entity service...')
-        req = DeleteEntity.Request(); req.name = model_name
+            self.get_logger().info("Waiting for delete_entity service...")
+        req = DeleteEntity.Request()
+        req.name = model_name
         future = delete_client.call_async(req)
         rclpy.spin_until_future_complete(self, future)
 
@@ -435,16 +614,21 @@ class ForestSpawner(Node):
         </sdf>
         """
         pose = Pose()
-        pose.position.x = center_x; pose.position.y = center_y; pose.position.z = 0.0
+        pose.position.x = center_x
+        pose.position.y = center_y
+        pose.position.z = 0.0
         pose.orientation.w = 1.0
 
         req = SpawnEntity.Request()
-        req.name = "ground_plane_map"; req.xml = sdf
+        req.name = "ground_plane_map"
+        req.xml = sdf
         req.robot_namespace = "ground_plane_map"
-        req.initial_pose = pose; req.reference_frame = "world"
+        req.initial_pose = pose
+        req.reference_frame = "world"
 
         future = self.spawner.client.call_async(req)
         rclpy.spin_until_future_complete(self, future)
+
 
 def main(args=None):
     rclpy.init(args=args)
@@ -453,5 +637,6 @@ def main(args=None):
     node.destroy_node()
     rclpy.shutdown()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

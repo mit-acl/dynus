@@ -14,7 +14,9 @@ def create_trajectory_curve_2d(control_points, color=BLUE, stroke_width=None):
     return curve
 
 
-def create_trajectory_curve_3d(control_points, num_time_layers=4, time_layer_height=1.8):
+def create_trajectory_curve_3d(
+    control_points, num_time_layers=4, time_layer_height=1.8
+):
     """
     Create a 3D trajectory curve with segments colored by time layer.
 

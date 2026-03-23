@@ -13,21 +13,20 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from dynus_interfaces.msg import Goal, State
 from tf_transformations import euler_from_quaternion
-import numpy as np
 from numpy import linalg as LA
 import math
 
-class GoalToCmdVel(Node):
 
+class GoalToCmdVel(Node):
     def __init__(self):
 
-        super().__init__('goal_to_cmd_vel')
+        super().__init__("goal_to_cmd_vel")
 
         # Initialize state
         self.state = State()
-        self.state.pos.x = self.declare_parameter('x', 0.0).value
-        self.state.pos.y = self.declare_parameter('y', 0.0).value
-        self.state.pos.z = self.declare_parameter('z', 0.0).value
+        self.state.pos.x = self.declare_parameter("x", 0.0).value
+        self.state.pos.y = self.declare_parameter("y", 0.0).value
+        self.state.pos.z = self.declare_parameter("z", 0.0).value
         self.state.quat.x = 0.0
         self.state.quat.y = 0.0
         self.state.quat.z = 0.0
@@ -47,11 +46,11 @@ class GoalToCmdVel(Node):
         self.goal.a.z = 0.0
 
         # Publishers
-        self.pub_cmd_vel = self.create_publisher(Twist, 'cmd_vel_auto', 10)
+        self.pub_cmd_vel = self.create_publisher(Twist, "cmd_vel_auto", 10)
 
         # Subscribers
-        self.sub_goal = self.create_subscription(Goal, 'goal', self.goal_cb, 10)
-        self.sub_state = self.create_subscription(State, 'state', self.state_cb, 10)
+        self.sub_goal = self.create_subscription(Goal, "goal", self.goal_cb, 10)
+        self.sub_state = self.create_subscription(State, "state", self.state_cb, 10)
 
         # Timers
         self.create_timer(0.1, self.cmd_vel_cb)
@@ -68,9 +67,11 @@ class GoalToCmdVel(Node):
         self.goal_initialized = False
 
     def state_cb(self, msg):
-        
+
         self.state = msg
-        (yaw, _, _) = euler_from_quaternion(( msg.quat.x, msg.quat.y, msg.quat.z, msg.quat.w ), "szyx")
+        (yaw, _, _) = euler_from_quaternion(
+            (msg.quat.x, msg.quat.y, msg.quat.z, msg.quat.w), "szyx"
+        )
         self.current_yaw = yaw
         self.state_initialized = True
 
@@ -96,11 +97,15 @@ class GoalToCmdVel(Node):
 
         # Calculate the desired velocity and acceleration
         v_desired = math.sqrt(xd**2 + yd**2)
-        alpha = self.current_yaw - math.atan2(y - self.state.pos.y, x - self.state.pos.x)
+        alpha = self.current_yaw - math.atan2(
+            y - self.state.pos.y, x - self.state.pos.x
+        )
         alpha = self.wrap_pi(alpha)
         forward = 1 if -math.pi / 2.0 < alpha <= math.pi / 2.0 else -1
 
-        dist_error = forward * math.sqrt((x - self.state.pos.x)**2 + (y - self.state.pos.y)**2)
+        dist_error = forward * math.sqrt(
+            (x - self.state.pos.x) ** 2 + (y - self.state.pos.y) ** 2
+        )
 
         if abs(dist_error) < 0.03:
             alpha = 0
@@ -120,13 +125,16 @@ class GoalToCmdVel(Node):
             yaw_error = self.wrap_pi(self.current_yaw - desired_yaw)
 
             twist.linear.x = self.kv * v_desired + self.kdist * dist_error
-            twist.angular.z = self.kw * w_desired - self.kyaw * yaw_error - self.kalpha * alpha
+            twist.angular.z = (
+                self.kw * w_desired - self.kyaw * yaw_error - self.kalpha * alpha
+            )
 
         self.pub_cmd_vel.publish(twist)
 
     def wrap_pi(self, x):
         x = (x + math.pi) % (2 * math.pi)
         return x - math.pi if x >= 0 else x + math.pi
+
 
 def main(args=None):
     rclpy.init(args=args)
@@ -135,5 +143,6 @@ def main(args=None):
     node.destroy_node()
     rclpy.shutdown()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

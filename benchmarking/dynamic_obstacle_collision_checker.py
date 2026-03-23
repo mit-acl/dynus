@@ -1,28 +1,34 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------------
+# Copyright 2025, Kota Kondo, Aerospace Controls Laboratory
+# Massachusetts Institute of Technology
+# All Rights Reserved
+# Authors: Kota Kondo, et al.
+# See LICENSE file for the license information
+# ----------------------------------------------------------------------------
 """
 Dynamic obstacle collision + closest-distance analysis with caching.
 
 Example:
-  python3 src/sando/benchmarking/dynamic_obstacle_collision_checker.py 
-        --num_obstacles 50 
-        --bag_folder /media/kkondo/kota_elements/sando/dynamic_obstacle/bags/sando 
-        --drone_radius 0.1 
-        --sample_interval 0.01 
+  python3 src/sando/benchmarking/dynamic_obstacle_collision_checker.py
+        --num_obstacles 50
+        --bag_folder /path/to/sando/dynamic_obstacle/bags/sando
+        --drone_radius 0.1
+        --sample_interval 0.01
         --hist_bins 60
 
 Re-plot later from cache only (no bag I/O):
-python3 src/sando/benchmarking/dynamic_obstacle_collision_checker.py 
-        --num_obstacles 50 
-        --bag_folder /media/kkondo/kota_elements/sando/dynamic_obstacle/bags/sando 
-        --drone_radius 0.1 
-        --sample_interval 0.01 
+python3 src/sando/benchmarking/dynamic_obstacle_collision_checker.py
+        --num_obstacles 50
+        --bag_folder /path/to/sando/dynamic_obstacle/bags/sando
+        --drone_radius 0.1
+        --sample_interval 0.01
         --read-cache-only
         --hist_bins 60
 """
 
 import os
 import argparse
-import math
 from pathlib import Path
 from typing import Dict, Tuple, Optional, List
 
@@ -35,22 +41,29 @@ from rosbag2_py import SequentialReader, StorageOptions, ConverterOptions
 from rclpy.serialization import deserialize_message
 from tf2_msgs.msg import TFMessage
 
-FrameSeries = Dict[str, Dict[str, np.ndarray]]  # {"frame": {"times": np.ndarray[N], "pos": np.ndarray[N,3]}}
+FrameSeries = Dict[
+    str, Dict[str, np.ndarray]
+]  # {"frame": {"times": np.ndarray[N], "pos": np.ndarray[N,3]}}
+
 
 def _euclidean(a: np.ndarray, b: np.ndarray) -> float:
     d = a - b
     return float(np.sqrt(np.dot(d, d)))
 
 
-def _read_tf_series(bag_path: str, frames_of_interest: List[str]) -> Tuple[FrameSeries, Optional[float], Optional[float]]:
+def _read_tf_series(
+    bag_path: str, frames_of_interest: List[str]
+) -> Tuple[FrameSeries, Optional[float], Optional[float]]:
     """Read /tf and return per-frame time series restricted to frames_of_interest."""
     frames_set = set(frames_of_interest)
     series: FrameSeries = {}
     for f in frames_of_interest:
         series[f] = {"times": [], "pos": []}
 
-    storage_options = StorageOptions(uri=bag_path, storage_id='sqlite3')
-    converter_options = ConverterOptions(input_serialization_format='cdr', output_serialization_format='cdr')
+    storage_options = StorageOptions(uri=bag_path, storage_id="sqlite3")
+    converter_options = ConverterOptions(
+        input_serialization_format="cdr", output_serialization_format="cdr"
+    )
     reader = SequentialReader()
     reader.open(storage_options, converter_options)
 
@@ -78,7 +91,11 @@ def _read_tf_series(bag_path: str, frames_of_interest: List[str]) -> Tuple[Frame
             frame = tr.child_frame_id.strip()
             if frame not in frames_set:
                 continue
-            pos = (tr.transform.translation.x, tr.transform.translation.y, tr.transform.translation.z)
+            pos = (
+                tr.transform.translation.x,
+                tr.transform.translation.y,
+                tr.transform.translation.z,
+            )
             s = series[frame]
             s["times"].append(t_sec)
             s["pos"].append(pos)
@@ -99,7 +116,9 @@ def _read_tf_series(bag_path: str, frames_of_interest: List[str]) -> Tuple[Frame
     return series, t0, t1
 
 
-def _get_latest(series_times: np.ndarray, series_pos: np.ndarray, t_sample: float) -> Optional[np.ndarray]:
+def _get_latest(
+    series_times: np.ndarray, series_pos: np.ndarray, t_sample: float
+) -> Optional[np.ndarray]:
     """Latest position at or before t_sample."""
     if series_times.size == 0:
         return None
@@ -124,8 +143,8 @@ def analyze_bag_for_distances(
     # ----- gating config -----
     START_POS = np.array([0.0, 0.0, 3.0], dtype=np.float64)
     START_RADIUS = 1.0  # start collecting once > 1.0 m from start
-    GOAL_POS  = np.array([105.0, 0.0, 3.0], dtype=np.float64)
-    GOAL_RADIUS  = 1.0  # stop when within 1.0 m of goal
+    GOAL_POS = np.array([105.0, 0.0, 3.0], dtype=np.float64)
+    GOAL_RADIUS = 1.0  # stop when within 1.0 m of goal
 
     frames = [drone_frame] + [f"obstacle_{i}" for i in range(num_obstacles)]
     series, t0, t1 = _read_tf_series(bag_path, frames)
@@ -142,11 +161,11 @@ def analyze_bag_for_distances(
     min_dists_valid: List[float] = []
 
     drone_times = series[drone_frame]["times"]
-    drone_pos   = series[drone_frame]["pos"]
+    drone_pos = series[drone_frame]["pos"]
 
     # Pre-bind obstacle arrays for speed
     obs_times = [series[f"obstacle_{i}"]["times"] for i in range(num_obstacles)]
-    obs_pos   = [series[f"obstacle_{i}"]["pos"]   for i in range(num_obstacles)]
+    obs_pos = [series[f"obstacle_{i}"]["pos"] for i in range(num_obstacles)]
 
     collecting = False  # flips to True once drone > START_RADIUS from START_POS
 
@@ -183,15 +202,23 @@ def analyze_bag_for_distances(
 
     return np.asarray(rel_times_valid), np.asarray(min_dists_valid), False
 
-def save_cache(cache_dir: Path, bag_key: str, rel_times: np.ndarray, min_dists: np.ndarray,
-               meta: Dict[str, float]) -> Path:
+
+def save_cache(
+    cache_dir: Path,
+    bag_key: str,
+    rel_times: np.ndarray,
+    min_dists: np.ndarray,
+    meta: Dict[str, float],
+) -> Path:
     cache_dir.mkdir(parents=True, exist_ok=True)
     out = cache_dir / f"{bag_key}_closest_dists.npz"
     np.savez_compressed(out, times=rel_times, min_dists=min_dists, **meta)
     return out
 
 
-def load_cache(cache_dir: Path, bag_key: str) -> Optional[Tuple[np.ndarray, np.ndarray, Dict[str, float]]]:
+def load_cache(
+    cache_dir: Path, bag_key: str
+) -> Optional[Tuple[np.ndarray, np.ndarray, Dict[str, float]]]:
     path = cache_dir / f"{bag_key}_closest_dists.npz"
     if not path.exists():
         return None
@@ -219,23 +246,52 @@ def plot_hist(min_dists_all: np.ndarray, bins: int, out_path: Path, title: str):
     print(f"Saved histogram to: {out_path}")
 
 
-
 def main():
-    parser = argparse.ArgumentParser(description="Collision + closest-distance analyzer with caching & histograms.")
-    parser.add_argument('--num_obstacles', type=int, required=True,
-                        help="Number of obstacles (expected indices: 0..num_obstacles-1)")
-    parser.add_argument('--bag_folder', type=str, required=True,
-                        help="Folder containing rosbag2 directories (e.g., num_0, num_1, ...)")
-    parser.add_argument('--drone_radius', type=float, default=0.1, help="Collision radius [m].")
-    parser.add_argument('--sample_interval', type=float, default=0.01, help="Sampling interval [s].")
-    parser.add_argument('--hist_bins', type=int, default=50, help="Number of histogram bins.")
-    parser.add_argument('--per_bag_hist', action='store_true', help="Also write one histogram per bag.")
-    parser.add_argument('--read-cache-only', action='store_true',
-                        help="Do not read bags; only read cached NPZ and plot/aggregate.")
-    parser.add_argument('--reuse-cache', dest='reuse_cache', action='store_true', default=True,
-                        help="Reuse cache when present (default: True).")
-    parser.add_argument('--no-reuse-cache', dest='reuse_cache', action='store_false',
-                        help="Force recomputation even if cache exists.")
+    parser = argparse.ArgumentParser(
+        description="Collision + closest-distance analyzer with caching & histograms."
+    )
+    parser.add_argument(
+        "--num_obstacles",
+        type=int,
+        required=True,
+        help="Number of obstacles (expected indices: 0..num_obstacles-1)",
+    )
+    parser.add_argument(
+        "--bag_folder",
+        type=str,
+        required=True,
+        help="Folder containing rosbag2 directories (e.g., num_0, num_1, ...)",
+    )
+    parser.add_argument(
+        "--drone_radius", type=float, default=0.1, help="Collision radius [m]."
+    )
+    parser.add_argument(
+        "--sample_interval", type=float, default=0.01, help="Sampling interval [s]."
+    )
+    parser.add_argument(
+        "--hist_bins", type=int, default=50, help="Number of histogram bins."
+    )
+    parser.add_argument(
+        "--per_bag_hist", action="store_true", help="Also write one histogram per bag."
+    )
+    parser.add_argument(
+        "--read-cache-only",
+        action="store_true",
+        help="Do not read bags; only read cached NPZ and plot/aggregate.",
+    )
+    parser.add_argument(
+        "--reuse-cache",
+        dest="reuse_cache",
+        action="store_true",
+        default=True,
+        help="Reuse cache when present (default: True).",
+    )
+    parser.add_argument(
+        "--no-reuse-cache",
+        dest="reuse_cache",
+        action="store_false",
+        help="Force recomputation even if cache exists.",
+    )
     args = parser.parse_args()
 
     bag_folder = Path(args.bag_folder)
@@ -244,8 +300,13 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # List bag directories like num_0, num_1, ...
-    bag_dirs = sorted([d for d in os.listdir(bag_folder) if d.startswith("num_")
-                       and (bag_folder / d).is_dir()])
+    bag_dirs = sorted(
+        [
+            d
+            for d in os.listdir(bag_folder)
+            if d.startswith("num_") and (bag_folder / d).is_dir()
+        ]
+    )
 
     all_min_dists = []
     results = {}
@@ -273,8 +334,13 @@ def main():
                 if cached is not None:
                     rel_times, min_dists, meta = cached
                     # If sampling mismatch, recompute
-                    if "sample_interval" in meta and abs(meta["sample_interval"] - args.sample_interval) > 1e-12:
-                        print(f"[INFO] Cache sample_interval differs for {bag_key}; recomputing.")
+                    if (
+                        "sample_interval" in meta
+                        and abs(meta["sample_interval"] - args.sample_interval) > 1e-12
+                    ):
+                        print(
+                            f"[INFO] Cache sample_interval differs for {bag_key}; recomputing."
+                        )
                         rel_times = None
                         min_dists = None
 
@@ -299,23 +365,33 @@ def main():
         # Collision based on Euclidean distance, with empty-guard
         if min_dists.size > 0:
             dmin = float(min_dists.min())
-            collided = (dmin < args.drone_radius)
+            collided = dmin < args.drone_radius
             results[bag_dir] = "collision" if collided else "no collision"
 
             if collided:
-                print(f"\033[91m{bag_key}: COLLISION (min distance: {dmin:.3f} m)\033[0m")
+                print(
+                    f"\033[91m{bag_key}: COLLISION (min distance: {dmin:.3f} m)\033[0m"
+                )
             else:
-                print(f"\033[92m{bag_key}: no collision (min distance: {dmin:.3f} m)\033[0m")
+                print(
+                    f"\033[92m{bag_key}: no collision (min distance: {dmin:.3f} m)\033[0m"
+                )
         else:
             # No valid (drone, obstacle) pairs ever found at the same sampled time
             collided = False
             results[bag_dir] = "no data"
-            print(f"\033[93m{bag_key}: no data (no valid pairs at sampled times; min distance: N/A)\033[0m")
+            print(
+                f"\033[93m{bag_key}: no data (no valid pairs at sampled times; min distance: N/A)\033[0m"
+            )
 
         # Per-bag histogram (optional)
         if args.per_bag_hist:
-            plot_hist(min_dists, args.hist_bins, out_dir / f"{bag_key}_closest_dist_hist.png",
-                      title=f"Closest distances: {bag_key}")
+            plot_hist(
+                min_dists,
+                args.hist_bins,
+                out_dir / f"{bag_key}_closest_dist_hist.png",
+                title=f"Closest distances: {bag_key}",
+            )
 
         # Accumulate for global histogram
         all_min_dists.append(min_dists)
@@ -343,24 +419,34 @@ def main():
 
         # Global summary
         if all_min_dists:
-            stacked = np.concatenate([a[np.isfinite(a)] for a in all_min_dists if a.size > 0], axis=0)
+            stacked = np.concatenate(
+                [a[np.isfinite(a)] for a in all_min_dists if a.size > 0], axis=0
+            )
             if stacked.size > 0:
                 gmin = float(np.min(stacked))
                 p05 = float(np.percentile(stacked, 5))
                 p50 = float(np.percentile(stacked, 50))
                 p95 = float(np.percentile(stacked, 95))
                 f.write("\nSUMMARY (all bags)\n")
-                f.write(f"min={gmin:.3f} m, p05={p05:.3f}, p50={p50:.3f}, p95={p95:.3f}\n")
+                f.write(
+                    f"min={gmin:.3f} m, p05={p05:.3f}, p50={p50:.3f}, p95={p95:.3f}\n"
+                )
 
     print(f"Results written to {output_file}")
 
     # Global histogram
     if all_min_dists:
-        stacked = np.concatenate([a[np.isfinite(a)] for a in all_min_dists if a.size > 0], axis=0)
+        stacked = np.concatenate(
+            [a[np.isfinite(a)] for a in all_min_dists if a.size > 0], axis=0
+        )
         if stacked.size > 0:
-            plot_hist(stacked, args.hist_bins, out_dir / "closest_dist_hist_all.png",
-                      title="Closest obstacle distance (all bags)")
+            plot_hist(
+                stacked,
+                args.hist_bins,
+                out_dir / "closest_dist_hist_all.png",
+                title="Closest obstacle distance (all bags)",
+            )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

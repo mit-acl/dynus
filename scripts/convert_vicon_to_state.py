@@ -15,21 +15,23 @@ from std_msgs.msg import Header
 from dynus_interfaces.msg import State
 from message_filters import Subscriber, ApproximateTimeSynchronizer
 
+
 class PoseTwistToStateNode(Node):
     def __init__(self):
-        super().__init__('pose_twist_to_state_node')
+        super().__init__("pose_twist_to_state_node")
 
         # Create subscribers using message_filters
-        self.pose_sub = Subscriber(self, PoseStamped, 'world')
-        self.twist_sub = Subscriber(self, TwistStamped, 'twist')
+        self.pose_sub = Subscriber(self, PoseStamped, "world")
+        self.twist_sub = Subscriber(self, TwistStamped, "twist")
 
         # Synchronize pose and twist topics
         self.sync = ApproximateTimeSynchronizer(
-            [self.pose_sub, self.twist_sub], queue_size=10, slop=0.1)
+            [self.pose_sub, self.twist_sub], queue_size=10, slop=0.1
+        )
         self.sync.registerCallback(self.callback)
 
         # Publisher
-        self.state_publisher = self.create_publisher(State, 'state', 10)
+        self.state_publisher = self.create_publisher(State, "state", 10)
 
     def callback(self, pose_msg, twist_msg):
         # Construct the State message
@@ -42,14 +44,14 @@ class PoseTwistToStateNode(Node):
         state_msg.pos = Vector3(
             x=pose_msg.pose.position.x,
             y=pose_msg.pose.position.y,
-            z=pose_msg.pose.position.z
+            z=pose_msg.pose.position.z,
         )
 
         # Set velocity from TwistStamped
         state_msg.vel = Vector3(
             x=twist_msg.twist.linear.x,
             y=twist_msg.twist.linear.y,
-            z=twist_msg.twist.linear.z
+            z=twist_msg.twist.linear.z,
         )
 
         # Set orientation from PoseStamped
@@ -57,12 +59,13 @@ class PoseTwistToStateNode(Node):
             x=pose_msg.pose.orientation.x,
             y=pose_msg.pose.orientation.y,
             z=pose_msg.pose.orientation.z,
-            w=pose_msg.pose.orientation.w
+            w=pose_msg.pose.orientation.w,
         )
 
         # Publish the State message
         self.state_publisher.publish(state_msg)
-        self.get_logger().info(f'Published State: {state_msg}')
+        self.get_logger().info(f"Published State: {state_msg}")
+
 
 def main(args=None):
     rclpy.init(args=args)
@@ -76,5 +79,6 @@ def main(args=None):
         node.destroy_node()
         rclpy.shutdown()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

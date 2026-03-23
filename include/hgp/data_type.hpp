@@ -1,14 +1,27 @@
+/* ----------------------------------------------------------------------------
+ * Copyright 2025, Kota Kondo, Aerospace Controls Laboratory
+ * Massachusetts Institute of Technology
+ * All Rights Reserved
+ * Authors: Kota Kondo, et al.
+ * See LICENSE file for the license information
+ * -------------------------------------------------------------------------- */
+
 /**
  * @file data_type.h
  * @brief Defines all data types used in this lib
 
  * Mostly aliasing from Eigen Library.
  */
+// NOTE: Intentionally uses DATA_TYPE_H (not #pragma once) to share the guard
+// with decomp_util's data_type.h and prevent type redefinition.
+#ifndef DATA_TYPE_H
+#define DATA_TYPE_H
 
 #include <stdio.h>
-#include <vector>
+
 #include <Eigen/Geometry>
 #include <Eigen/StdVector>
+#include <vector>
 
 /// Set red font in printf funtion
 #ifndef ANSI_COLOR_RED
@@ -39,8 +52,6 @@
 #define ANSI_COLOR_RESET "\x1b[0m"
 #endif
 
-#ifndef DATA_TYPE_H
-#define DATA_TYPE_H
 /*! \brief Rename the float type used in lib
 
     Default is set to be double, but user can change it to float.
@@ -111,4 +122,4 @@ typedef MatDNf<3> MatD3f;
 /// Dynamic MxN Eigen float matrix
 typedef Matf<Eigen::Dynamic, Eigen::Dynamic> MatDf;
 
-#endif
+#endif  // DATA_TYPE_H

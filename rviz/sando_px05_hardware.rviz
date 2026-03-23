@@ -98,7 +98,7 @@ Visualization Manager:
                 Durability Policy: Volatile
                 History Policy: Keep Last
                 Reliability Policy: Best Effort
-                Value: /PX05/dgp_path_marker
+                Value: /PX05/hgp_path_marker
               Value: false
             - Class: rviz_default_plugins/MarkerArray
               Enabled: true
@@ -110,7 +110,7 @@ Visualization Manager:
                 Durability Policy: Transient Local
                 History Policy: Keep Last
                 Reliability Policy: System Default
-                Value: /PX05/free_dgp_path_marker
+                Value: /PX05/free_hgp_path_marker
               Value: true
             - Alpha: 0.20000000298023224
               BoundColor: 255; 154; 140

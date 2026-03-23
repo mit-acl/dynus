@@ -21,25 +21,29 @@ class GoalRelay(Node):
     """
 
     def __init__(self):
-        super().__init__('goal_relay')
-        self.default_goal_z = self.declare_parameter('default_goal_z', 2.0).value
-        self.namespace = self.declare_parameter('agent_namespace', 'NX01').value
+        super().__init__("goal_relay")
+        self.default_goal_z = self.declare_parameter("default_goal_z", 2.0).value
+        self.namespace = self.declare_parameter("agent_namespace", "NX01").value
 
         self.sub = self.create_subscription(
-            PoseStamped, '/goal_pose', self.goal_callback, 10)
+            PoseStamped, "/goal_pose", self.goal_callback, 10
+        )
         self.pub = self.create_publisher(
-            PoseStamped, f'/{self.namespace}/term_goal', 10)
+            PoseStamped, f"/{self.namespace}/term_goal", 10
+        )
 
         self.get_logger().info(
-            f'Goal relay active: /goal_pose -> /{self.namespace}/term_goal '
-            f'(z={self.default_goal_z})')
+            f"Goal relay active: /goal_pose -> /{self.namespace}/term_goal "
+            f"(z={self.default_goal_z})"
+        )
 
     def goal_callback(self, msg: PoseStamped):
         msg.pose.position.z = self.default_goal_z
         self.pub.publish(msg)
         self.get_logger().info(
-            f'Relayed goal: ({msg.pose.position.x:.1f}, '
-            f'{msg.pose.position.y:.1f}, {self.default_goal_z})')
+            f"Relayed goal: ({msg.pose.position.x:.1f}, "
+            f"{msg.pose.position.y:.1f}, {self.default_goal_z})"
+        )
 
 
 def main(args=None):
@@ -50,5 +54,5 @@ def main(args=None):
     rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------------
+# Copyright 2025, Kota Kondo, Aerospace Controls Laboratory
+# Massachusetts Institute of Technology
+# All Rights Reserved
+# Authors: Kota Kondo, et al.
+# See LICENSE file for the license information
+# ----------------------------------------------------------------------------
 """
 RViz-only Dynamic Obstacles Node (inspired by MADER's dynamic_corridor.py)
 
@@ -21,65 +28,64 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 import random
 import math
-import numpy as np
 
 from dynus_interfaces.msg import DynTraj
-from visualization_msgs.msg import Marker, MarkerArray
+from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point
 from std_msgs.msg import ColorRGBA
 import tf2_ros
 from geometry_msgs.msg import TransformStamped
 
 # Colors
-COLOR_STATIC = ColorRGBA(r=0.0, g=0.0, b=1.0, a=0.8)   # Blue
+COLOR_STATIC = ColorRGBA(r=0.0, g=0.0, b=1.0, a=0.8)  # Blue
 COLOR_DYNAMIC = ColorRGBA(r=1.0, g=0.0, b=0.0, a=0.8)  # Red
 
 
 class RVizObstaclesNode(Node):
     def __init__(self):
-        super().__init__('rviz_obstacles_node')
+        super().__init__("rviz_obstacles_node")
 
         # Declare parameters
-        self.declare_parameter('total_num_obs', 50)
-        self.declare_parameter('dynamic_ratio', 0.65)
-        self.declare_parameter('x_min', 2.0)
-        self.declare_parameter('x_max', 75.0)
-        self.declare_parameter('y_min', -3.0)
-        self.declare_parameter('y_max', 3.0)
-        self.declare_parameter('z_min', 1.0)
-        self.declare_parameter('z_max', 2.0)
-        self.declare_parameter('scale', 1.0)
-        self.declare_parameter('slower_min', 1.1)
-        self.declare_parameter('slower_max', 1.1)
-        self.declare_parameter('bbox_dynamic', [0.8, 0.8, 0.8])
-        self.declare_parameter('bbox_static_vert', [0.4, 0.4, 4.0])
-        self.declare_parameter('bbox_static_horiz', [0.4, 8.0, 0.4])
-        self.declare_parameter('percentage_vert', 0.35)
-        self.declare_parameter('publish_rate_hz', 100.0)
-        self.declare_parameter('publish_markers', True)
-        self.declare_parameter('publish_tf', True)
-        self.declare_parameter('seed', 0)
+        self.declare_parameter("total_num_obs", 50)
+        self.declare_parameter("dynamic_ratio", 0.65)
+        self.declare_parameter("x_min", 2.0)
+        self.declare_parameter("x_max", 75.0)
+        self.declare_parameter("y_min", -3.0)
+        self.declare_parameter("y_max", 3.0)
+        self.declare_parameter("z_min", 1.0)
+        self.declare_parameter("z_max", 2.0)
+        self.declare_parameter("scale", 1.0)
+        self.declare_parameter("slower_min", 1.1)
+        self.declare_parameter("slower_max", 1.1)
+        self.declare_parameter("bbox_dynamic", [0.8, 0.8, 0.8])
+        self.declare_parameter("bbox_static_vert", [0.4, 0.4, 4.0])
+        self.declare_parameter("bbox_static_horiz", [0.4, 8.0, 0.4])
+        self.declare_parameter("percentage_vert", 0.35)
+        self.declare_parameter("publish_rate_hz", 100.0)
+        self.declare_parameter("publish_markers", True)
+        self.declare_parameter("publish_tf", True)
+        self.declare_parameter("seed", 0)
 
         # Get parameters
-        self.total_num_obs = self.get_parameter('total_num_obs').value
-        self.dynamic_ratio = self.get_parameter('dynamic_ratio').value
-        self.x_min = self.get_parameter('x_min').value
-        self.x_max = self.get_parameter('x_max').value
-        self.y_min = self.get_parameter('y_min').value
-        self.y_max = self.get_parameter('y_max').value
-        self.z_min = self.get_parameter('z_min').value
-        self.z_max = self.get_parameter('z_max').value
-        self.scale = self.get_parameter('scale').value
-        self.slower_min = self.get_parameter('slower_min').value
-        self.slower_max = self.get_parameter('slower_max').value
-        self.bbox_dynamic = self.get_parameter('bbox_dynamic').value
-        self.bbox_static_vert = self.get_parameter('bbox_static_vert').value
-        self.bbox_static_horiz = self.get_parameter('bbox_static_horiz').value
-        self.percentage_vert = self.get_parameter('percentage_vert').value
-        publish_rate_hz = self.get_parameter('publish_rate_hz').value
-        self.publish_markers = self.get_parameter('publish_markers').value
-        self.publish_tf = self.get_parameter('publish_tf').value
-        seed = self.get_parameter('seed').value
+        self.total_num_obs = self.get_parameter("total_num_obs").value
+        self.dynamic_ratio = self.get_parameter("dynamic_ratio").value
+        self.x_min = self.get_parameter("x_min").value
+        self.x_max = self.get_parameter("x_max").value
+        self.y_min = self.get_parameter("y_min").value
+        self.y_max = self.get_parameter("y_max").value
+        self.z_min = self.get_parameter("z_min").value
+        self.z_max = self.get_parameter("z_max").value
+        self.scale = self.get_parameter("scale").value
+        self.slower_min = self.get_parameter("slower_min").value
+        self.slower_max = self.get_parameter("slower_max").value
+        self.bbox_dynamic = self.get_parameter("bbox_dynamic").value
+        self.bbox_static_vert = self.get_parameter("bbox_static_vert").value
+        self.bbox_static_horiz = self.get_parameter("bbox_static_horiz").value
+        self.percentage_vert = self.get_parameter("percentage_vert").value
+        publish_rate_hz = self.get_parameter("publish_rate_hz").value
+        self.publish_markers = self.get_parameter("publish_markers").value
+        self.publish_tf = self.get_parameter("publish_tf").value
+        seed = self.get_parameter("seed").value
 
         # Set seed
         random.seed(seed)
@@ -88,7 +94,9 @@ class RVizObstaclesNode(Node):
         self.num_dyn_objects = int(self.dynamic_ratio * self.total_num_obs)
         self.num_stat_objects = self.total_num_obs - self.num_dyn_objects
 
-        self.get_logger().info(f'Creating {self.num_dyn_objects} dynamic and {self.num_stat_objects} static obstacles')
+        self.get_logger().info(
+            f"Creating {self.num_dyn_objects} dynamic and {self.num_stat_objects} static obstacles"
+        )
 
         # Initialize obstacle properties
         self.x_all = []
@@ -104,7 +112,7 @@ class RVizObstaclesNode(Node):
             self.x_all.append(random.uniform(self.x_min, self.x_max))
             self.y_all.append(random.uniform(self.y_min, self.y_max))
             self.z_all.append(random.uniform(self.z_min, self.z_max))
-            self.offset_all.append(random.uniform(-2*math.pi, 2*math.pi))
+            self.offset_all.append(random.uniform(-2 * math.pi, 2 * math.pi))
             self.slower.append(random.uniform(self.slower_min, self.slower_max))
             self.types.append("dynamic")
             self.bboxes.append(self.bbox_dynamic)
@@ -122,9 +130,13 @@ class RVizObstaclesNode(Node):
                 self.z_all.append(random.uniform(0.0, 3.0))
                 self.types.append("static_horiz")
 
-            self.x_all.append(random.uniform(self.x_min - self.scale, self.x_max + self.scale))
-            self.y_all.append(random.uniform(self.y_min - self.scale, self.y_max + self.scale))
-            self.offset_all.append(random.uniform(-2*math.pi, 2*math.pi))
+            self.x_all.append(
+                random.uniform(self.x_min - self.scale, self.x_max + self.scale)
+            )
+            self.y_all.append(
+                random.uniform(self.y_min - self.scale, self.y_max + self.scale)
+            )
+            self.offset_all.append(random.uniform(-2 * math.pi, 2 * math.pi))
             self.slower.append(random.uniform(self.slower_min, self.slower_max))
             self.bboxes.append(bbox_i)
 
@@ -132,14 +144,18 @@ class RVizObstaclesNode(Node):
         qos_latched = QoSProfile(
             depth=1,
             reliability=ReliabilityPolicy.RELIABLE,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
 
-        self.pub_traj = self.create_publisher(DynTraj, '/trajs', self.total_num_obs)
+        self.pub_traj = self.create_publisher(DynTraj, "/trajs", self.total_num_obs)
 
         if self.publish_markers:
-            self.pub_shapes_static = self.create_publisher(Marker, '/shapes_static', qos_latched)
-            self.pub_shapes_dynamic = self.create_publisher(Marker, '/shapes_dynamic', qos_latched)
+            self.pub_shapes_static = self.create_publisher(
+                Marker, "/shapes_static", qos_latched
+            )
+            self.pub_shapes_dynamic = self.create_publisher(
+                Marker, "/shapes_dynamic", qos_latched
+            )
 
         # TF broadcaster
         if self.publish_tf:
@@ -148,8 +164,10 @@ class RVizObstaclesNode(Node):
         # Timer for publishing
         self.timer = self.create_timer(1.0 / publish_rate_hz, self.timer_callback)
 
-        self.get_logger().info(f'RViz Obstacles Node started with {self.total_num_obs} obstacles')
-        self.get_logger().info(f'Publishing at {publish_rate_hz} Hz')
+        self.get_logger().info(
+            f"RViz Obstacles Node started with {self.total_num_obs} obstacles"
+        )
+        self.get_logger().info(f"Publishing at {publish_rate_hz} Hz")
 
     def trefoil(self, x, y, z, scale_x, scale_y, scale_z, offset, slower):
         """Trefoil knot trajectory."""
@@ -212,13 +230,23 @@ class RVizObstaclesNode(Node):
 
             if self.types[i] == "dynamic":
                 x, y, z, vx, vy, vz = self.trefoil(
-                    self.x_all[i], self.y_all[i], self.z_all[i],
-                    s, s, s, self.offset_all[i], self.slower[i]
+                    self.x_all[i],
+                    self.y_all[i],
+                    self.z_all[i],
+                    s,
+                    s,
+                    s,
+                    self.offset_all[i],
+                    self.slower[i],
                 )
             else:
                 x, y, z, vx, vy, vz = self.wave_in_z(
-                    self.x_all[i], self.y_all[i], self.z_all[i],
-                    s, self.offset_all[i], 1.0
+                    self.x_all[i],
+                    self.y_all[i],
+                    self.z_all[i],
+                    s,
+                    self.offset_all[i],
+                    1.0,
                 )
 
             # Publish DynTraj message
@@ -238,9 +266,13 @@ class RVizObstaclesNode(Node):
             if self.types[i] == "dynamic":
                 # For dynamic obstacles, provide analytical velocity expressions
                 tt_expr = f"({t_var}/{self.slower[i]}+{self.offset_all[i]})"
-                vx_expr = f"{s/6.0}/{self.slower[i]}*(cos({tt_expr})+4*cos(2*{tt_expr}))"
-                vy_expr = f"{s/5.0}/{self.slower[i]}*(-sin({tt_expr})+4*sin(2*{tt_expr}))"
-                vz_expr = f"-{3*s/2.0}/{self.slower[i]}*cos(3*{tt_expr})"
+                vx_expr = (
+                    f"{s / 6.0}/{self.slower[i]}*(cos({tt_expr})+4*cos(2*{tt_expr}))"
+                )
+                vy_expr = (
+                    f"{s / 5.0}/{self.slower[i]}*(-sin({tt_expr})+4*sin(2*{tt_expr}))"
+                )
+                vz_expr = f"-{3 * s / 2.0}/{self.slower[i]}*cos(3*{tt_expr})"
             else:
                 # For static obstacles with wave motion
                 tt_expr = f"({t_var}/1.0+{self.offset_all[i]})"
@@ -300,5 +332,5 @@ def main(args=None):
         rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

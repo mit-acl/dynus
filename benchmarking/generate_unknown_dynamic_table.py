@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------------
+# Copyright 2025, Kota Kondo, Aerospace Controls Laboratory
+# Massachusetts Institute of Technology
+# All Rights Reserved
+# Authors: Kota Kondo, et al.
+# See LICENSE file for the license information
+# ----------------------------------------------------------------------------
 """
 Generate LaTeX table: Unknown Dynamic benchmark with Heat Weight and N ablation.
 
@@ -14,11 +21,11 @@ Usage:
 
     # Custom base directory
     python3 generate_unknown_dynamic_table.py \
-        --base-dir /media/kkondo/kota_elements/sando_2nd_paper/sando/benchmark_data/unknown_dynamic
+        --base-dir /path/to/benchmark_data/unknown_dynamic
 
     # Specify output location
     python3 generate_unknown_dynamic_table.py \
-        --output /home/kkondo/paper_writing/SANDO_v3/tables/unknown_dynamic_sim.tex
+        --output /path/to/tables/unknown_dynamic_sim.tex
 """
 
 import argparse
@@ -27,8 +34,6 @@ import sys
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
-import numpy as np
-import pandas as pd
 
 # Import analysis functions from analyze_dynamic_benchmark.py
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
@@ -47,14 +52,14 @@ from analyze_dynamic_benchmark import (
 # --------------------------------------------------------------------------
 # Default paths
 # --------------------------------------------------------------------------
-BASE_DIR = Path("/media/kkondo/kota_elements/sando_2nd_paper/sando/benchmark_data/unknown_dynamic")
-OUTPUT_FILE = Path("/home/kkondo/paper_writing/SANDO_v3/tables/unknown_dynamic_sim.tex")
+BASE_DIR = None  # Must be set via --base-dir CLI arg
+OUTPUT_FILE = None  # Must be set via --output CLI arg
 
 # Configuration directories and their (heat_weight, N) parameters
 CONFIGS = [
-    ("inflate_unknown_voxels_heat_w_5",        5,  3),
-    ("inflate_unknown_voxels_heat_w_10_N_2",  10,  2),
-    ("inflate_unknown_voxels_heat_w_10",      10,  3),
+    ("inflate_unknown_voxels_heat_w_5", 5, 3),
+    ("inflate_unknown_voxels_heat_w_10_N_2", 10, 2),
+    ("inflate_unknown_voxels_heat_w_10", 10, 3),
 ]
 
 # Cases in display order
@@ -108,12 +113,12 @@ def analyze_case(case_dir: Path, case_label: str) -> Optional[dict]:
         if bags_dir.exists() and HAS_ROSBAG:
             print("    Recomputing path length from rosbags...")
             for idx, row in df.iterrows():
-                trial_id = row['trial_id']
+                trial_id = row["trial_id"]
                 bag_path = bags_dir / f"trial_{trial_id}"
                 if bag_path.exists():
                     metrics = recompute_metrics_from_bag(bag_path, GOAL_POS)
-                    if metrics['path_length'] is not None:
-                        df.at[idx, 'path_length'] = metrics['path_length']
+                    if metrics["path_length"] is not None:
+                        df.at[idx, "path_length"] = metrics["path_length"]
 
     # 4. Analyze collisions from rosbags (unknown dynamic uses trajs_ground_truth)
     if case_dir.is_dir():
@@ -121,20 +126,27 @@ def analyze_case(case_dir: Path, case_label: str) -> Optional[dict]:
         if bags_dir.exists() and HAS_ROSBAG:
             print("    Analyzing collisions from rosbags (trajs_ground_truth)...")
             for idx, row in df.iterrows():
-                trial_id = row['trial_id']
+                trial_id = row["trial_id"]
                 bag_path = bags_dir / f"trial_{trial_id}"
                 if bag_path.exists():
                     collision_result = analyze_collision_from_trajs_bag(
-                        bag_path, DRONE_BBOX, trajs_topic='/trajs_ground_truth')
-                    df.at[idx, 'collision_count'] = collision_result['collision_count']
-                    df.at[idx, 'min_distance_to_obstacles'] = collision_result['min_distance']
-                    df.at[idx, 'collision_free_ratio'] = collision_result['collision_free_ratio']
-                    df.at[idx, 'collision'] = collision_result['collision_count'] > 0
+                        bag_path, DRONE_BBOX, trajs_topic="/trajs_ground_truth"
+                    )
+                    df.at[idx, "collision_count"] = collision_result["collision_count"]
+                    df.at[idx, "min_distance_to_obstacles"] = collision_result[
+                        "min_distance"
+                    ]
+                    df.at[idx, "collision_free_ratio"] = collision_result[
+                        "collision_free_ratio"
+                    ]
+                    df.at[idx, "collision"] = collision_result["collision_count"] > 0
                 else:
                     print(f"      Warning: Bag not found for trial {trial_id}")
             print("    Collision analysis complete")
         elif bags_dir.exists() and not HAS_ROSBAG:
-            print("    Warning: Bags found but rosbag2_py not available, skipping collision analysis")
+            print(
+                "    Warning: Bags found but rosbag2_py not available, skipping collision analysis"
+            )
 
     # 5. Recompute constraint violations from rosbags
     if case_dir.is_dir():
@@ -142,23 +154,31 @@ def analyze_case(case_dir: Path, case_label: str) -> Optional[dict]:
         if bags_dir.exists() and HAS_ROSBAG:
             print("    Recomputing constraint violations from rosbags...")
             for idx, row in df.iterrows():
-                trial_id = row['trial_id']
+                trial_id = row["trial_id"]
                 bag_path = bags_dir / f"trial_{trial_id}"
                 if bag_path.exists():
                     viol_result = recompute_violations_from_bag(bag_path)
-                    df.at[idx, 'vel_violation_count'] = viol_result['vel_violation_count']
-                    df.at[idx, 'vel_violation_total'] = viol_result['vel_total']
-                    df.at[idx, 'acc_violation_count'] = viol_result['acc_violation_count']
-                    df.at[idx, 'acc_violation_total'] = viol_result['acc_total']
-                    df.at[idx, 'jerk_violation_count'] = viol_result['jerk_violation_count']
-                    df.at[idx, 'jerk_violation_total'] = viol_result['jerk_total']
+                    df.at[idx, "vel_violation_count"] = viol_result[
+                        "vel_violation_count"
+                    ]
+                    df.at[idx, "vel_violation_total"] = viol_result["vel_total"]
+                    df.at[idx, "acc_violation_count"] = viol_result[
+                        "acc_violation_count"
+                    ]
+                    df.at[idx, "acc_violation_total"] = viol_result["acc_total"]
+                    df.at[idx, "jerk_violation_count"] = viol_result[
+                        "jerk_violation_count"
+                    ]
+                    df.at[idx, "jerk_violation_total"] = viol_result["jerk_total"]
                 else:
                     print(f"      Warning: Bag not found for trial {trial_id}")
             print("    Constraint violation analysis complete")
 
     # 6. Compute statistics
     stats = compute_statistics(df, require_collision_free=True)
-    print(f"    {stats.get('total_trials', 0)} trials, {stats.get('success_rate', 0):.1f}% success")
+    print(
+        f"    {stats.get('total_trials', 0)} trials, {stats.get('success_rate', 0):.1f}% success"
+    )
 
     return stats
 
@@ -185,15 +205,15 @@ def load_all_cases(base_dir: Path) -> Dict[str, dict]:
 
 # Columns: (stat_key, latex_header, higher_is_better, precision)
 COLUMNS = [
-    ("success_rate",                  r"$R_{\mathrm{succ}}$ [\%]",               True,  1),
-    ("avg_local_traj_time_mean",      r"$T^{\mathrm{per}}_{\mathrm{opt}}$ [ms]", False, 1),
-    ("flight_travel_time_mean",       r"$T_{\mathrm{trav}}$ [s]",                False, 1),
-    ("path_length_mean",              r"$L_{\mathrm{path}}$ [m]",                False, 1),
-    ("jerk_integral_mean",            r"$S_{\mathrm{jerk}}$ [m/s$^{2}$]",        False, 1),
-    ("min_distance_to_obstacles_mean", r"$d_{\mathrm{min}}$ [m]",                True,  3),
-    ("vel_violation_rate",            r"$\rho_{\mathrm{vel}}$ [\%]",             False, 1),
-    ("acc_violation_rate",            r"$\rho_{\mathrm{acc}}$ [\%]",             False, 1),
-    ("jerk_violation_rate",           r"$\rho_{\mathrm{jerk}}$ [\%]",            False, 1),
+    ("success_rate", r"$R_{\mathrm{succ}}$ [\%]", True, 1),
+    ("avg_local_traj_time_mean", r"$T^{\mathrm{per}}_{\mathrm{opt}}$ [ms]", False, 1),
+    ("flight_travel_time_mean", r"$T_{\mathrm{trav}}$ [s]", False, 1),
+    ("path_length_mean", r"$L_{\mathrm{path}}$ [m]", False, 1),
+    ("jerk_integral_mean", r"$S_{\mathrm{jerk}}$ [m/s$^{2}$]", False, 1),
+    ("min_distance_to_obstacles_mean", r"$d_{\mathrm{min}}$ [m]", True, 3),
+    ("vel_violation_rate", r"$\rho_{\mathrm{vel}}$ [\%]", False, 1),
+    ("acc_violation_rate", r"$\rho_{\mathrm{acc}}$ [\%]", False, 1),
+    ("jerk_violation_rate", r"$\rho_{\mathrm{jerk}}$ [\%]", False, 1),
 ]
 
 
@@ -233,7 +253,13 @@ def generate_latex(rows: list) -> str:
         bw = {}
         for col_key, _, higher_better, _ in COLUMNS:
             vals = [r[4].get(col_key) for r in case_rows]
-            vals = [v for v in vals if v is not None and not isinstance(v, str) and not (isinstance(v, float) and math.isnan(v))]
+            vals = [
+                v
+                for v in vals
+                if v is not None
+                and not isinstance(v, str)
+                and not (isinstance(v, float) and math.isnan(v))
+            ]
             if len(vals) < 2:
                 bw[col_key] = (None, None)
             elif higher_better:
@@ -245,10 +271,12 @@ def generate_latex(rows: list) -> str:
     # Build LaTeX
     lines = []
     lines.append(r"\begin{table*}")
-    lines.append(r"  \caption{Benchmark results in unknown dynamic environments. "
-                 r"SANDO navigates using only pointcloud sensing (no ground truth obstacle trajectories). "
-                 r"We compare different heat map weights ($w$) and trajectory segment counts ($N$). "
-                 r"We highlight the \best{best} and \worst{worst} value for each environment.}")
+    lines.append(
+        r"  \caption{Benchmark results in unknown dynamic environments. "
+        r"SANDO navigates using only pointcloud sensing (no ground truth obstacle trajectories). "
+        r"We compare different heat map weights ($w$) and trajectory segment counts ($N$). "
+        r"We highlight the \best{best} and \worst{worst} value for each environment.}"
+    )
     lines.append(r"  \label{tab:unknown_dynamic_benchmark}")
     lines.append(r"  \centering")
     lines.append(r"  \renewcommand{\arraystretch}{1.2}")
@@ -334,14 +362,15 @@ def main():
     parser.add_argument(
         "--base-dir",
         type=str,
-        default=str(BASE_DIR),
-        help=f"Base directory containing config subdirectories (default: {BASE_DIR})",
+        required=True,
+        help="Base directory containing config subdirectories",
     )
     parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         type=str,
-        default=str(OUTPUT_FILE),
-        help=f"Output .tex file (default: {OUTPUT_FILE})",
+        required=True,
+        help="Output .tex file path",
     )
     args = parser.parse_args()
 
@@ -362,7 +391,9 @@ def main():
             print(f"\n  WARNING: Directory not found: {config_dir}")
             continue
 
-        print(f"\n[{step}/{len(CONFIGS)}] Loading w={heat_w}, N={n_seg} from: {config_dir.name}")
+        print(
+            f"\n[{step}/{len(CONFIGS)}] Loading w={heat_w}, N={n_seg} from: {config_dir.name}"
+        )
         case_data = load_all_cases(config_dir)
         if case_data:
             all_config_data.append((heat_w, n_seg, case_data))

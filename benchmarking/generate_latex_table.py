@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------------
+# Copyright 2025, Kota Kondo, Aerospace Controls Laboratory
+# Massachusetts Institute of Technology
+# All Rights Reserved
+# Authors: Kota Kondo, et al.
+# See LICENSE file for the license information
+# ----------------------------------------------------------------------------
 """
 Generate LaTeX table from benchmark data for SANDO paper
 
@@ -9,14 +16,16 @@ Usage:
     python3 generate_latex_table.py
 """
 
+import argparse
 import pandas as pd
 import numpy as np
+import sys
 from pathlib import Path
 
-# Configuration
-ROOT_PATH = Path("/home/kkondo/code/dynus_ws/src/sando/benchmark_data")
-OUTPUT_FILE = Path("/home/kkondo/paper_writing/SANDO_v3/tables/standardized_benchmark.tex")
-VE_OUTPUT_FILE = Path("/home/kkondo/paper_writing/SANDO_v3/tables/ve_benchmark.tex")
+# Configuration — defaults are relative to the package; paper paths require CLI args.
+ROOT_PATH = Path(__file__).resolve().parent.parent / "benchmark_data"
+OUTPUT_FILE = None  # Must be set via --output CLI arg
+VE_OUTPUT_FILE = None  # Must be set via --ve-output CLI arg
 
 # Data files to load
 DATA_FILES = {
@@ -40,10 +49,8 @@ DATA_FILES = {
 }
 
 # SUPER data: loaded from external CSV files (L2 and Linf norm variants)
-SUPER_CSV_FILES = {
-    "SUPER ($L_2$)": Path("/home/kkondo/code/super_ws/src/SUPER/data/standardized_benchmark/super_l2_benchmark.csv"),
-    "SUPER ($L_\\infty$)": Path("/home/kkondo/code/super_ws/src/SUPER/data/standardized_benchmark/super_linf_benchmark.csv"),
-}
+# Set via --super-l2-csv and --super-linf-csv CLI args
+SUPER_CSV_FILES = {}
 
 
 def safe_mean(series):
@@ -74,7 +81,10 @@ def _load_one_super_csv(csv_path, label):
         vel_viol = safe_mean(succ_df["v_violation_pct"])
         acc_viol = safe_mean(succ_df["a_violation_pct"])
         jerk_viol = safe_mean(succ_df["j_violation_pct"])
-    elif "violation_total_samples" in succ_df.columns and "v_violation_count" in succ_df.columns:
+    elif (
+        "violation_total_samples" in succ_df.columns
+        and "v_violation_count" in succ_df.columns
+    ):
         total_samples = succ_df["violation_total_samples"].sum()
         if total_samples > 0:
             sfc_viol = succ_df["corridor_violation_count"].sum() / total_samples * 100.0
@@ -84,10 +94,26 @@ def _load_one_super_csv(csv_path, label):
         else:
             sfc_viol = vel_viol = acc_viol = jerk_viol = 0.0
     else:
-        sfc_viol = safe_mean(succ_df["corridor_violated"]) * 100 if "corridor_violated" in succ_df.columns else 0.0
-        vel_viol = safe_mean(succ_df["v_violated"]) * 100 if "v_violated" in succ_df.columns else 0.0
-        acc_viol = safe_mean(succ_df["a_violated"]) * 100 if "a_violated" in succ_df.columns else 0.0
-        jerk_viol = safe_mean(succ_df["j_violated"]) * 100 if "j_violated" in succ_df.columns else 0.0
+        sfc_viol = (
+            safe_mean(succ_df["corridor_violated"]) * 100
+            if "corridor_violated" in succ_df.columns
+            else 0.0
+        )
+        vel_viol = (
+            safe_mean(succ_df["v_violated"]) * 100
+            if "v_violated" in succ_df.columns
+            else 0.0
+        )
+        acc_viol = (
+            safe_mean(succ_df["a_violated"]) * 100
+            if "a_violated" in succ_df.columns
+            else 0.0
+        )
+        jerk_viol = (
+            safe_mean(succ_df["j_violated"]) * 100
+            if "j_violated" in succ_df.columns
+            else 0.0
+        )
 
     return {
         "Algorithm": label,
@@ -133,7 +159,9 @@ def load_and_process_data():
         df = pd.read_csv(filepath)
 
         # Parse success column
-        df["success"] = pd.to_numeric(df["success"], errors="coerce").fillna(0).astype(int)
+        df["success"] = (
+            pd.to_numeric(df["success"], errors="coerce").fillna(0).astype(int)
+        )
 
         # Compute success rate (percentage)
         success_rate = safe_mean(df["success"]) * 100
@@ -149,10 +177,15 @@ def load_and_process_data():
 
         # Violation rates: count / total * 100 (consistent with dynamic/static benchmarks)
         # New CSVs have per-sample counts; fall back to binary flags for old CSVs
-        if "violation_total_samples" in succ_df.columns and "v_violation_count" in succ_df.columns:
+        if (
+            "violation_total_samples" in succ_df.columns
+            and "v_violation_count" in succ_df.columns
+        ):
             total_samples = succ_df["violation_total_samples"].sum()
             if total_samples > 0:
-                sfc_viol = succ_df["corridor_violation_count"].sum() / total_samples * 100.0
+                sfc_viol = (
+                    succ_df["corridor_violation_count"].sum() / total_samples * 100.0
+                )
                 vel_viol = succ_df["v_violation_count"].sum() / total_samples * 100.0
                 acc_viol = succ_df["a_violation_count"].sum() / total_samples * 100.0
                 jerk_viol = succ_df["j_violation_count"].sum() / total_samples * 100.0
@@ -160,10 +193,26 @@ def load_and_process_data():
                 sfc_viol = vel_viol = acc_viol = jerk_viol = 0.0
         else:
             # Legacy fallback: binary per-case flags
-            sfc_viol = safe_mean(succ_df["corridor_violated"]) * 100 if "corridor_violated" in succ_df.columns else 0.0
-            vel_viol = safe_mean(succ_df["v_violated"]) * 100 if "v_violated" in succ_df.columns else 0.0
-            acc_viol = safe_mean(succ_df["a_violated"]) * 100 if "a_violated" in succ_df.columns else 0.0
-            jerk_viol = safe_mean(succ_df["j_violated"]) * 100 if "j_violated" in succ_df.columns else 0.0
+            sfc_viol = (
+                safe_mean(succ_df["corridor_violated"]) * 100
+                if "corridor_violated" in succ_df.columns
+                else 0.0
+            )
+            vel_viol = (
+                safe_mean(succ_df["v_violated"]) * 100
+                if "v_violated" in succ_df.columns
+                else 0.0
+            )
+            acc_viol = (
+                safe_mean(succ_df["a_violated"]) * 100
+                if "a_violated" in succ_df.columns
+                else 0.0
+            )
+            jerk_viol = (
+                safe_mean(succ_df["j_violated"]) * 100
+                if "j_violated" in succ_df.columns
+                else 0.0
+            )
 
         # Determine algorithm name
         if planner == "faster_orig":
@@ -176,21 +225,23 @@ def load_and_process_data():
             alg_name = "SANDO"
             alg_variant = ""
 
-        rows.append({
-            "Algorithm": alg_name,
-            "Variant": alg_variant,
-            "Thread": mode,
-            "N": N,
-            "success_rate": success_rate,
-            "per_opt_ms": per_opt_ms,
-            "total_opt_ms": total_opt_ms,
-            "traj_time_s": traj_time_s,
-            "path_length": path_length,
-            "jerk_smooth": jerk_smooth,
-            "sfc_viol": sfc_viol,
-            "vel_viol": vel_viol,
-            "acc_jerk_viol": max(acc_viol, jerk_viol),
-        })
+        rows.append(
+            {
+                "Algorithm": alg_name,
+                "Variant": alg_variant,
+                "Thread": mode,
+                "N": N,
+                "success_rate": success_rate,
+                "per_opt_ms": per_opt_ms,
+                "total_opt_ms": total_opt_ms,
+                "traj_time_s": traj_time_s,
+                "path_length": path_length,
+                "jerk_smooth": jerk_smooth,
+                "sfc_viol": sfc_viol,
+                "vel_viol": vel_viol,
+                "acc_jerk_viol": max(acc_viol, jerk_viol),
+            }
+        )
 
     df = pd.DataFrame(rows)
 
@@ -327,8 +378,12 @@ def generate_latex_table(df):
     # Start building LaTeX
     latex = []
     latex.append("\\begin{table*}")
-    latex.append("  \\caption{Local trajectory optimization benchmarking results (computation time, performance, and constraint violation).")
-    latex.append("  We mark in \\best{green} the best value in each column and in \\worst{red} the worst value.}")
+    latex.append(
+        "  \\caption{Local trajectory optimization benchmarking results (computation time, performance, and constraint violation)."
+    )
+    latex.append(
+        "  We mark in \\best{green} the best value in each column and in \\worst{red} the worst value.}"
+    )
     latex.append("  \\label{tab:standardized_benchmark}")
     latex.append("  \\centering")
     latex.append("  \\renewcommand{\\arraystretch}{1.2}")
@@ -337,7 +392,9 @@ def generate_latex_table(df):
     latex.append("      \\toprule")
 
     # Header rows (Algorithm spans 2 columns)
-    latex.append("      \\multicolumn{2}{c}{\\multirow{2}{*}[-0.4ex]{\\textbf{Algorithm}}}")
+    latex.append(
+        "      \\multicolumn{2}{c}{\\multirow{2}{*}[-0.4ex]{\\textbf{Algorithm}}}"
+    )
     latex.append("      & \\multirow{2}{*}[-0.4ex]{\\textbf{Thread}}")
     latex.append("      & \\multirow{2}{*}[-0.4ex]{\\textbf{N}}")
     latex.append("      & \\multicolumn{1}{c}{\\textbf{Success}}")
@@ -423,7 +480,7 @@ def generate_latex_table(df):
             for col_name in ["sfc_viol", "vel_viol", "acc_jerk_viol"]:
                 val = row[col_name]
                 best, worst = best_worst[col_name]
-                force_best = (col_name == "acc_jerk_viol")
+                force_best = col_name == "acc_jerk_viol"
                 formatted = format_value(val, best, worst, 1, force_best)
                 row_str += f" & {formatted}"
 
@@ -542,8 +599,7 @@ def load_ve_data():
     """
     # VE=yes: use SANDO2 (dynamic k-factor) multi-threaded data
     ve_yes_files = {
-        N: ROOT_PATH / f"multi_thread/sando_{N}_benchmark.csv"
-        for N in [4, 5, 6]
+        N: ROOT_PATH / f"multi_thread/sando_{N}_benchmark.csv" for N in [4, 5, 6]
     }
     # VE=no: dedicated without-VE runs for SANDO2
     ve_no_files = {
@@ -579,7 +635,9 @@ def load_ve_data():
         df = pd.read_csv(csv_file)
 
         # Parse success column
-        df["success"] = pd.to_numeric(df["success"], errors="coerce").fillna(0).astype(int)
+        df["success"] = (
+            pd.to_numeric(df["success"], errors="coerce").fillna(0).astype(int)
+        )
 
         # Compute success rate (percentage)
         success_rate = safe_mean(df["success"]) * 100
@@ -603,35 +661,66 @@ def load_ve_data():
             jerk_smooth = safe_mean(succ_df["jerk_smoothness_l1"])
 
             # Combined violation rate: count / total * 100 (consistent with dynamic/static benchmarks)
-            if "violation_total_samples" in succ_df.columns and "v_violation_count" in succ_df.columns:
+            if (
+                "violation_total_samples" in succ_df.columns
+                and "v_violation_count" in succ_df.columns
+            ):
                 total_samples = succ_df["violation_total_samples"].sum()
                 if total_samples > 0:
-                    sfc_viol = succ_df["corridor_violation_count"].sum() / total_samples * 100.0
-                    vel_viol = succ_df["v_violation_count"].sum() / total_samples * 100.0
-                    acc_viol = succ_df["a_violation_count"].sum() / total_samples * 100.0
-                    jerk_viol = succ_df["j_violation_count"].sum() / total_samples * 100.0
+                    sfc_viol = (
+                        succ_df["corridor_violation_count"].sum()
+                        / total_samples
+                        * 100.0
+                    )
+                    vel_viol = (
+                        succ_df["v_violation_count"].sum() / total_samples * 100.0
+                    )
+                    acc_viol = (
+                        succ_df["a_violation_count"].sum() / total_samples * 100.0
+                    )
+                    jerk_viol = (
+                        succ_df["j_violation_count"].sum() / total_samples * 100.0
+                    )
                 else:
                     sfc_viol = vel_viol = acc_viol = jerk_viol = 0.0
             else:
-                sfc_viol = safe_mean(succ_df["corridor_violated"]) * 100 if "corridor_violated" in succ_df.columns else 0.0
-                vel_viol = safe_mean(succ_df["v_violated"]) * 100 if "v_violated" in succ_df.columns else 0.0
-                acc_viol = safe_mean(succ_df["a_violated"]) * 100 if "a_violated" in succ_df.columns else 0.0
-                jerk_viol = safe_mean(succ_df["j_violated"]) * 100 if "j_violated" in succ_df.columns else 0.0
+                sfc_viol = (
+                    safe_mean(succ_df["corridor_violated"]) * 100
+                    if "corridor_violated" in succ_df.columns
+                    else 0.0
+                )
+                vel_viol = (
+                    safe_mean(succ_df["v_violated"]) * 100
+                    if "v_violated" in succ_df.columns
+                    else 0.0
+                )
+                acc_viol = (
+                    safe_mean(succ_df["a_violated"]) * 100
+                    if "a_violated" in succ_df.columns
+                    else 0.0
+                )
+                jerk_viol = (
+                    safe_mean(succ_df["j_violated"]) * 100
+                    if "j_violated" in succ_df.columns
+                    else 0.0
+                )
 
             # Max of all violations
             any_viol = max(sfc_viol, vel_viol, acc_viol, jerk_viol)
 
-        rows.append({
-            "N": N,
-            "VE": ve_flag,
-            "success_rate": success_rate,
-            "per_opt_ms": per_opt_ms,
-            "total_opt_ms": total_opt_ms,
-            "traj_time_s": traj_time_s,
-            "path_length": path_length,
-            "jerk_smooth": jerk_smooth,
-            "any_viol": any_viol,
-        })
+        rows.append(
+            {
+                "N": N,
+                "VE": ve_flag,
+                "success_rate": success_rate,
+                "per_opt_ms": per_opt_ms,
+                "total_opt_ms": total_opt_ms,
+                "traj_time_s": traj_time_s,
+                "path_length": path_length,
+                "jerk_smooth": jerk_smooth,
+                "any_viol": any_viol,
+            }
+        )
 
     return pd.DataFrame(rows)
 
@@ -644,7 +733,9 @@ def generate_ve_latex_table(df):
 
     latex = []
     latex.append("\\begin{table}")
-    latex.append("  \\caption{Variable Elimination (VE) Benchmarking Results in Standardized Environment: We highlight the best and worst values for each $N$ in \\best{green} and \\worst{red}, respectively. \\todo{add description}}")
+    latex.append(
+        "  \\caption{Variable Elimination (VE) Benchmarking Results in Standardized Environment: We highlight the best and worst values for each $N$ in \\best{green} and \\worst{red}, respectively. \\todo{add description}}"
+    )
     latex.append("  \\label{tab:variable_elimination_benchmark}")
     latex.append("  \\centering")
     latex.append("  \\renewcommand{\\arraystretch}{1.2}")
@@ -758,7 +849,7 @@ def generate_ve_latex_table(df):
     return "\n".join(latex)
 
 
-UNKNOWN_DYNAMIC_OUTPUT_FILE = Path("/home/kkondo/paper_writing/SANDO_v3/tables/unknown_dynamic_sim.tex")
+UNKNOWN_DYNAMIC_OUTPUT_FILE = None  # Must be set via --ud-output CLI arg
 
 
 def load_unknown_dynamic_data():
@@ -780,7 +871,7 @@ def load_unknown_dynamic_data():
             print(f"  WARNING: {p_dir} not found")
             continue
 
-        for case in ['easy', 'medium', 'hard']:
+        for case in ["easy", "medium", "hard"]:
             # Find the case directory (e.g., easy_20260309_191424)
             case_dirs = sorted(p_dir.glob(f"{case}_*"))
             if not case_dirs:
@@ -789,7 +880,7 @@ def load_unknown_dynamic_data():
             case_dir = case_dirs[-1]  # Use the latest
 
             # Load top-level benchmark CSVs (last one has all trials)
-            import os
+
             bench_files = sorted(case_dir.glob("benchmark_*.csv"))
             bench_files = [f for f in bench_files if f.stat().st_size > 10]
             if not bench_files:
@@ -798,21 +889,28 @@ def load_unknown_dynamic_data():
 
             final_df = pd.read_csv(bench_files[-1])
             n_trials = len(final_df)
-            n_success = int(final_df['goal_reached'].sum())
+            n_success = int(final_df["goal_reached"].sum())
             success_rate = n_success / n_trials * 100
 
-            succ = final_df[final_df['goal_reached'] == True]
-            travel_time = safe_mean(succ['flight_travel_time'])
-            path_length = safe_mean(succ['path_length'])
-            jerk = safe_mean(succ['jerk_integral'])
+            succ = final_df[final_df["goal_reached"] == True]
+            travel_time = safe_mean(succ["flight_travel_time"])
+            path_length = safe_mean(succ["path_length"])
+            jerk = safe_mean(succ["jerk_integral"])
 
             # Combined constraint violation rate
-            viol_cols = ['sfc_violation_count', 'vel_violation_count',
-                         'acc_violation_count', 'jerk_violation_count']
+            viol_cols = [
+                "sfc_violation_count",
+                "vel_violation_count",
+                "acc_violation_count",
+                "jerk_violation_count",
+            ]
             total_viol = sum(succ[c].sum() for c in viol_cols if c in succ.columns)
             # Express as percentage of trials with any violation
-            trials_with_viol = ((succ[viol_cols].sum(axis=1) > 0).sum()
-                                if all(c in succ.columns for c in viol_cols) else 0)
+            trials_with_viol = (
+                (succ[viol_cols].sum(axis=1) > 0).sum()
+                if all(c in succ.columns for c in viol_cols)
+                else 0
+            )
             cv_pct = trials_with_viol / len(succ) * 100 if len(succ) > 0 else 0.0
 
             # Per-replanning CSVs for optimization time
@@ -831,30 +929,38 @@ def load_unknown_dynamic_data():
                         pass
                 if replan_dfs:
                     replan = pd.concat(replan_dfs, ignore_index=True)
-                    replan_succ = replan[replan['Result'] == 1]
+                    replan_succ = replan[replan["Result"] == 1]
                     if not replan_succ.empty:
-                        per_opt_ms = safe_mean(replan_succ['Local Traj Time [ms]'])
-                        if 'Total replanning time [ms]' in replan_succ.columns:
-                            total_replan_ms = safe_mean(replan_succ['Total replanning time [ms]'])
-                        if 'CVX Decomposition Time [ms]' in replan_succ.columns:
-                            cvx_decomp_ms = safe_mean(replan_succ['CVX Decomposition Time [ms]'])
+                        per_opt_ms = safe_mean(replan_succ["Local Traj Time [ms]"])
+                        if "Total replanning time [ms]" in replan_succ.columns:
+                            total_replan_ms = safe_mean(
+                                replan_succ["Total replanning time [ms]"]
+                            )
+                        if "CVX Decomposition Time [ms]" in replan_succ.columns:
+                            cvx_decomp_ms = safe_mean(
+                                replan_succ["CVX Decomposition Time [ms]"]
+                            )
 
-            rows.append({
-                'P': p_val,
-                'case': case,
-                'success_rate': success_rate,
-                'per_opt_ms': per_opt_ms,
-                'total_replan_ms': total_replan_ms,
-                'cvx_decomp_ms': cvx_decomp_ms,
-                'travel_time': travel_time,
-                'path_length': path_length,
-                'jerk_integral': jerk,
-                'cv_pct': cv_pct,
-            })
-            print(f"  P={p_val} {case}: {n_success}/{n_trials} success, "
-                  f"opt={per_opt_ms:.1f}ms, replan={total_replan_ms:.1f}ms, "
-                  f"cvx={cvx_decomp_ms:.1f}ms, trav={travel_time:.1f}s, "
-                  f"path={path_length:.1f}m, jerk={jerk:.1f}")
+            rows.append(
+                {
+                    "P": p_val,
+                    "case": case,
+                    "success_rate": success_rate,
+                    "per_opt_ms": per_opt_ms,
+                    "total_replan_ms": total_replan_ms,
+                    "cvx_decomp_ms": cvx_decomp_ms,
+                    "travel_time": travel_time,
+                    "path_length": path_length,
+                    "jerk_integral": jerk,
+                    "cv_pct": cv_pct,
+                }
+            )
+            print(
+                f"  P={p_val} {case}: {n_success}/{n_trials} success, "
+                f"opt={per_opt_ms:.1f}ms, replan={total_replan_ms:.1f}ms, "
+                f"cvx={cvx_decomp_ms:.1f}ms, trav={travel_time:.1f}s, "
+                f"path={path_length:.1f}m, jerk={jerk:.1f}"
+            )
 
     return pd.DataFrame(rows)
 
@@ -870,21 +976,23 @@ def generate_unknown_dynamic_latex_table(df):
 
     # Columns to highlight: (key, higher_is_better)
     metric_cols = [
-        ('success_rate', True),
-        ('per_opt_ms', False),
-        ('total_replan_ms', False),
-        ('cvx_decomp_ms', False),
-        ('travel_time', False),
-        ('path_length', False),
-        ('jerk_integral', False),
-        ('cv_pct', False),
+        ("success_rate", True),
+        ("per_opt_ms", False),
+        ("total_replan_ms", False),
+        ("cvx_decomp_ms", False),
+        ("travel_time", False),
+        ("path_length", False),
+        ("jerk_integral", False),
+        ("cv_pct", False),
     ]
 
     latex = []
     latex.append("\\begin{table}")
-    latex.append("  \\caption{Benchmark results in unknown dynamic environments. "
-                 "SANDO navigates using only pointcloud sensing (no ground truth obstacle trajectories). "
-                 "We highlight the \\best{best} and \\worst{worst} value for each environment.}")
+    latex.append(
+        "  \\caption{Benchmark results in unknown dynamic environments. "
+        "SANDO navigates using only pointcloud sensing (no ground truth obstacle trajectories). "
+        "We highlight the \\best{best} and \\worst{worst} value for each environment.}"
+    )
     latex.append("  \\label{tab:unknown_dynamic_benchmark}")
     latex.append("  \\centering")
     latex.append("  \\renewcommand{\\arraystretch}{1.2}")
@@ -905,15 +1013,15 @@ def generate_unknown_dynamic_latex_table(df):
     latex.append("      \\\\")
     latex.append("      \\midrule")
 
-    case_labels = {'easy': 'Easy', 'medium': 'Medium', 'hard': 'Hard'}
+    case_labels = {"easy": "Easy", "medium": "Medium", "hard": "Hard"}
 
-    for ci, case in enumerate(['easy', 'medium', 'hard']):
-        df_case = df[df['case'] == case].copy()
+    for ci, case in enumerate(["easy", "medium", "hard"]):
+        df_case = df[df["case"] == case].copy()
         if df_case.empty:
             continue
 
         # Sort P=3 first, then P=2 (higher P first)
-        df_case = df_case.sort_values('P', ascending=False)
+        df_case = df_case.sort_values("P", ascending=False)
 
         # Find best/worst for this environment
         bw = {}
@@ -934,7 +1042,7 @@ def generate_unknown_dynamic_latex_table(df):
             else:
                 env_cell = ""
 
-            p_val = int(row['P'])
+            p_val = int(row["P"])
             cells = [f"      {env_cell} & {p_val}"]
 
             for col, _ in metric_cols:
@@ -959,12 +1067,40 @@ def generate_unknown_dynamic_latex_table(df):
 
 def main():
     """Main function"""
-    import sys
-    skip_ve = "--no-ve" in sys.argv
+    global ROOT_PATH, OUTPUT_FILE, VE_OUTPUT_FILE, UNKNOWN_DYNAMIC_OUTPUT_FILE, SUPER_CSV_FILES
 
-    print("="*80)
+    parser = argparse.ArgumentParser(description="Generate LaTeX tables from SANDO benchmark data")
+    parser.add_argument("--root-path", type=Path, default=ROOT_PATH,
+                        help="Root path for benchmark data (default: <package>/benchmark_data)")
+    parser.add_argument("--output", type=Path, required=True,
+                        help="Output path for standardized benchmark LaTeX table")
+    parser.add_argument("--ve-output", type=Path, default=None,
+                        help="Output path for VE benchmark LaTeX table")
+    parser.add_argument("--ud-output", type=Path, default=None,
+                        help="Output path for unknown dynamic benchmark LaTeX table")
+    parser.add_argument("--super-l2-csv", type=Path, default=None,
+                        help="Path to SUPER L2 benchmark CSV")
+    parser.add_argument("--super-linf-csv", type=Path, default=None,
+                        help="Path to SUPER Linf benchmark CSV")
+    parser.add_argument("--no-ve", action="store_true", help="Skip VE benchmark table")
+    parser.add_argument("--no-unknown-dynamic", action="store_true",
+                        help="Skip unknown dynamic benchmark table")
+    args = parser.parse_args()
+
+    ROOT_PATH = args.root_path
+    OUTPUT_FILE = args.output
+    VE_OUTPUT_FILE = args.ve_output
+    UNKNOWN_DYNAMIC_OUTPUT_FILE = args.ud_output
+    if args.super_l2_csv:
+        SUPER_CSV_FILES["SUPER ($L_2$)"] = args.super_l2_csv
+    if args.super_linf_csv:
+        SUPER_CSV_FILES["SUPER ($L_\\infty$)"] = args.super_linf_csv
+
+    skip_ve = args.no_ve or VE_OUTPUT_FILE is None
+
+    print("=" * 80)
     print("SANDO LaTeX Table Generator")
-    print("="*80)
+    print("=" * 80)
 
     # ========== Generate Standardized Benchmark Table ==========
     print("\n[1/3] Generating Standardized Benchmark Table")
@@ -1001,17 +1137,17 @@ def main():
         sando_only_file.write_text(sando_rows)
 
         print(f"\n✓ SANDO-only rows saved to: {sando_only_file}")
-        print(f"\n{'='*80}")
+        print(f"\n{'=' * 80}")
         print("USAGE INSTRUCTIONS:")
-        print("="*80)
+        print("=" * 80)
         print("\nOption 1: Use full table (if starting fresh)")
         print(f"  \\input{{{OUTPUT_FILE.name}}}")
         print("\nOption 2: Update existing table (preserves other planners)")
-        print(f"  1. Open your existing table file")
-        print(f"  2. Find all lines containing 'SANDO'")
+        print("  1. Open your existing table file")
+        print("  2. Find all lines containing 'SANDO'")
         print(f"  3. Replace them with contents from: {sando_only_file.name}")
-        print(f"  4. Make sure multirow{{N}} values match your table structure")
-        print("="*80)
+        print("  4. Make sure multirow{N} values match your table structure")
+        print("=" * 80)
 
     # ========== Generate VE Benchmark Table ==========
     ve_df = pd.DataFrame()
@@ -1046,7 +1182,7 @@ def main():
 
     # ========== Generate Unknown Dynamic Benchmark Table ==========
     ud_df = pd.DataFrame()
-    skip_ud = "--no-unknown-dynamic" in sys.argv
+    skip_ud = args.no_unknown_dynamic or UNKNOWN_DYNAMIC_OUTPUT_FILE is None
     if skip_ud:
         print("\n[3/3] Skipping Unknown Dynamic Benchmark Table (--no-unknown-dynamic)")
     else:
@@ -1058,7 +1194,9 @@ def main():
 
         if ud_df.empty:
             print("WARNING: No unknown dynamic benchmark data found.")
-            print("  Run: python3 run_benchmark.py --num-p-values 2 3 --config-name unknown_dynamic ...")
+            print(
+                "  Run: python3 run_benchmark.py --num-p-values 2 3 --config-name unknown_dynamic ..."
+            )
         else:
             print(f"\nLoaded {len(ud_df)} data rows")
 
@@ -1068,13 +1206,15 @@ def main():
             UNKNOWN_DYNAMIC_OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
             UNKNOWN_DYNAMIC_OUTPUT_FILE.write_text(ud_latex_code)
 
-            print(f"\n✓ Unknown Dynamic LaTeX table saved to: {UNKNOWN_DYNAMIC_OUTPUT_FILE}")
+            print(
+                f"\n✓ Unknown Dynamic LaTeX table saved to: {UNKNOWN_DYNAMIC_OUTPUT_FILE}"
+            )
             print(f"  Include in paper: \\input{{{UNKNOWN_DYNAMIC_OUTPUT_FILE.name}}}")
 
     # ========== Summary ==========
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("GENERATION COMPLETE")
-    print("="*80)
+    print("=" * 80)
     print("\nGenerated files:")
     if not df.empty:
         print(f"  1. {OUTPUT_FILE}")

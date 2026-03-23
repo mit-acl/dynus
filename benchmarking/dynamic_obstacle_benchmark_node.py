@@ -15,41 +15,55 @@ import os
 import signal
 from std_msgs.msg import Empty
 from time import sleep
-from random import seed, random, uniform
+from random import seed, uniform
+
 
 class BenchmarkNode(Node):
-
     def __init__(self):
 
         # random seed
         seed(1)
-        
-        # Global planner 
-        self.global_planner_algorithm = 'sjps'
+
+        # Global planner
+        self.global_planner_algorithm = "sjps"
         self.num_N = 4  # number of samples for the global planner
 
         # Benchmarking types
-        self.benchmark_types = 'dynamic_obstacle'
-        self.algorithm = 'sando'   # local planner algorithm
-        self.use_rviz = True       # Use RViz
-        self.env = "dynamic_forest" # "empty_wo_ground" "easy_forest" "medium_forest" "hard_forest" "dynamic_forest"
+        self.benchmark_types = "dynamic_obstacle"
+        self.algorithm = "sando"  # local planner algorithm
+        self.use_rviz = True  # Use RViz
+        self.env = "dynamic_forest"  # "empty_wo_ground" "easy_forest" "medium_forest" "hard_forest" "dynamic_forest"
 
         # Use dynamic obstacles
         self.use_dyn_obs = True
 
-        super().__init__('benchmark_node')
-        self.declare_parameter('iterations', 5)
-        self.iterations = self.get_parameter('iterations').value
+        super().__init__("benchmark_node")
+        self.declare_parameter("iterations", 5)
+        self.iterations = self.get_parameter("iterations").value
         self.current_run = 0
 
+        # Data output directory (external storage path)
+        self.declare_parameter("data_dir", "")
+        self.data_dir = self.get_parameter("data_dir").value
+        if not self.data_dir:
+            raise ValueError("Parameter 'data_dir' must be set (e.g., /media/user/drive/sando)")
+
+        # Bag record script path (auto-detected from package)
+        _pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.declare_parameter("bag_record_script", os.path.join(_pkg_dir, "scripts", "bag_record.py"))
+        self.bag_record_script = self.get_parameter("bag_record_script").value
+
         # Agents
-        self.agent_list = ['NX01']
+        self.agent_list = ["NX01"]
 
         # Subscribe to the goal_reached topic
         self.goal_reached_sub = []
         for agent in self.agent_list:
-            self.goal_reached_sub.append(self.create_subscription(
-                Empty, f'/{agent}/goal_reached', self.goal_reached_callback, 1)) 
+            self.goal_reached_sub.append(
+                self.create_subscription(
+                    Empty, f"/{agent}/goal_reached", self.goal_reached_callback, 1
+                )
+            )
 
         # Flag to check if the goal has been reached
         self.goal_reached = False
@@ -72,55 +86,125 @@ class BenchmarkNode(Node):
     def run_simulation(self):
 
         # create directory for the algorithm
-        csv_folder_path = f"/media/kkondo/kota_elements/sando/{self.benchmark_types}/csv/{self.algorithm}"
-        bag_folder_path = f"/media/kkondo/kota_elements/sando/{self.benchmark_types}/bags/{self.algorithm}"
+        csv_folder_path = f"{self.data_dir}/{self.benchmark_types}/csv/{self.algorithm}"
+        bag_folder_path = f"{self.data_dir}/{self.benchmark_types}/bags/{self.algorithm}"
         os.makedirs(csv_folder_path, exist_ok=True)
         os.makedirs(bag_folder_path, exist_ok=True)
 
         # simulation loop
         for i in range(4, self.iterations):
             self.current_run = i
-            self.get_logger().info(f'Starting simulation {self.current_run}/{self.iterations}')
-            self.start_simulation(self.global_planner_algorithm, csv_folder_path, bag_folder_path, self.algorithm)
+            self.get_logger().info(
+                f"Starting simulation {self.current_run}/{self.iterations}"
+            )
+            self.start_simulation(
+                self.global_planner_algorithm,
+                csv_folder_path,
+                bag_folder_path,
+                self.algorithm,
+            )
             self.wait_for_goal()
             self.stop_simulation()
-            self.get_logger().info(f'Completed simulation {self.current_run}/{self.iterations}')
+            self.get_logger().info(
+                f"Completed simulation {self.current_run}/{self.iterations}"
+            )
             sleep(5)
 
-    def start_simulation(self, global_planner_algorithm='dgp', csv_folder_path='', bag_folder_path='', algorithm='sando'):
+    def start_simulation(
+        self,
+        global_planner_algorithm="hgp",
+        csv_folder_path="",
+        bag_folder_path="",
+        algorithm="sando",
+    ):
 
         # Get the start and goal positions
         start_x, start_y = self.start_positions[self.current_run]
         goal_x, goal_y = self.goal_positions[self.current_run]
 
         # Print the algorithm, start, and goal positions
-        self.get_logger().info(f'Global Planner: {global_planner_algorithm}')
-        self.get_logger().info(f'Start position: {start_x}, {start_y}')
-        self.get_logger().info(f'Goal position: {goal_x}, {goal_y}')
+        self.get_logger().info(f"Global Planner: {global_planner_algorithm}")
+        self.get_logger().info(f"Start position: {start_x}, {start_y}")
+        self.get_logger().info(f"Goal position: {goal_x}, {goal_y}")
 
         # Base
-        self.sim_process_base = subprocess.Popen(["ros2", "launch", "sando", "base_sando.launch.py", f"use_dyn_obs:={self.use_dyn_obs}", "use_gazebo_gui:=false", f"use_rviz:={self.use_rviz}", f"env:={self.env}"], preexec_fn=os.setsid)
+        self.sim_process_base = subprocess.Popen(
+            [
+                "ros2",
+                "launch",
+                "sando",
+                "base_sando.launch.py",
+                f"use_dyn_obs:={self.use_dyn_obs}",
+                "use_gazebo_gui:=false",
+                f"use_rviz:={self.use_rviz}",
+                f"env:={self.env}",
+            ],
+            preexec_fn=os.setsid,
+        )
 
         # ACL Mapper
-        self.acl_mapper_process = subprocess.Popen(["ros2", "launch", "global_mapper_ros", "global_mapper_node.launch.py"], preexec_fn=os.setsid)
+        self.acl_mapper_process = subprocess.Popen(
+            ["ros2", "launch", "global_mapper_ros", "global_mapper_node.launch.py"],
+            preexec_fn=os.setsid,
+        )
 
         sleep(10)
-        
+
         # Onboard
-        self.sim_process_onboard = subprocess.Popen(["ros2", "launch", "sando", "onboard_sando.launch.py", f"x:={start_x}", f"y:={start_y}", f"z:={self.start_goal_z}", "yaw:=0", "namespace:=NX01", f"use_obstacle_tracker:={self.use_dyn_obs}", f"data_file:={csv_folder_path}/num_{self.current_run}.csv", f"global_planner:={global_planner_algorithm}", "use_benchmark:=true", f"num_N:={self.num_N}"], preexec_fn=os.setsid)
-        
+        self.sim_process_onboard = subprocess.Popen(
+            [
+                "ros2",
+                "launch",
+                "sando",
+                "onboard_sando.launch.py",
+                f"x:={start_x}",
+                f"y:={start_y}",
+                f"z:={self.start_goal_z}",
+                "yaw:=0",
+                "namespace:=NX01",
+                f"use_obstacle_tracker:={self.use_dyn_obs}",
+                f"data_file:={csv_folder_path}/num_{self.current_run}.csv",
+                f"global_planner:={global_planner_algorithm}",
+                "use_benchmark:=true",
+                f"num_N:={self.num_N}",
+            ],
+            preexec_fn=os.setsid,
+        )
+
         time_to_sleep = 100 if self.env == "empty_wo_ground" else 50
         sleep(time_to_sleep)
 
         # Bag recording
-        self.sim_bag_record = subprocess.Popen(["python3", "/home/kkondo/code/dynus_ws/src/sando/scripts/bag_record.py", "--bag_number", str(self.current_run), "--bag_path", f"{bag_folder_path}/num_{self.current_run}", "--agents", "['NX01']"], preexec_fn=os.setsid)
+        self.sim_bag_record = subprocess.Popen(
+            [
+                "python3",
+                self.bag_record_script,
+                "--bag_number",
+                str(self.current_run),
+                "--bag_path",
+                f"{bag_folder_path}/num_{self.current_run}",
+                "--agents",
+                "['NX01']",
+            ],
+            preexec_fn=os.setsid,
+        )
 
         sleep(10)
-        
+
         # Goal
         # print("Sending goal")
-        self.sim_process_goal =  subprocess.Popen(["ros2", "launch", "sando", "goal_sender.launch.py", "list_agents:=['NX01']", f"list_goals:=['[{goal_x}, {goal_y}]']", f"default_goal_z:={self.start_goal_z}"], preexec_fn=os.setsid)
-
+        self.sim_process_goal = subprocess.Popen(
+            [
+                "ros2",
+                "launch",
+                "sando",
+                "goal_sender.launch.py",
+                "list_agents:=['NX01']",
+                f"list_goals:=['[{goal_x}, {goal_y}]']",
+                f"default_goal_z:={self.start_goal_z}",
+            ],
+            preexec_fn=os.setsid,
+        )
 
     def stop_simulation(self):
 
@@ -145,7 +229,9 @@ class BenchmarkNode(Node):
             parts = process.split()
             if len(parts) > 1:
                 pid = parts[1]
-                print(f"Found gazebo process to kill: PID={pid}, Command={' '.join(parts[10:])}")
+                print(
+                    f"Found gazebo process to kill: PID={pid}, Command={' '.join(parts[10:])}"
+                )
                 self.kill_process(pid)
 
         sleep(10)
@@ -159,8 +245,9 @@ class BenchmarkNode(Node):
         # Re-subscribe to the topic
         self.goal_reached_sub = [
             self.create_subscription(
-                Empty, f'/{agent}/goal_reached', self.goal_reached_callback, 1
-            ) for agent in self.agent_list
+                Empty, f"/{agent}/goal_reached", self.goal_reached_callback, 1
+            )
+            for agent in self.agent_list
         ]
 
         self.goal_reached = False
@@ -171,14 +258,18 @@ class BenchmarkNode(Node):
     def goal_reached_callback(self, msg):
         if msg:
             self.goal_reached = True
-    
+
     def get_gazebo_process(self):
         """Get a list of gazebo-related processes."""
         try:
             # Run `ps aux | grep gazebo`
-            result = subprocess.run(['ps', 'aux'], stdout=subprocess.PIPE, text=True)
+            result = subprocess.run(["ps", "aux"], stdout=subprocess.PIPE, text=True)
             processes = result.stdout.splitlines()
-            return [line for line in processes if 'gazebo' in line and 'Microsoft' not in line]
+            return [
+                line
+                for line in processes
+                if "gazebo" in line and "Microsoft" not in line
+            ]
         except subprocess.CalledProcessError as e:
             print(f"Error executing ps aux: {e}")
             return []
@@ -186,10 +277,11 @@ class BenchmarkNode(Node):
     def kill_process(self, pid):
         """Kill a process by its PID."""
         try:
-            subprocess.run(['kill', '-9', str(pid)], check=True)
+            subprocess.run(["kill", "-9", str(pid)], check=True)
             print(f"Successfully killed process with PID: {pid}")
         except subprocess.CalledProcessError as e:
             print(f"Failed to kill process with PID {pid}: {e}")
+
 
 def main(args=None):
     rclpy.init(args=args)
@@ -198,5 +290,6 @@ def main(args=None):
     node.destroy_node()
     rclpy.shutdown()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

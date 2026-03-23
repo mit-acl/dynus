@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------------
+# Copyright 2025, Kota Kondo, Aerospace Controls Laboratory
+# Massachusetts Institute of Technology
+# All Rights Reserved
+# Authors: Kota Kondo, et al.
+# See LICENSE file for the license information
+# ----------------------------------------------------------------------------
 """
 SANDO Benchmarking Script
 
@@ -30,7 +37,6 @@ import math
 import os
 import signal
 import subprocess
-import sys
 import time
 import yaml
 from dataclasses import dataclass, asdict
@@ -41,10 +47,9 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 
-from geometry_msgs.msg import PointStamped, PoseStamped, Vector3
-from nav_msgs.msg import Odometry
+from geometry_msgs.msg import PointStamped, PoseStamped
 from std_msgs.msg import Empty
-from dynus_interfaces.msg import DynTraj, State, Goal
+from dynus_interfaces.msg import DynTraj, Goal
 
 
 def update_num_p_in_yaml(yaml_path: str, num_p: int):
@@ -58,17 +63,14 @@ def update_num_p_in_yaml(yaml_path: str, num_p: int):
         num_p: New value for num_P
     """
     import re
-    with open(yaml_path, 'r') as f:
+
+    with open(yaml_path, "r") as f:
         content = f.read()
 
     # Replace num_P value while preserving the comment
-    new_content = re.sub(
-        r'(num_P:\s*)\d+',
-        rf'\g<1>{num_p}',
-        content
-    )
+    new_content = re.sub(r"(num_P:\s*)\d+", rf"\g<1>{num_p}", content)
 
-    with open(yaml_path, 'w') as f:
+    with open(yaml_path, "w") as f:
         f.write(new_content)
 
     print(f"Updated num_P to {num_p} in {yaml_path}")
@@ -84,7 +86,9 @@ def set_num_p_everywhere(num_p: int):
     src_yaml = script_dir.parent / "config" / "sando.yaml"
     # Find the install yaml relative to the workspace
     ws_dir = script_dir.parent.parent.parent  # dynus_ws
-    install_yaml = ws_dir / "install" / "sando" / "share" / "sando" / "config" / "sando.yaml"
+    install_yaml = (
+        ws_dir / "install" / "sando" / "share" / "sando" / "config" / "sando.yaml"
+    )
 
     for yaml_path in [src_yaml, install_yaml]:
         if yaml_path.exists():
@@ -106,23 +110,23 @@ def load_sando_params_from_yaml(yaml_path: str) -> dict:
         drone_bbox in sando.yaml contains FULL sizes, so we divide by 2 to get half-extents
     """
     defaults = {
-        'drone_bbox': (0.1, 0.1, 0.1),  # half-extents
-        'v_max': 5.0,
-        'a_max': 10.0,
-        'j_max': 50.0,
-        'global_planner': 'astar_heat'
+        "drone_bbox": (0.1, 0.1, 0.1),  # half-extents
+        "v_max": 5.0,
+        "a_max": 10.0,
+        "j_max": 50.0,
+        "global_planner": "astar_heat",
     }
 
     try:
-        with open(yaml_path, 'r') as f:
+        with open(yaml_path, "r") as f:
             config = yaml.safe_load(f)
 
         # Look for parameters in sando_node.ros__parameters
         params = None
-        if 'sando_node' in config and 'ros__parameters' in config['sando_node']:
-            params = config['sando_node']['ros__parameters']
-        elif 'sando' in config and 'ros__parameters' in config['sando']:
-            params = config['sando']['ros__parameters']
+        if "sando_node" in config and "ros__parameters" in config["sando_node"]:
+            params = config["sando_node"]["ros__parameters"]
+        elif "sando" in config and "ros__parameters" in config["sando"]:
+            params = config["sando"]["ros__parameters"]
 
         if params is None:
             print(f"Warning: ros__parameters not found in {yaml_path}, using defaults")
@@ -131,16 +135,24 @@ def load_sando_params_from_yaml(yaml_path: str) -> dict:
         result = {}
 
         # Load drone_bbox (convert from full size to half-extents)
-        if 'drone_bbox' in params:
-            bbox_full = params['drone_bbox']
-            result['drone_bbox'] = (bbox_full[0] / 2.0, bbox_full[1] / 2.0, bbox_full[2] / 2.0)
-            print(f"Loaded drone_bbox from yaml: {bbox_full} (full) -> {result['drone_bbox']} (half-extents)")
+        if "drone_bbox" in params:
+            bbox_full = params["drone_bbox"]
+            result["drone_bbox"] = (
+                bbox_full[0] / 2.0,
+                bbox_full[1] / 2.0,
+                bbox_full[2] / 2.0,
+            )
+            print(
+                f"Loaded drone_bbox from yaml: {bbox_full} (full) -> {result['drone_bbox']} (half-extents)"
+            )
         else:
-            result['drone_bbox'] = defaults['drone_bbox']
-            print(f"Warning: drone_bbox not found, using default {result['drone_bbox']}")
+            result["drone_bbox"] = defaults["drone_bbox"]
+            print(
+                f"Warning: drone_bbox not found, using default {result['drone_bbox']}"
+            )
 
         # Load constraint limits
-        for key in ['v_max', 'a_max', 'j_max']:
+        for key in ["v_max", "a_max", "j_max"]:
             if key in params:
                 result[key] = float(params[key])
                 print(f"Loaded {key} from yaml: {result[key]}")
@@ -149,12 +161,14 @@ def load_sando_params_from_yaml(yaml_path: str) -> dict:
                 print(f"Warning: {key} not found, using default {result[key]}")
 
         # Load global planner
-        if 'global_planner' in params:
-            result['global_planner'] = str(params['global_planner'])
+        if "global_planner" in params:
+            result["global_planner"] = str(params["global_planner"])
             print(f"Loaded global_planner from yaml: {result['global_planner']}")
         else:
-            result['global_planner'] = defaults['global_planner']
-            print(f"Warning: global_planner not found, using default {result['global_planner']}")
+            result["global_planner"] = defaults["global_planner"]
+            print(
+                f"Warning: global_planner not found, using default {result['global_planner']}"
+            )
 
         return result
 
@@ -169,9 +183,13 @@ def check_lingering_processes() -> bool:
     try:
         # Check for specific ROS executables, not Python scripts
         result = subprocess.run(
-            ["pgrep", "-x", "fake_sim|dynamic_forest_node|sando_node|rviz2|goal_sender"],
+            [
+                "pgrep",
+                "-x",
+                "fake_sim|dynamic_forest_node|sando_node|rviz2|goal_sender",
+            ],
             capture_output=True,
-            text=True
+            text=True,
         )
         # pgrep returns 0 if processes found, 1 if not found
         return result.returncode == 0
@@ -182,37 +200,63 @@ def check_lingering_processes() -> bool:
 def kill_all_sando_processes():
     """Aggressively kill all sando-related ROS processes (but not benchmark script)"""
     # Kill tmux session first (this kills everything inside tmux)
-    subprocess.run(["tmux", "kill-session", "-t", "sando_sim"],
-                  stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+    subprocess.run(
+        ["tmux", "kill-session", "-t", "sando_sim"],
+        stderr=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+    )
 
     # Kill specific ROS node executables by exact name
-    for process_name in ["rviz2", "fake_sim", "dynamic_forest_node", "sando_node", "goal_sender",
-                         "gzserver", "gzclient", "ruby"]:
-        subprocess.run(["pkill", "-9", "-x", process_name],
-                      stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+    for process_name in [
+        "rviz2",
+        "fake_sim",
+        "dynamic_forest_node",
+        "sando_node",
+        "goal_sender",
+        "gzserver",
+        "gzclient",
+        "ruby",
+    ]:
+        subprocess.run(
+            ["pkill", "-9", "-x", process_name],
+            stderr=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+        )
 
     # Kill run_sim.py but NOT run_benchmark.py
-    subprocess.run(["pkill", "-9", "-f", "run_sim.py"],
-                  stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+    subprocess.run(
+        ["pkill", "-9", "-f", "run_sim.py"],
+        stderr=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+    )
 
     # Kill tmuxp
-    subprocess.run(["pkill", "-9", "tmuxp"],
-                  stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+    subprocess.run(
+        ["pkill", "-9", "tmuxp"], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
+    )
 
     # Kill ros2 launch processes (but be specific)
     for pattern in ["ros2 launch sando", "ros2 launch.*rviz", "ros2 launch.*onboard"]:
-        subprocess.run(["pkill", "-9", "-f", pattern],
-                      stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+        subprocess.run(
+            ["pkill", "-9", "-f", pattern],
+            stderr=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+        )
 
     # Kill processes with /NX01/ namespace (ROS nodes)
-    subprocess.run(["pkill", "-9", "-f", "/NX01/"],
-                  stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+    subprocess.run(
+        ["pkill", "-9", "-f", "/NX01/"],
+        stderr=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+    )
 
     # Wait for processes to die
     time.sleep(1)
 
 
-def interpolate_obstacle_position(times: List[float], positions: List[List[float]], t_query: float) -> Tuple[float, float, float]:
+def interpolate_obstacle_position(
+    times: List[float], positions: List[List[float]], t_query: float
+) -> Tuple[float, float, float]:
     """Interpolate obstacle position at a given time
 
     Args:
@@ -243,8 +287,8 @@ def interpolate_obstacle_position(times: List[float], positions: List[List[float
     if idx >= len(times):
         return tuple(positions[-1])
 
-    t0, t1 = times[idx-1], times[idx]
-    p0, p1 = positions[idx-1], positions[idx]
+    t0, t1 = times[idx - 1], times[idx]
+    p0, p1 = positions[idx - 1], positions[idx]
 
     alpha = (t_query - t0) / (t1 - t0) if t1 > t0 else 0.0
 
@@ -258,6 +302,7 @@ def interpolate_obstacle_position(times: List[float], positions: List[List[float
 @dataclass
 class BenchmarkMetrics:
     """Container for all benchmark metrics"""
+
     # Trial metadata
     trial_id: int = 0
     seed: int = 0
@@ -317,7 +362,9 @@ class BenchmarkMetrics:
     collision_penetration_avg: float = 0.0
     collision_unique_obstacles: int = 0
     collision_free_ratio: float = 1.0
-    min_distance_to_obstacles: float = float('inf')  # Minimum distance throughout trajectory
+    min_distance_to_obstacles: float = float(
+        "inf"
+    )  # Minimum distance throughout trajectory
 
     # Additional info
     notes: str = ""
@@ -326,11 +373,17 @@ class BenchmarkMetrics:
 class BenchmarkMonitor(Node):
     """ROS2 node to monitor simulation and collect metrics"""
 
-    def __init__(self, namespace: str = "NX01", v_max: float = 2.0,
-                 a_max: float = 2.0, j_max: float = 3.0,
-                 commanded_start: tuple = None, commanded_goal: tuple = None,
-                 trajs_topic: str = '/trajs'):
-        super().__init__('benchmark_monitor')
+    def __init__(
+        self,
+        namespace: str = "NX01",
+        v_max: float = 2.0,
+        a_max: float = 2.0,
+        j_max: float = 3.0,
+        commanded_start: tuple = None,
+        commanded_goal: tuple = None,
+        trajs_topic: str = "/trajs",
+    ):
+        super().__init__("benchmark_monitor")
 
         self.namespace = namespace
         self.v_max = v_max
@@ -339,7 +392,9 @@ class BenchmarkMonitor(Node):
 
         # State tracking
         self.goal_reached = False
-        self.goal_reached_signal = False  # True when /goal_reached msg received but conditions not yet met
+        self.goal_reached_signal = (
+            False  # True when /goal_reached msg received but conditions not yet met
+        )
         self.start_time = None
         self.end_time = None
         self.start_pos = None
@@ -364,7 +419,7 @@ class BenchmarkMonitor(Node):
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.VOLATILE,
             history=HistoryPolicy.KEEP_LAST,
-            depth=10
+            depth=10,
         )
 
         # QoS profile with large depth to avoid dropping messages during startup
@@ -372,38 +427,29 @@ class BenchmarkMonitor(Node):
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.VOLATILE,
             history=HistoryPolicy.KEEP_LAST,
-            depth=1000
+            depth=1000,
         )
 
         # Subscribers
         self.sub_goal = self.create_subscription(
-            Goal,
-            f'/{namespace}/goal',
-            self.goal_callback,
-            goal_qos
+            Goal, f"/{namespace}/goal", self.goal_callback, goal_qos
         )
         self.get_logger().info(f"Subscribed to /{namespace}/goal")
 
         self.sub_goal_reached = self.create_subscription(
             Empty,
-            f'/{namespace}/goal_reached',
+            f"/{namespace}/goal_reached",
             self.goal_reached_callback,
-            critical_qos
+            critical_qos,
         )
         self.get_logger().info(f"Subscribed to /{namespace}/goal_reached")
 
         self.sub_point_g = self.create_subscription(
-            PointStamped,
-            f'/{namespace}/point_G_term',
-            self.point_g_callback,
-            10
+            PointStamped, f"/{namespace}/point_G_term", self.point_g_callback, 10
         )
 
         self.sub_trajs = self.create_subscription(
-            DynTraj,
-            trajs_topic,
-            self.trajs_callback,
-            10
+            DynTraj, trajs_topic, self.trajs_callback, 10
         )
 
         self.get_logger().info(f"Benchmark monitor initialized for {namespace}")
@@ -417,7 +463,9 @@ class BenchmarkMonitor(Node):
         if self.start_time is None:
             self.start_time = msg_time
             self.start_pos = [msg.p.x, msg.p.y, msg.p.z]
-            self.get_logger().info(f"First Goal command received at position: {self.start_pos}")
+            self.get_logger().info(
+                f"First Goal command received at position: {self.start_pos}"
+            )
 
         # Always collect data (don't stop when goal is reached - we need data for metrics!)
         # Collect position, velocity, acceleration, and jerk directly from Goal message
@@ -435,7 +483,9 @@ class BenchmarkMonitor(Node):
         commands after this, so we cannot rely on the speed check (the last
         commanded velocity may be non-zero from the deceleration phase).
         """
-        self.get_logger().info(f"goal_reached_callback triggered! Current state: {self.goal_reached}")
+        self.get_logger().info(
+            f"goal_reached_callback triggered! Current state: {self.goal_reached}"
+        )
         if not self.goal_reached:
             # Trust the planner's signal — only verify proximity (not speed)
             # because the planner may stop publishing commands after goal_reached,
@@ -446,11 +496,15 @@ class BenchmarkMonitor(Node):
                     self.end_time = self.timestamps[-1]
                 else:
                     self.end_time = self.get_clock().now().nanoseconds / 1e9
-                self.get_logger().info("Goal reached (planner signal + proximity < 1.0m)!")
+                self.get_logger().info(
+                    "Goal reached (planner signal + proximity < 1.0m)!"
+                )
             else:
                 # Signal received but drone not near goal yet; keep checking
                 self.goal_reached_signal = True
-                self.get_logger().info("goal_reached signal received, waiting for proximity condition...")
+                self.get_logger().info(
+                    "goal_reached signal received, waiting for proximity condition..."
+                )
 
     def _check_arrival_conditions(self, require_speed_check: bool = True) -> bool:
         """Check if drone is near goal.
@@ -469,14 +523,14 @@ class BenchmarkMonitor(Node):
         dx = pos[0] - goal[0]
         dy = pos[1] - goal[1]
         dz = pos[2] - goal[2]
-        dist = math.sqrt(dx*dx + dy*dy + dz*dz)
+        dist = math.sqrt(dx * dx + dy * dy + dz * dz)
 
         if not require_speed_check:
             return dist < 1.0  # Relaxed threshold when planner confirms goal reached
 
         # Check velocity magnitude
         vel = self.velocities[-1]
-        speed = math.sqrt(vel[0]**2 + vel[1]**2 + vel[2]**2)
+        speed = math.sqrt(vel[0] ** 2 + vel[1] ** 2 + vel[2] ** 2)
 
         return dist < 0.5 and speed < 0.1
 
@@ -496,31 +550,37 @@ class BenchmarkMonitor(Node):
 
         # Extract bbox (DynTraj.bbox contains FULL sizes, need to divide by 2 for half-extents)
         if len(msg.bbox) >= 3:
-            half_extents = [float(msg.bbox[0]) / 2.0, float(msg.bbox[1]) / 2.0, float(msg.bbox[2]) / 2.0]
+            half_extents = [
+                float(msg.bbox[0]) / 2.0,
+                float(msg.bbox[1]) / 2.0,
+                float(msg.bbox[2]) / 2.0,
+            ]
         else:
             # Default if bbox not provided (0.8m cube -> 0.4m half-extents)
             half_extents = [0.4, 0.4, 0.4]
 
         # Store latest obstacle data (for metadata)
         self.obstacles[obs_id] = {
-            'id': obs_id,
-            'position': [msg.pos.x, msg.pos.y, msg.pos.z],
-            'half_extents': half_extents,
-            'is_dynamic': msg.mode == 'analytic' and len(msg.function) > 0
+            "id": obs_id,
+            "position": [msg.pos.x, msg.pos.y, msg.pos.z],
+            "half_extents": half_extents,
+            "is_dynamic": msg.mode == "analytic" and len(msg.function) > 0,
         }
 
         # Track obstacle positions over time for accurate collision checking
         if obs_id not in self.obstacle_trajectories:
             self.obstacle_trajectories[obs_id] = {
-                'times': [],
-                'positions': [],
-                'half_extents': half_extents,
-                'is_dynamic': msg.mode == 'analytic' and len(msg.function) > 0
+                "times": [],
+                "positions": [],
+                "half_extents": half_extents,
+                "is_dynamic": msg.mode == "analytic" and len(msg.function) > 0,
             }
 
         # Append current position and time
-        self.obstacle_trajectories[obs_id]['times'].append(current_time)
-        self.obstacle_trajectories[obs_id]['positions'].append([msg.pos.x, msg.pos.y, msg.pos.z])
+        self.obstacle_trajectories[obs_id]["times"].append(current_time)
+        self.obstacle_trajectories[obs_id]["positions"].append(
+            [msg.pos.x, msg.pos.y, msg.pos.z]
+        )
 
     def compute_metrics(self) -> BenchmarkMetrics:
         """Compute all metrics from collected data"""
@@ -538,48 +598,68 @@ class BenchmarkMonitor(Node):
         if len(self.positions) >= 2:
             path_length = 0.0
             for i in range(1, len(self.positions)):
-                dx = self.positions[i][0] - self.positions[i-1][0]
-                dy = self.positions[i][1] - self.positions[i-1][1]
-                dz = self.positions[i][2] - self.positions[i-1][2]
-                path_length += math.sqrt(dx*dx + dy*dy + dz*dz)
+                dx = self.positions[i][0] - self.positions[i - 1][0]
+                dy = self.positions[i][1] - self.positions[i - 1][1]
+                dz = self.positions[i][2] - self.positions[i - 1][2]
+                path_length += math.sqrt(dx * dx + dy * dy + dz * dz)
             metrics.path_length = path_length
 
             # Debug: Check if we captured the full trajectory
             first_pos = self.positions[0]
             last_pos = self.positions[-1]
             self.get_logger().info(f"Trajectory data: {len(self.positions)} samples")
-            self.get_logger().info(f"  First position: [{first_pos[0]:.2f}, {first_pos[1]:.2f}, {first_pos[2]:.2f}]")
-            self.get_logger().info(f"  Last position:  [{last_pos[0]:.2f}, {last_pos[1]:.2f}, {last_pos[2]:.2f}]")
+            self.get_logger().info(
+                f"  First position: [{first_pos[0]:.2f}, {first_pos[1]:.2f}, {first_pos[2]:.2f}]"
+            )
+            self.get_logger().info(
+                f"  Last position:  [{last_pos[0]:.2f}, {last_pos[1]:.2f}, {last_pos[2]:.2f}]"
+            )
             if self.commanded_start:
                 dist_from_start = math.sqrt(
-                    (first_pos[0] - self.commanded_start[0])**2 +
-                    (first_pos[1] - self.commanded_start[1])**2 +
-                    (first_pos[2] - self.commanded_start[2])**2
+                    (first_pos[0] - self.commanded_start[0]) ** 2
+                    + (first_pos[1] - self.commanded_start[1]) ** 2
+                    + (first_pos[2] - self.commanded_start[2]) ** 2
                 )
-                self.get_logger().info(f"  Distance from commanded start: {dist_from_start:.2f}m")
+                self.get_logger().info(
+                    f"  Distance from commanded start: {dist_from_start:.2f}m"
+                )
                 if dist_from_start > 1.0:
-                    self.get_logger().warn(f"WARNING: First captured position is {dist_from_start:.2f}m from start! Data may be missing.")
+                    self.get_logger().warn(
+                        f"WARNING: First captured position is {dist_from_start:.2f}m from start! Data may be missing."
+                    )
 
             # Efficiency (use commanded positions for accurate straight line distance)
-            start_for_calc = self.commanded_start if self.commanded_start else self.start_pos
-            goal_for_calc = self.commanded_goal if self.commanded_goal else self.goal_pos
+            start_for_calc = (
+                self.commanded_start if self.commanded_start else self.start_pos
+            )
+            goal_for_calc = (
+                self.commanded_goal if self.commanded_goal else self.goal_pos
+            )
 
             if start_for_calc and goal_for_calc:
                 dx = goal_for_calc[0] - start_for_calc[0]
                 dy = goal_for_calc[1] - start_for_calc[1]
                 dz = goal_for_calc[2] - start_for_calc[2]
-                metrics.straight_line_distance = math.sqrt(dx*dx + dy*dy + dz*dz)
+                metrics.straight_line_distance = math.sqrt(dx * dx + dy * dy + dz * dz)
                 if metrics.straight_line_distance > 0:
-                    metrics.path_efficiency = path_length / metrics.straight_line_distance
+                    metrics.path_efficiency = (
+                        path_length / metrics.straight_line_distance
+                    )
 
                 # Debug output
-                self.get_logger().info(f"Path metrics: length={path_length:.2f}m, straight_line={metrics.straight_line_distance:.2f}m, efficiency={metrics.path_efficiency:.3f}")
+                self.get_logger().info(
+                    f"Path metrics: length={path_length:.2f}m, straight_line={metrics.straight_line_distance:.2f}m, efficiency={metrics.path_efficiency:.3f}"
+                )
                 if path_length < metrics.straight_line_distance:
-                    self.get_logger().warn(f"WARNING: Path length ({path_length:.2f}m) < straight line ({metrics.straight_line_distance:.2f}m)! Check data collection.")
+                    self.get_logger().warn(
+                        f"WARNING: Path length ({path_length:.2f}m) < straight line ({metrics.straight_line_distance:.2f}m)! Check data collection."
+                    )
 
         # Velocity stats
         if len(self.velocities) > 0:
-            vel_norms = [math.sqrt(v[0]**2 + v[1]**2 + v[2]**2) for v in self.velocities]
+            vel_norms = [
+                math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2) for v in self.velocities
+            ]
             metrics.avg_velocity = sum(vel_norms) / len(vel_norms)
             metrics.max_velocity = max(vel_norms)
 
@@ -594,7 +674,9 @@ class BenchmarkMonitor(Node):
 
         # Acceleration stats and violations
         if len(self.accelerations) > 0:
-            acc_norms = [math.sqrt(a[0]**2 + a[1]**2 + a[2]**2) for a in self.accelerations]
+            acc_norms = [
+                math.sqrt(a[0] ** 2 + a[1] ** 2 + a[2] ** 2) for a in self.accelerations
+            ]
             metrics.avg_acceleration = sum(acc_norms) / len(acc_norms)
             metrics.max_acceleration = max(acc_norms)
 
@@ -612,7 +694,7 @@ class BenchmarkMonitor(Node):
                 # Compute jerk norms
                 jerk_norms = []
                 for jerk in self.jerks:
-                    jerk_norm = math.sqrt(jerk[0]**2 + jerk[1]**2 + jerk[2]**2)
+                    jerk_norm = math.sqrt(jerk[0] ** 2 + jerk[1] ** 2 + jerk[2] ** 2)
                     jerk_norms.append(jerk_norm)
 
                 # Jerk violations (component-wise, per-axis, with tolerance for numerical errors)
@@ -622,31 +704,48 @@ class BenchmarkMonitor(Node):
                         if abs(component) > self.j_max + tolerance:
                             metrics.jerk_violation_count += 1
                             excess = abs(component) - self.j_max
-                            metrics.jerk_max_excess = max(metrics.jerk_max_excess, excess)
+                            metrics.jerk_max_excess = max(
+                                metrics.jerk_max_excess, excess
+                            )
 
                 # Jerk integral (L1 norm) and RMS
                 if jerk_norms and len(self.timestamps) > 1:
-                    metrics.jerk_integral = sum(jerk_norms) * (self.timestamps[-1] - self.timestamps[0]) / len(jerk_norms)
-                    metrics.jerk_rms = math.sqrt(sum(j**2 for j in jerk_norms) / len(jerk_norms))
+                    metrics.jerk_integral = (
+                        sum(jerk_norms)
+                        * (self.timestamps[-1] - self.timestamps[0])
+                        / len(jerk_norms)
+                    )
+                    metrics.jerk_rms = math.sqrt(
+                        sum(j**2 for j in jerk_norms) / len(jerk_norms)
+                    )
 
         return metrics
 
 
-def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio: float,
-                     start: Tuple[float, float, float], goal: Tuple[float, float, float],
-                     setup_bash: str, timeout: float = 100.0,
-                     obs_x_range: Tuple[float, float] = (5.0, 100.0),
-                     obs_y_range: Tuple[float, float] = (-6.0, 6.0),
-                     obs_z_range: Tuple[float, float] = (0.5, 4.5),
-                     visualize: bool = False,
-                     data_file: Optional[str] = None,
-                     mode: str = 'rviz-only',
-                     env: Optional[str] = None,
-                     trajs_topic: str = '/trajs',
-                     obstacles_json_file: Optional[str] = None) -> BenchmarkMetrics:
+def run_single_trial(
+    trial_id: int,
+    seed: int,
+    num_obstacles: int,
+    dynamic_ratio: float,
+    start: Tuple[float, float, float],
+    goal: Tuple[float, float, float],
+    setup_bash: str,
+    timeout: float = 100.0,
+    obs_x_range: Tuple[float, float] = (5.0, 100.0),
+    obs_y_range: Tuple[float, float] = (-6.0, 6.0),
+    obs_z_range: Tuple[float, float] = (0.5, 4.5),
+    visualize: bool = False,
+    data_file: Optional[str] = None,
+    mode: str = "rviz-only",
+    env: Optional[str] = None,
+    trajs_topic: str = "/trajs",
+    obstacles_json_file: Optional[str] = None,
+) -> BenchmarkMetrics:
     """Run a single simulation trial and collect metrics"""
 
-    print(f"\nTrial {trial_id}: seed={seed}, obstacles={num_obstacles}, dynamic_ratio={dynamic_ratio}")
+    print(
+        f"\nTrial {trial_id}: seed={seed}, obstacles={num_obstacles}, dynamic_ratio={dynamic_ratio}"
+    )
 
     # Thorough cleanup before starting new trial
     print("  Pre-trial cleanup...")
@@ -658,12 +757,12 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
     sando_params = load_sando_params_from_yaml(str(yaml_path))
 
     # Use yaml parameters instead of command-line args
-    v_max_actual = sando_params['v_max']
-    a_max_actual = sando_params['a_max']
-    j_max_actual = sando_params['j_max']
-    global_planner = sando_params.get('global_planner', 'astar_heat')
+    v_max_actual = sando_params["v_max"]
+    a_max_actual = sando_params["a_max"]
+    j_max_actual = sando_params["j_max"]
+    global_planner = sando_params.get("global_planner", "astar_heat")
 
-    print(f"Using parameters from sando.yaml:")
+    print("Using parameters from sando.yaml:")
     print(f"  global_planner: {global_planner}")
     print(f"  v_max: {v_max_actual} m/s")
     print(f"  a_max: {a_max_actual} m/s²")
@@ -671,7 +770,7 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
     print(f"  drone_bbox: {sando_params['drone_bbox']} (half-extents)\n")
 
     # Set ROS_DOMAIN_ID to match the simulation (run_sim.py uses 7)
-    os.environ['ROS_DOMAIN_ID'] = '20'
+    os.environ["ROS_DOMAIN_ID"] = "20"
 
     # Initialize ROS2 (check if already initialized to avoid errors)
     try:
@@ -692,19 +791,28 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
         j_max=j_max_actual,
         commanded_start=start,
         commanded_goal=goal,
-        trajs_topic=trajs_topic
+        trajs_topic=trajs_topic,
     )
 
     # Build run_sim.py command
     run_sim_path = Path(__file__).parent / "run_sim.py"
 
-    if mode == 'gazebo':
+    if mode == "gazebo":
         cmd = [
-            "python3", str(run_sim_path),
-            "--mode", "gazebo",
-            "--setup-bash", setup_bash,
-            "--start", str(start[0]), str(start[1]), str(start[2]),
-            "--goal", str(goal[0]), str(goal[1]), str(goal[2]),
+            "python3",
+            str(run_sim_path),
+            "--mode",
+            "gazebo",
+            "--setup-bash",
+            setup_bash,
+            "--start",
+            str(start[0]),
+            str(start[1]),
+            str(start[2]),
+            "--goal",
+            str(goal[0]),
+            str(goal[1]),
+            str(goal[2]),
             "--no-goal-sender",  # Disable automatic goal sending - we'll send manually after rosbag starts
         ]
 
@@ -722,21 +830,40 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
             cmd.append("--no-gazebo-gui")
             cmd.append("--no-rviz")
 
-    elif mode == 'gazebo-dynamic':
+    elif mode == "gazebo-dynamic":
         cmd = [
-            "python3", str(run_sim_path),
-            "--mode", "gazebo-dynamic",
-            "--trajs-topic", trajs_topic,
+            "python3",
+            str(run_sim_path),
+            "--mode",
+            "gazebo-dynamic",
+            "--trajs-topic",
+            trajs_topic,
             "--d435",
-            "--setup-bash", setup_bash,
-            "--start", str(start[0]), str(start[1]), str(start[2]),
-            "--goal", str(goal[0]), str(goal[1]), str(goal[2]),
-            "--num-obstacles", str(num_obstacles),
-            "--dynamic-ratio", str(dynamic_ratio),
-            "--obs-x-range", str(obs_x_range[0]), str(obs_x_range[1]),
-            "--obs-y-range", str(obs_y_range[0]), str(obs_y_range[1]),
-            "--obs-z-range", str(obs_z_range[0]), str(obs_z_range[1]),
-            "--seed", str(seed),
+            "--setup-bash",
+            setup_bash,
+            "--start",
+            str(start[0]),
+            str(start[1]),
+            str(start[2]),
+            "--goal",
+            str(goal[0]),
+            str(goal[1]),
+            str(goal[2]),
+            "--num-obstacles",
+            str(num_obstacles),
+            "--dynamic-ratio",
+            str(dynamic_ratio),
+            "--obs-x-range",
+            str(obs_x_range[0]),
+            str(obs_x_range[1]),
+            "--obs-y-range",
+            str(obs_y_range[0]),
+            str(obs_y_range[1]),
+            "--obs-z-range",
+            str(obs_z_range[0]),
+            str(obs_z_range[1]),
+            "--seed",
+            str(seed),
             "--no-goal-sender",
         ]
 
@@ -756,17 +883,35 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
 
     else:  # rviz-only (default)
         cmd = [
-            "python3", str(run_sim_path),
-            "--mode", "rviz-only",
-            "--setup-bash", setup_bash,
-            "--start", str(start[0]), str(start[1]), str(start[2]),
-            "--goal", str(goal[0]), str(goal[1]), str(goal[2]),
-            "--num-obstacles", str(num_obstacles),
-            "--dynamic-ratio", str(dynamic_ratio),
-            "--obs-x-range", str(obs_x_range[0]), str(obs_x_range[1]),
-            "--obs-y-range", str(obs_y_range[0]), str(obs_y_range[1]),
-            "--obs-z-range", str(obs_z_range[0]), str(obs_z_range[1]),
-            "--seed", str(seed),
+            "python3",
+            str(run_sim_path),
+            "--mode",
+            "rviz-only",
+            "--setup-bash",
+            setup_bash,
+            "--start",
+            str(start[0]),
+            str(start[1]),
+            str(start[2]),
+            "--goal",
+            str(goal[0]),
+            str(goal[1]),
+            str(goal[2]),
+            "--num-obstacles",
+            str(num_obstacles),
+            "--dynamic-ratio",
+            str(dynamic_ratio),
+            "--obs-x-range",
+            str(obs_x_range[0]),
+            str(obs_x_range[1]),
+            "--obs-y-range",
+            str(obs_y_range[0]),
+            str(obs_y_range[1]),
+            "--obs-z-range",
+            str(obs_z_range[0]),
+            str(obs_z_range[1]),
+            "--seed",
+            str(seed),
             "--no-goal-sender",  # Disable automatic goal sending - we'll send manually after rosbag starts
         ]
 
@@ -791,11 +936,11 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        preexec_fn=os.setsid  # Create new process group for clean termination
+        preexec_fn=os.setsid,  # Create new process group for clean termination
     )
 
     # Wait for simulation to initialize (nodes to start up)
-    if mode in ('gazebo', 'gazebo-dynamic'):
+    if mode in ("gazebo", "gazebo-dynamic"):
         print("  Waiting for simulation to initialize (20s for Gazebo)...")
         time.sleep(20)
     else:
@@ -817,7 +962,7 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
             f"/{monitor.namespace}/goal_reached",
             "/tf",
             "/tf_static",
-            trajs_topic
+            trajs_topic,
         ]
 
         bag_cmd = ["ros2", "bag", "record", "-o", bag_path] + record_topics
@@ -825,26 +970,27 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
 
         # Set ROS_DOMAIN_ID for bag recording
         bag_env = os.environ.copy()
-        bag_env['ROS_DOMAIN_ID'] = '20'
+        bag_env["ROS_DOMAIN_ID"] = "20"
 
         bag_process = subprocess.Popen(
-            bag_cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            env=bag_env
+            bag_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=bag_env
         )
-        time.sleep(10)  # Wait for the bag recorder to be fully ready before sending the goal
+        time.sleep(
+            10
+        )  # Wait for the bag recorder to be fully ready before sending the goal
 
     # NOW send the goal immediately after rosbag is ready
     # The planner will start immediately and we'll capture everything
     print(f"  Sending goal to {monitor.namespace}: [{goal[0]}, {goal[1]}, {goal[2]}]")
-    goal_pub = monitor.create_publisher(PoseStamped, f'/{monitor.namespace}/term_goal', 10)
+    goal_pub = monitor.create_publisher(
+        PoseStamped, f"/{monitor.namespace}/term_goal", 10
+    )
     time.sleep(0.3)  # Brief wait for publisher connection
 
     # Send goal multiple times to ensure it's received (same as goal_sender.py)
     for _ in range(3):
         goal_msg = PoseStamped()
-        goal_msg.header.frame_id = 'map'
+        goal_msg.header.frame_id = "map"
         goal_msg.header.stamp = monitor.get_clock().now().to_msg()
         goal_msg.pose.position.x = float(goal[0])
         goal_msg.pose.position.y = float(goal[1])
@@ -861,19 +1007,23 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
     # Check if topics are being published
     print("  Checking for ROS topics...")
     available_topics = monitor.get_topic_names_and_types()
-    goal_topic = f'/{monitor.namespace}/goal'
-    goal_reached_topic = f'/{monitor.namespace}/goal_reached'
+    goal_topic = f"/{monitor.namespace}/goal"
+    goal_reached_topic = f"/{monitor.namespace}/goal_reached"
 
     goal_found = any(goal_topic in topic for topic, _ in available_topics)
-    goal_reached_found = any(goal_reached_topic in topic for topic, _ in available_topics)
+    goal_reached_found = any(
+        goal_reached_topic in topic for topic, _ in available_topics
+    )
 
     print(f"    - {goal_topic}: {'✓ Found' if goal_found else '✗ NOT FOUND'}")
-    print(f"    - {goal_reached_topic}: {'✓ Found' if goal_reached_found else '✗ NOT FOUND'}")
+    print(
+        f"    - {goal_reached_topic}: {'✓ Found' if goal_reached_found else '✗ NOT FOUND'}"
+    )
 
     if not goal_found:
-        print(f"    WARNING: Goal topic not found! Available topics with 'goal':")
+        print("    WARNING: Goal topic not found! Available topics with 'goal':")
         for topic, types in available_topics:
-            if 'goal' in topic.lower():
+            if "goal" in topic.lower():
                 print(f"      - {topic}")
 
     # Monitor simulation
@@ -895,20 +1045,26 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
                         monitor.end_time = monitor.timestamps[-1]
                     else:
                         monitor.end_time = time.time()
-                    monitor.get_logger().info("Goal reached (planner signal + proximity < 1.0m)!")
+                    monitor.get_logger().info(
+                        "Goal reached (planner signal + proximity < 1.0m)!"
+                    )
 
             # Check if goal reached
             if monitor.goal_reached:
                 if not goal_reached_logged:
                     elapsed = time.time() - start_monitor_time
                     positions_so_far = len(monitor.positions)
-                    print(f"✓ Goal reached after {elapsed:.2f}s! (collected {positions_so_far} position samples)")
-                    print(f"  Collecting final data for 3 more seconds...")
+                    print(
+                        f"✓ Goal reached after {elapsed:.2f}s! (collected {positions_so_far} position samples)"
+                    )
+                    print("  Collecting final data for 3 more seconds...")
                     goal_reached_logged = True
 
                 # Wait longer to collect final trajectory points and obstacle data
                 time.sleep(3.0)
-                print(f"  Trial complete, moving to next trial... (total samples: {len(monitor.positions)})")
+                print(
+                    f"  Trial complete, moving to next trial... (total samples: {len(monitor.positions)})"
+                )
                 break
 
             # Check if simulation process died
@@ -917,7 +1073,9 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
                 # Capture and print error output
                 stdout, stderr = sim_process.communicate()
                 if stderr:
-                    print(f"  Error output: {stderr.decode('utf-8', errors='ignore')[:500]}")
+                    print(
+                        f"  Error output: {stderr.decode('utf-8', errors='ignore')[:500]}"
+                    )
                 if stdout:
                     print(f"  Output: {stdout.decode('utf-8', errors='ignore')[:500]}")
                 break
@@ -931,9 +1089,13 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
                 n_obstacles = len(monitor.obstacle_trajectories)
                 if n_positions > 0:
                     pos = monitor.positions[-1]
-                    print(f"  [{int(elapsed)}s] Position: ({pos[0]:.1f}, {pos[1]:.1f}, {pos[2]:.1f}), Samples: {n_positions}, Obstacles: {n_obstacles}")
+                    print(
+                        f"  [{int(elapsed)}s] Position: ({pos[0]:.1f}, {pos[1]:.1f}, {pos[2]:.1f}), Samples: {n_positions}, Obstacles: {n_obstacles}"
+                    )
                 else:
-                    print(f"  [{int(elapsed)}s] WARNING: No position data collected yet! Obstacles tracked: {n_obstacles}")
+                    print(
+                        f"  [{int(elapsed)}s] WARNING: No position data collected yet! Obstacles tracked: {n_obstacles}"
+                    )
 
         # Check timeout
         elapsed = time.time() - start_monitor_time
@@ -949,9 +1111,13 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
         metrics.dynamic_ratio = dynamic_ratio
         metrics.start_x, metrics.start_y, metrics.start_z = start
         metrics.goal_x, metrics.goal_y, metrics.goal_z = goal
-        metrics.timeout_reached = (time.time() - start_monitor_time >= timeout) and not monitor.goal_reached
+        metrics.timeout_reached = (
+            time.time() - start_monitor_time >= timeout
+        ) and not monitor.goal_reached
 
-        print(f"  Metrics: goal_reached={metrics.goal_reached}, timeout={metrics.timeout_reached}, positions_collected={len(monitor.positions)}")
+        print(
+            f"  Metrics: goal_reached={metrics.goal_reached}, timeout={metrics.timeout_reached}, positions_collected={len(monitor.positions)}"
+        )
 
         # Collision checking skipped here - done in post-processing by analyze_benchmark (C++)
 
@@ -1001,7 +1167,12 @@ def run_single_trial(trial_id: int, seed: int, num_obstacles: int, dynamic_ratio
         return metrics
 
 
-def save_results(metrics_list: List[BenchmarkMetrics], output_dir: Path, config_name: str, verbose: bool = True):
+def save_results(
+    metrics_list: List[BenchmarkMetrics],
+    output_dir: Path,
+    config_name: str,
+    verbose: bool = True,
+):
     """Save benchmark results to CSV"""
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1011,7 +1182,7 @@ def save_results(metrics_list: List[BenchmarkMetrics], output_dir: Path, config_
 
     # Save as CSV
     if metrics_list:
-        with open(csv_path, 'w', newline='') as f:
+        with open(csv_path, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=asdict(metrics_list[0]).keys())
             writer.writeheader()
             for metrics in metrics_list:
@@ -1020,7 +1191,7 @@ def save_results(metrics_list: List[BenchmarkMetrics], output_dir: Path, config_
             print(f"Results saved to: {csv_path}")
 
     # Save as JSON for easier parsing
-    with open(json_path, 'w') as f:
+    with open(json_path, "w") as f:
         json.dump([asdict(m) for m in metrics_list], f, indent=2)
     if verbose:
         print(f"Results saved to: {json_path}")
@@ -1028,228 +1199,225 @@ def save_results(metrics_list: List[BenchmarkMetrics], output_dir: Path, config_
 
 def main():
     parser = argparse.ArgumentParser(
-        description='SANDO Benchmark Runner',
+        description="SANDO Benchmark Runner",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__
+        epilog=__doc__,
     )
 
     parser.add_argument(
-        '--setup-bash', '-s',
+        "--setup-bash",
+        "-s",
         type=str,
         required=True,
-        help='Path to setup.bash (required)'
+        help="Path to setup.bash (required)",
     )
 
     parser.add_argument(
-        '--num-trials', '-n',
+        "--num-trials",
+        "-n",
         type=int,
         default=5,
-        help='Number of trials to run (default: 5)'
+        help="Number of trials to run (default: 5)",
     )
 
     parser.add_argument(
-        '--cases',
+        "--cases",
         type=str,
-        nargs='+',
-        choices=['easy', 'medium', 'hard', 'all'],
-        default=['all'],
-        help='Difficulty cases to run: easy (50 obs), medium (100 obs), hard (200 obs), or all (default: all)'
+        nargs="+",
+        choices=["easy", "medium", "hard", "all"],
+        default=["all"],
+        help="Difficulty cases to run: easy (50 obs), medium (100 obs), hard (200 obs), or all (default: all)",
     )
 
     parser.add_argument(
-        '--num-obstacles',
+        "--num-obstacles",
         type=int,
         default=None,
-        help='[DEPRECATED] Number of obstacles - use --cases instead'
+        help="[DEPRECATED] Number of obstacles - use --cases instead",
     )
 
     parser.add_argument(
-        '--dynamic-ratio',
+        "--dynamic-ratio",
         type=float,
         default=0.65,
-        help='Ratio of dynamic obstacles (default: 0.65)'
+        help="Ratio of dynamic obstacles (default: 0.65)",
     )
 
     parser.add_argument(
-        '--start',
+        "--start",
         type=float,
         nargs=3,
         default=[0.0, 0.0, 2.0],
-        help='Start position (default: 0 0 2)'
+        help="Start position (default: 0 0 2)",
     )
 
     parser.add_argument(
-        '--goal',
+        "--goal",
         type=float,
         nargs=3,
         default=[105.0, 0.0, 2.0],
-        help='Goal position (default: 105 0 2)'
+        help="Goal position (default: 105 0 2)",
     )
 
     parser.add_argument(
-        '--timeout',
+        "--timeout",
         type=float,
         default=50.0,
-        help='Timeout per trial in seconds (default: 50)'
+        help="Timeout per trial in seconds (default: 50)",
     )
 
     parser.add_argument(
-        '--output-dir', '-o',
+        "--output-dir",
+        "-o",
         type=str,
         default=None,
-        help='Output directory for results (default: benchmark_data/YYYYMMDD_HHMMSS)'
+        help="Output directory for results (default: benchmark_data/YYYYMMDD_HHMMSS)",
     )
 
     parser.add_argument(
-        '--config-name',
+        "--config-name",
         type=str,
-        default='default',
-        help='Configuration name for output files (default: default)'
+        default="default",
+        help="Configuration name for output files (default: default)",
     )
 
     parser.add_argument(
-        '--start-seed',
+        "--start-seed", type=int, default=0, help="Starting seed value (default: 0)"
+    )
+
+    parser.add_argument(
+        "--obstacles-json-dir",
+        type=str,
+        default=None,
+        help="Directory containing shared obstacle JSON configs "
+        "(files named obstacles_seed{N}.json). When set, obstacles are "
+        "loaded from these files instead of being generated per-trial.",
+    )
+
+    parser.add_argument(
+        "--v-max",
+        type=float,
+        default=None,
+        help="[DEPRECATED] Maximum velocity - now loaded from sando.yaml",
+    )
+
+    parser.add_argument(
+        "--a-max",
+        type=float,
+        default=None,
+        help="[DEPRECATED] Maximum acceleration - now loaded from sando.yaml",
+    )
+
+    parser.add_argument(
+        "--j-max",
+        type=float,
+        default=None,
+        help="[DEPRECATED] Maximum jerk - now loaded from sando.yaml",
+    )
+
+    parser.add_argument(
+        "--visualize",
+        "--viz",
+        action="store_true",
+        help="Show RViz visualization during benchmark (default: headless)",
+    )
+
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["rviz-only", "gazebo", "gazebo-dynamic"],
+        default="rviz-only",
+        help="Simulation mode: rviz-only (procedural obstacles), gazebo (static world files), "
+        "or gazebo-dynamic (Gazebo + dynamic obstacles, unknown environment) [default: rviz-only]",
+    )
+
+    parser.add_argument(
+        "--env",
+        type=str,
+        default=None,
+        help="Environment name override for gazebo mode (default: auto-mapped from case)",
+    )
+
+    parser.add_argument(
+        "--num-p-values",
         type=int,
-        default=0,
-        help='Starting seed value (default: 0)'
-    )
-
-    parser.add_argument(
-        '--obstacles-json-dir',
-        type=str,
+        nargs="+",
         default=None,
-        help='Directory containing shared obstacle JSON configs '
-             '(files named obstacles_seed{N}.json). When set, obstacles are '
-             'loaded from these files instead of being generated per-trial.'
-    )
-
-    parser.add_argument(
-        '--v-max',
-        type=float,
-        default=None,
-        help='[DEPRECATED] Maximum velocity - now loaded from sando.yaml'
-    )
-
-    parser.add_argument(
-        '--a-max',
-        type=float,
-        default=None,
-        help='[DEPRECATED] Maximum acceleration - now loaded from sando.yaml'
-    )
-
-    parser.add_argument(
-        '--j-max',
-        type=float,
-        default=None,
-        help='[DEPRECATED] Maximum jerk - now loaded from sando.yaml'
-    )
-
-    parser.add_argument(
-        '--visualize', '--viz',
-        action='store_true',
-        help='Show RViz visualization during benchmark (default: headless)'
-    )
-
-    parser.add_argument(
-        '--mode',
-        type=str,
-        choices=['rviz-only', 'gazebo', 'gazebo-dynamic'],
-        default='rviz-only',
-        help='Simulation mode: rviz-only (procedural obstacles), gazebo (static world files), '
-             'or gazebo-dynamic (Gazebo + dynamic obstacles, unknown environment) [default: rviz-only]'
-    )
-
-    parser.add_argument(
-        '--env',
-        type=str,
-        default=None,
-        help='Environment name override for gazebo mode (default: auto-mapped from case)'
-    )
-
-    parser.add_argument(
-        '--num-p-values',
-        type=int,
-        nargs='+',
-        default=None,
-        help='List of num_P values to sweep over (e.g., --num-p-values 2 3). '
-             'Creates P_<N> subfolders in the output directory for each value.'
+        help="List of num_P values to sweep over (e.g., --num-p-values 2 3). "
+        "Creates P_<N> subfolders in the output directory for each value.",
     )
 
     args = parser.parse_args()
 
     # Map cases to obstacle counts
-    case_obstacles = {
-        'easy': 50,
-        'medium': 100,
-        'hard': 200
-    }
+    case_obstacles = {"easy": 50, "medium": 100, "hard": 200}
 
     # Map cases to gazebo environment names (for --mode gazebo)
     case_environments = {
-        'easy': 'easy_forest',
-        'medium': 'medium_forest',
-        'hard': 'hard_forest'
+        "easy": "easy_forest",
+        "medium": "medium_forest",
+        "hard": "hard_forest",
     }
 
     # Determine which cases to run
-    if 'all' in args.cases:
-        cases_to_run = ['easy', 'medium', 'hard']
+    if "all" in args.cases:
+        cases_to_run = ["easy", "medium", "hard"]
     else:
-        cases_to_run = [c for c in args.cases if c != 'all']
+        cases_to_run = [c for c in args.cases if c != "all"]
 
     # Determine num_P sweep values (default: no sweep, use whatever is in sando.yaml)
     num_p_values = args.num_p_values if args.num_p_values else [None]
 
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print("SANDO BENCHMARK")
-    print(f"{'='*80}")
+    print(f"{'=' * 80}")
     print(f"Configuration: {args.config_name}")
     print(f"Mode: {args.mode}")
     print(f"Cases to run: {', '.join(cases_to_run)}")
     print(f"Number of trials per case: {args.num_trials}")
     if args.num_p_values:
         print(f"num_P sweep: {args.num_p_values}")
-    if args.mode == 'rviz-only':
+    if args.mode == "rviz-only":
         print(f"Dynamic ratio: {args.dynamic_ratio}")
     print(f"Timeout: {args.timeout}s")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
 
     # Read original num_P so we can restore it after the sweep
     original_num_p = None
     if args.num_p_values:
         src_yaml = Path(__file__).parent.parent / "config" / "sando.yaml"
         if src_yaml.exists():
-            with open(src_yaml, 'r') as f:
+            with open(src_yaml, "r") as f:
                 _cfg = yaml.safe_load(f)
             _params = None
-            if 'sando_node' in _cfg and 'ros__parameters' in _cfg['sando_node']:
-                _params = _cfg['sando_node']['ros__parameters']
-            elif 'sando' in _cfg and 'ros__parameters' in _cfg['sando']:
-                _params = _cfg['sando']['ros__parameters']
+            if "sando_node" in _cfg and "ros__parameters" in _cfg["sando_node"]:
+                _params = _cfg["sando_node"]["ros__parameters"]
+            elif "sando" in _cfg and "ros__parameters" in _cfg["sando"]:
+                _params = _cfg["sando"]["ros__parameters"]
             if _params:
-                original_num_p = _params.get('num_P')
+                original_num_p = _params.get("num_P")
 
     try:
         # Outer loop: sweep over num_P values
         for num_p in num_p_values:
             if num_p is not None:
-                print(f"\n{'#'*80}")
+                print(f"\n{'#' * 80}")
                 print(f"# SETTING num_P = {num_p}")
-                print(f"{'#'*80}\n")
+                print(f"{'#' * 80}\n")
                 set_num_p_everywhere(num_p)
 
             # Run benchmarks for each case
             for case in cases_to_run:
                 # Determine obstacle count, environment, and trajs_topic for this case
-                trajs_topic = '/trajs'  # default
+                trajs_topic = "/trajs"  # default
 
-                if args.mode == 'gazebo':
+                if args.mode == "gazebo":
                     num_obstacles = 0  # Static world, no procedural obstacles
                     env_name = args.env if args.env else case_environments[case]
-                elif args.mode == 'gazebo-dynamic':
+                elif args.mode == "gazebo-dynamic":
                     num_obstacles = case_obstacles[case]
-                    env_name = args.env if args.env else 'empty_wo_ground'
-                    trajs_topic = '/trajs_ground_truth'
+                    env_name = args.env if args.env else "empty_wo_ground"
+                    trajs_topic = "/trajs_ground_truth"
                 else:
                     num_obstacles = case_obstacles[case]
                     env_name = None
@@ -1262,24 +1430,32 @@ def main():
                         output_dir = Path(args.output_dir) / case
                 else:
                     # Default to benchmark_data with case and timestamp
-                    base_dir = Path(__file__).parent.parent / "benchmark_data" / args.config_name
+                    base_dir = (
+                        Path(__file__).parent.parent
+                        / "benchmark_data"
+                        / args.config_name
+                    )
                     if num_p is not None:
                         base_dir = base_dir / f"P_{num_p}"
                     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                     output_dir = base_dir / f"{case}_{timestamp}"
 
-                if args.mode == 'gazebo':
-                    print(f"\n{'='*80}")
-                    print(f"RUNNING {case.upper()} CASE (gazebo: {env_name})"
-                          + (f" [num_P={num_p}]" if num_p is not None else ""))
-                    print(f"{'='*80}")
+                if args.mode == "gazebo":
+                    print(f"\n{'=' * 80}")
+                    print(
+                        f"RUNNING {case.upper()} CASE (gazebo: {env_name})"
+                        + (f" [num_P={num_p}]" if num_p is not None else "")
+                    )
+                    print(f"{'=' * 80}")
                 else:
-                    print(f"\n{'='*80}")
-                    print(f"RUNNING {case.upper()} CASE ({num_obstacles} obstacles)"
-                          + (f" [num_P={num_p}]" if num_p is not None else ""))
-                    print(f"{'='*80}")
+                    print(f"\n{'=' * 80}")
+                    print(
+                        f"RUNNING {case.upper()} CASE ({num_obstacles} obstacles)"
+                        + (f" [num_P={num_p}]" if num_p is not None else "")
+                    )
+                    print(f"{'=' * 80}")
                 print(f"Output directory: {output_dir}")
-                print(f"{'='*80}\n")
+                print(f"{'=' * 80}\n")
 
                 # Create CSV directory for SANDO benchmark data
                 csv_dir = output_dir / "csv"
@@ -1301,7 +1477,8 @@ def main():
                     obs_json = None
                     if args.obstacles_json_dir:
                         obs_json = os.path.join(
-                            args.obstacles_json_dir, f"obstacles_seed{seed}.json")
+                            args.obstacles_json_dir, f"obstacles_seed{seed}.json"
+                        )
                         if not os.path.exists(obs_json):
                             print(f"WARNING: Obstacle JSON not found: {obs_json}")
                             obs_json = None
@@ -1321,22 +1498,28 @@ def main():
                             mode=args.mode,
                             env=env_name,
                             trajs_topic=trajs_topic,
-                            obstacles_json_file=obs_json
+                            obstacles_json_file=obs_json,
                         )
                         metrics_list.append(metrics)
 
                         # Print trial summary
-                        status = "success" if metrics.goal_reached else ("timeout" if metrics.timeout_reached else "failed")
-                        print(f"\n{'='*80}")
-                        print(f"Run {i+1} / {args.num_trials} : {status}")
-                        print(f"{'='*80}\n")
+                        status = (
+                            "success"
+                            if metrics.goal_reached
+                            else ("timeout" if metrics.timeout_reached else "failed")
+                        )
+                        print(f"\n{'=' * 80}")
+                        print(f"Run {i + 1} / {args.num_trials} : {status}")
+                        print(f"{'=' * 80}\n")
 
                         # Save intermediate results (silently)
-                        save_results(metrics_list, output_dir, args.config_name, verbose=False)
+                        save_results(
+                            metrics_list, output_dir, args.config_name, verbose=False
+                        )
 
                         # Wait before next trial to ensure clean shutdown
                         if i < args.num_trials - 1:
-                            print(f"Waiting 3 seconds before starting next trial...\n")
+                            print("Waiting 3 seconds before starting next trial...\n")
                             time.sleep(3)
 
                     except KeyboardInterrupt:
@@ -1345,6 +1528,7 @@ def main():
                     except Exception as e:
                         print(f"\nError in trial {i}: {e}")
                         import traceback
+
                         traceback.print_exc()
                         continue
 
@@ -1354,23 +1538,33 @@ def main():
 
                 # Final save for this case
                 if metrics_list:
-                    save_results(metrics_list, output_dir, args.config_name, verbose=True)
+                    save_results(
+                        metrics_list, output_dir, args.config_name, verbose=True
+                    )
 
                     # Print overall summary for this case
                     total_trials = len(metrics_list)
                     successful_trials = sum(1 for m in metrics_list if m.goal_reached)
 
-                    print(f"\n{'='*80}")
-                    print(f"BENCHMARK SUMMARY - {case.upper()} CASE"
-                          + (f" [num_P={num_p}]" if num_p is not None else ""))
-                    print(f"{'='*80}")
-                    print(f"Started: {benchmark_start_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
-                    print(f"Ended: {benchmark_end_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+                    print(f"\n{'=' * 80}")
+                    print(
+                        f"BENCHMARK SUMMARY - {case.upper()} CASE"
+                        + (f" [num_P={num_p}]" if num_p is not None else "")
+                    )
+                    print(f"{'=' * 80}")
+                    print(
+                        f"Started: {benchmark_start_datetime.strftime('%Y-%m-%d %H:%M:%S')}"
+                    )
+                    print(
+                        f"Ended: {benchmark_end_datetime.strftime('%Y-%m-%d %H:%M:%S')}"
+                    )
                     print(f"Duration: {benchmark_duration:.1f}s")
                     print(f"Total trials: {total_trials}")
-                    print(f"Success rate: {successful_trials}/{total_trials} ({100*successful_trials/total_trials:.1f}%)")
+                    print(
+                        f"Success rate: {successful_trials}/{total_trials} ({100 * successful_trials / total_trials:.1f}%)"
+                    )
                     print(f"Data saved to: {output_dir}")
-                    print(f"{'='*80}\n")
+                    print(f"{'=' * 80}\n")
                 else:
                     print(f"\nNo trials completed successfully for {case} case.")
 
@@ -1382,10 +1576,10 @@ def main():
             print(f"\nRestoring original num_P = {original_num_p}")
             set_num_p_everywhere(original_num_p)
 
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print("ALL BENCHMARKS COMPLETE")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

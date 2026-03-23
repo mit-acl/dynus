@@ -1,8 +1,18 @@
+# ----------------------------------------------------------------------------
+# Copyright 2025, Kota Kondo, Aerospace Controls Laboratory
+# Massachusetts Institute of Technology
+# All Rights Reserved
+# Authors: Kota Kondo, et al.
+# See LICENSE file for the license information
+# ----------------------------------------------------------------------------
 import os
 import subprocess
 import argparse
 
-def record_ros2_bag(bag_name, bag_path, agents, use_hardware=False, video=False, topics=None):
+
+def record_ros2_bag(
+    bag_name, bag_path, agents, use_hardware=False, video=False, topics=None
+):
 
     # Per-agent topics common to both sim and hardware (prefixed with /{agent})
     base_topics = [
@@ -11,46 +21,36 @@ def record_ros2_bag(bag_name, bag_path, agents, use_hardware=False, video=False,
         "/goal",
         "/term_goal",
         "/traj",
-
         # --- Trajectory visualization ---
         "/traj_committed_colored",
         "/traj_subopt_colored",
         "/actual_traj",
-
         # --- Global planner paths ---
-        "/dgp_path_marker",
-        "/original_dgp_path_marker",
-
+        "/hgp_path_marker",
+        "/original_hgp_path_marker",
         # --- Safe corridors ---
         "/poly_safe",
-
         # --- Waypoints ---
         "/point_G",
         "/point_A",
         "/point_E",
         "/point_G_term",
-
         # --- Hover avoidance ---
         "/hover_avoidance_viz",
-
         # --- Mapping (from global_mapper) ---
         "/occupancy_grid",
         "/unknown_grid",
         "/dynamic_grid",
         "/heat_cloud",
-
         # --- Obstacle tracking ---
         "/tracked_obstacles",
         "/cluster_bounding_boxes",
         "/predicted_trajs",
-
         # --- Sensors ---
         "/d435/color/image_raw",
-
         # --- HUD ---
         "/vel_text",
         "/drone_marker",
-
         # --- Computation times ---
         "/computation_times",
     ]
@@ -89,8 +89,8 @@ def record_ros2_bag(bag_name, bag_path, agents, use_hardware=False, video=False,
         "/traj_committed_colored",
         "/traj_subopt_colored",
         "/actual_traj",
-        "/dgp_path_marker",
-        "/original_dgp_path_marker",
+        "/hgp_path_marker",
+        "/original_hgp_path_marker",
         "/poly_safe",
         "/point_G",
         "/point_A",
@@ -149,24 +149,31 @@ def record_ros2_bag(bag_name, bag_path, agents, use_hardware=False, video=False,
     except subprocess.CalledProcessError as e:
         print(f"Failed to start recording: {e}")
 
+
 # Main function
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser(description="Record a ROS2 bag")
-    parser.add_argument("--bag_number", type=int, default=None, help="Bag number to record (legacy, produces num_N name)")
-    parser.add_argument("--bag_name", type=str, default=None, help="Bag name (e.g. 20260222_170122)")
+    parser.add_argument(
+        "--bag_number",
+        type=int,
+        default=None,
+        help="Bag number to record (legacy, produces num_N name)",
+    )
+    parser.add_argument(
+        "--bag_name", type=str, default=None, help="Bag name (e.g. 20260222_170122)"
+    )
     parser.add_argument(
         "--bag_path",
         type=str,
         help="Path to save the bag",
-        default="/home/kkondo/data/multi_sando",
+        required=True,
     )
     parser.add_argument(
         "--agents",
         nargs="+",
         help="List of agents to record",
         # default=['NX01', 'NX02', 'NX03', 'NX04', 'NX05', 'NX06', 'NX07', 'NX08', 'NX09', 'NX10'],
-        default=['NX01'],
+        default=["NX01"],
     )
     parser.add_argument(
         "--hardware",
@@ -186,6 +193,7 @@ if __name__ == "__main__":
         bag_name = "num_" + str(args.bag_number)
     else:
         from datetime import datetime
+
         bag_name = datetime.now().strftime("%Y%m%d_%H%M%S")
     bag_path = args.bag_path
 
@@ -198,4 +206,6 @@ if __name__ == "__main__":
     print("Hardware:", args.hardware)
     print("Video:", args.video)
 
-    record_ros2_bag(bag_name, bag_path, agents, use_hardware=args.hardware, video=args.video)
+    record_ros2_bag(
+        bag_name, bag_path, agents, use_hardware=args.hardware, video=args.video
+    )

@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------------
+# Copyright 2025, Kota Kondo, Aerospace Controls Laboratory
+# Massachusetts Institute of Technology
+# All Rights Reserved
+# Authors: Kota Kondo, et al.
+# See LICENSE file for the license information
+# ----------------------------------------------------------------------------
 """
 Simplified Benchmark Suite Runner for SANDO Local Trajectory Optimization
 
@@ -25,7 +32,9 @@ import argparse
 from pathlib import Path
 
 # Configuration
-WORKSPACE_DIR = Path("/home/kkondo/code/dynus_ws")
+WORKSPACE_DIR = Path(
+    os.environ.get("SANDO_WORKSPACE_DIR", Path(__file__).resolve().parent.parent.parent.parent)
+)
 PACKAGE_NAME = "sando"
 
 # Factor ranges for each N (normal mode - fixed range)
@@ -41,14 +50,26 @@ DYNAMIC_FACTOR_INITIAL_MEAN = {4: 1.5, 5: 1.5, 6: 1.5}
 DYNAMIC_FACTOR_K_RADIUS = 0.4
 
 
-def get_benchmark_configs(factor_determination=False, ve_comparison=False, only_sando=False, only_sando_single=False, safe_faster_only=False):
+def get_benchmark_configs(
+    factor_determination=False,
+    ve_comparison=False,
+    only_sando=False,
+    only_sando_single=False,
+    safe_faster_only=False,
+):
     """Get benchmark configurations based on mode
 
     Returns list of tuples: (use_single_threaded, planner_name, num_N_list, description, use_var_elim)
     """
     if safe_faster_only:
         return [
-            (True, "safe_faster", [4, 5, 6], "Safe FASTER single-threaded (N=4,5,6)", False),
+            (
+                True,
+                "safe_faster",
+                [4, 5, 6],
+                "Safe FASTER single-threaded (N=4,5,6)",
+                False,
+            ),
         ]
     elif only_sando_single:
         return [
@@ -61,20 +82,44 @@ def get_benchmark_configs(factor_determination=False, ve_comparison=False, only_
     elif factor_determination:
         # Only run SANDO2 single-threaded for factor determination
         return [
-            (True, "sando", [4, 5, 6], "SANDO2 single-threaded (N=4,5,6) - Factor Determination", True),
+            (
+                True,
+                "sando",
+                [4, 5, 6],
+                "SANDO2 single-threaded (N=4,5,6) - Factor Determination",
+                True,
+            ),
         ]
     elif ve_comparison:
         # Variable elimination comparison mode - multi-threaded SANDO2 only
         return [
-            (False, "sando", [4, 5, 6], "SANDO2 multi-threaded (N=4,5,6) WITH variable elimination", True),
-            (False, "sando", [4, 5, 6], "SANDO2 multi-threaded (N=4,5,6) WITHOUT variable elimination", False),
+            (
+                False,
+                "sando",
+                [4, 5, 6],
+                "SANDO2 multi-threaded (N=4,5,6) WITH variable elimination",
+                True,
+            ),
+            (
+                False,
+                "sando",
+                [4, 5, 6],
+                "SANDO2 multi-threaded (N=4,5,6) WITHOUT variable elimination",
+                False,
+            ),
         ]
     else:
         # Normal full benchmark suite
         return [
             (False, "sando", [4, 5, 6], "SANDO2 multi-threaded (N=4,5,6)", True),
             (True, "sando", [4, 5, 6], "SANDO2 single-threaded (N=4,5,6)", True),
-            (True, "original_faster", [4, 5, 6], "FASTER (original) single-threaded (N=4,5,6)", False),
+            (
+                True,
+                "original_faster",
+                [4, 5, 6],
+                "FASTER (original) single-threaded (N=4,5,6)",
+                False,
+            ),
         ]
 
 
@@ -90,15 +135,17 @@ def source_workspace():
 
 def launch_simulator(visualize=False):
     """Launch the fixed obstacles publisher (+ RViz if visualize=True) in the background"""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     if visualize:
         print("Starting Fixed Obstacles Publisher + RViz")
     else:
         print("Starting Fixed Obstacles Publisher")
-    print("="*80)
+    print("=" * 80)
 
     setup_file = source_workspace()
-    obstacles_script = WORKSPACE_DIR / "src" / "sando" / "scripts" / "fixed_obstacles_publisher.py"
+    obstacles_script = (
+        WORKSPACE_DIR / "src" / "sando" / "scripts" / "fixed_obstacles_publisher.py"
+    )
     cmd = f"source {setup_file} && python3 {obstacles_script} & "
     if visualize:
         rviz_config = WORKSPACE_DIR / "src" / "sando" / "rviz" / "sando.rviz"
@@ -112,7 +159,7 @@ def launch_simulator(visualize=False):
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
-        preexec_fn=os.setsid
+        preexec_fn=os.setsid,
     )
 
     print("Waiting for obstacles publisher to initialize...")
@@ -121,12 +168,19 @@ def launch_simulator(visualize=False):
     return proc
 
 
-def run_benchmark(use_single_threaded, planner_name, num_N_list, description,
-                  factor_determination=False, ve_comparison=False, use_var_elim=True):
+def run_benchmark(
+    use_single_threaded,
+    planner_name,
+    num_N_list,
+    description,
+    factor_determination=False,
+    ve_comparison=False,
+    use_var_elim=True,
+):
     """Run a single benchmark configuration"""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print(f"Running: {description}")
-    print("="*80)
+    print("=" * 80)
 
     # Determine if this planner uses dynamic k-factor
     use_dynamic_factor = planner_name in ("sando", "faster_star")
@@ -137,7 +191,9 @@ def run_benchmark(use_single_threaded, planner_name, num_N_list, description,
         factor_final_dict = FACTOR_FINAL_WIDE
         print("\nUsing WIDE factor ranges for determination:")
         for n in num_N_list:
-            print(f"  N={n}: factors [{factor_initial_dict[n]:.1f}, {factor_final_dict[n]:.1f}]")
+            print(
+                f"  N={n}: factors [{factor_initial_dict[n]:.1f}, {factor_final_dict[n]:.1f}]"
+            )
     else:
         factor_initial_dict = FACTOR_INITIAL
         factor_final_dict = FACTOR_FINAL
@@ -172,7 +228,9 @@ def run_benchmark(use_single_threaded, planner_name, num_N_list, description,
     # Determine output directory based on mode
     if ve_comparison:
         # Use ve_benchmark folder for variable elimination comparison
-        output_dir_override = "/home/kkondo/code/dynus_ws/src/sando/benchmark_data/ve_benchmark"
+        output_dir_override = str(
+            WORKSPACE_DIR / "src" / PACKAGE_NAME / "benchmark_data" / "ve_benchmark"
+        )
     else:
         output_dir_override = ""
 
@@ -182,7 +240,10 @@ def run_benchmark(use_single_threaded, planner_name, num_N_list, description,
         dynamic_initial_mean_str = list_to_yaml(dynamic_initial_mean_list)
 
     cmd = [
-        "ros2", "launch", PACKAGE_NAME, "local_traj_benchmark.launch.py",
+        "ros2",
+        "launch",
+        PACKAGE_NAME,
+        "local_traj_benchmark.launch.py",
         f"use_single_threaded:={str(use_single_threaded).lower()}",
         f"'planner_names:={planner_names_str}'",
         f"'num_N_list:={num_N_str}'",
@@ -221,7 +282,7 @@ def run_benchmark(use_single_threaded, planner_name, num_N_list, description,
             check=False,  # Don't raise exception on non-zero exit
             capture_output=False,
             text=True,
-            timeout=600
+            timeout=600,
         )
         if result.returncode == 0:
             print(f"\n✓ Completed: {description}")
@@ -239,9 +300,9 @@ def run_benchmark(use_single_threaded, planner_name, num_N_list, description,
 
 def analyze_factors():
     """Analyze CSV results to determine optimal factor ranges"""
-    print("\n\n" + "="*80)
+    print("\n\n" + "=" * 80)
     print("FACTOR ANALYSIS")
-    print("="*80)
+    print("=" * 80)
 
     import pandas as pd
 
@@ -259,35 +320,37 @@ def analyze_factors():
         df = pd.read_csv(csv_file)
 
         # Filter successful cases
-        successful = df[df['success'] == True]
+        successful = df[df["success"] == True]
 
         if len(successful) == 0:
             print(f"  ✗ No successful cases found for N={n}")
             continue
 
-        min_factor = successful['factor_used'].min()
-        max_factor = successful['factor_used'].max()
-        mean_factor = successful['factor_used'].mean()
+        min_factor = successful["factor_used"].min()
+        max_factor = successful["factor_used"].max()
+        mean_factor = successful["factor_used"].mean()
         success_rate = len(successful) / len(df) * 100
 
         results[n] = {
-            'min': min_factor,
-            'max': max_factor,
-            'mean': mean_factor,
-            'success_rate': success_rate,
-            'total_cases': len(df),
-            'successful_cases': len(successful)
+            "min": min_factor,
+            "max": max_factor,
+            "mean": mean_factor,
+            "success_rate": success_rate,
+            "total_cases": len(df),
+            "successful_cases": len(successful),
         }
 
-        print(f"  Success rate: {success_rate:.1f}% ({len(successful)}/{len(df)} cases)")
+        print(
+            f"  Success rate: {success_rate:.1f}% ({len(successful)}/{len(df)} cases)"
+        )
         print(f"  Factor range used: [{min_factor:.2f}, {max_factor:.2f}]")
         print(f"  Mean factor: {mean_factor:.2f}")
 
     # Print recommended ranges
     if results:
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("RECOMMENDED FACTOR RANGES")
-        print("="*80)
+        print("=" * 80)
         print("\nCopy these into your code:\n")
         print("FACTOR_INITIAL = {", end="")
         for i, n in enumerate([4, 5, 6]):
@@ -309,26 +372,49 @@ def analyze_factors():
 
 def main():
     """Run all benchmark configurations"""
-    parser = argparse.ArgumentParser(description='SANDO Benchmark Suite')
-    parser.add_argument('--factor-determination', action='store_true',
-                       help='Run factor determination mode (SANDO single-threaded with wide ranges)')
-    parser.add_argument('--ve-comparison', action='store_true',
-                       help='Run variable elimination comparison mode (SANDO multi-threaded with/without VE)')
-    parser.add_argument('--only-sando', action='store_true',
-                       help='Run only SANDO2 (dynamic k-factor) multi-threaded benchmark')
-    parser.add_argument('--only-sando-single', action='store_true',
-                       help='Run only SANDO2 single-threaded benchmark')
-    parser.add_argument('--safe-faster-only', action='store_true',
-                       help='Run only Safe FASTER single-threaded benchmark')
+    parser = argparse.ArgumentParser(description="SANDO Benchmark Suite")
+    parser.add_argument(
+        "--factor-determination",
+        action="store_true",
+        help="Run factor determination mode (SANDO single-threaded with wide ranges)",
+    )
+    parser.add_argument(
+        "--ve-comparison",
+        action="store_true",
+        help="Run variable elimination comparison mode (SANDO multi-threaded with/without VE)",
+    )
+    parser.add_argument(
+        "--only-sando",
+        action="store_true",
+        help="Run only SANDO2 (dynamic k-factor) multi-threaded benchmark",
+    )
+    parser.add_argument(
+        "--only-sando-single",
+        action="store_true",
+        help="Run only SANDO2 single-threaded benchmark",
+    )
+    parser.add_argument(
+        "--safe-faster-only",
+        action="store_true",
+        help="Run only Safe FASTER single-threaded benchmark",
+    )
     args = parser.parse_args()
 
     # Check for conflicting modes
-    mode_count = sum([args.factor_determination, args.ve_comparison, args.only_sando, args.only_sando_single, args.safe_faster_only])
+    mode_count = sum(
+        [
+            args.factor_determination,
+            args.ve_comparison,
+            args.only_sando,
+            args.only_sando_single,
+            args.safe_faster_only,
+        ]
+    )
     if mode_count > 1:
         print("ERROR: Cannot specify more than one mode flag")
         sys.exit(1)
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("SANDO Local Trajectory Benchmark Suite")
     if args.factor_determination:
         print("MODE: Factor Determination")
@@ -340,10 +426,16 @@ def main():
         print("MODE: SANDO2 Single-Threaded Only")
     elif args.safe_faster_only:
         print("MODE: Safe FASTER Only")
-    print("="*80)
+    print("=" * 80)
     print(f"\nWorkspace: {WORKSPACE_DIR}")
 
-    configs = get_benchmark_configs(args.factor_determination, args.ve_comparison, args.only_sando, args.only_sando_single, args.safe_faster_only)
+    configs = get_benchmark_configs(
+        args.factor_determination,
+        args.ve_comparison,
+        args.only_sando,
+        args.only_sando_single,
+        args.safe_faster_only,
+    )
     print(f"Total configurations: {len(configs)}")
 
     # Check workspace
@@ -361,12 +453,17 @@ def main():
         for i, config in enumerate(configs, 1):
             print(f"\n[{i}/{len(configs)}]")
             # Unpack config: (use_single_threaded, planner_name, num_N_list, description, use_var_elim)
-            use_single_threaded, planner_name, num_N_list, description, use_var_elim = config
+            use_single_threaded, planner_name, num_N_list, description, use_var_elim = (
+                config
+            )
             success = run_benchmark(
-                use_single_threaded, planner_name, num_N_list, description,
+                use_single_threaded,
+                planner_name,
+                num_N_list,
+                description,
                 factor_determination=args.factor_determination,
                 ve_comparison=args.ve_comparison,
-                use_var_elim=use_var_elim
+                use_var_elim=use_var_elim,
             )
             results.append((description, success))
 
@@ -380,10 +477,10 @@ def main():
 
         # Summary
         elapsed = time.time() - start_time
-        print("\n\n" + "="*80)
+        print("\n\n" + "=" * 80)
         print("BENCHMARK SUITE COMPLETED")
-        print("="*80)
-        print(f"\nTotal time: {elapsed:.1f} seconds ({elapsed/60:.1f} minutes)")
+        print("=" * 80)
+        print(f"\nTotal time: {elapsed:.1f} seconds ({elapsed / 60:.1f} minutes)")
         print("\nResults:")
         for desc, success in results:
             status = "✓ PASS" if success else "✗ FAIL"
@@ -392,19 +489,19 @@ def main():
         if not args.factor_determination:
             data_dir = WORKSPACE_DIR / "src" / "sando" / "benchmark_data"
             if args.ve_comparison:
-                print(f"\nBenchmark data saved to:")
+                print("\nBenchmark data saved to:")
                 print(f"  {data_dir}/ve_benchmark/")
             else:
-                print(f"\nBenchmark data saved to:")
+                print("\nBenchmark data saved to:")
                 print(f"  {data_dir}/single_thread/")
                 print(f"  {data_dir}/multi_thread/")
 
     finally:
         # Cleanup simulator
         if simulator_proc:
-            print("\n" + "="*80)
+            print("\n" + "=" * 80)
             print("Shutting down simulator...")
-            print("="*80)
+            print("=" * 80)
             try:
                 os.killpg(os.getpgid(simulator_proc.pid), signal.SIGTERM)
                 simulator_proc.wait(timeout=5)

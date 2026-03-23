@@ -15,16 +15,18 @@ from std_msgs.msg import Header
 from geometry_msgs.msg import Vector3, Quaternion
 from dynus_interfaces.msg import State
 
+
 class OdometryToStateNode(Node):
     def __init__(self):
-        super().__init__('odometry_to_state_node')
+        super().__init__("odometry_to_state_node")
 
         # Subscriber for nav_msgs/Odometry
         self.odometry_sub = self.create_subscription(
-            Odometry, 'odom', self.callback, 10)
+            Odometry, "odom", self.callback, 10
+        )
 
         # Publisher for dynus_interfaces/State
-        self.state_publisher = self.create_publisher(State, 'state', 10)
+        self.state_publisher = self.create_publisher(State, "state", 10)
 
     def callback(self, odom_msg):
         # Construct the State message
@@ -37,14 +39,14 @@ class OdometryToStateNode(Node):
         state_msg.pos = Vector3(
             x=odom_msg.pose.pose.position.x,
             y=odom_msg.pose.pose.position.y,
-            z=odom_msg.pose.pose.position.z
+            z=odom_msg.pose.pose.position.z,
         )
 
         # Set velocity from Odometry
         state_msg.vel = Vector3(
             x=odom_msg.twist.twist.linear.x,
             y=odom_msg.twist.twist.linear.y,
-            z=odom_msg.twist.twist.linear.z
+            z=odom_msg.twist.twist.linear.z,
         )
 
         # Set orientation from Odometry
@@ -52,12 +54,13 @@ class OdometryToStateNode(Node):
             x=odom_msg.pose.pose.orientation.x,
             y=odom_msg.pose.pose.orientation.y,
             z=odom_msg.pose.pose.orientation.z,
-            w=odom_msg.pose.pose.orientation.w
+            w=odom_msg.pose.pose.orientation.w,
         )
 
         # Publish the State message
         self.state_publisher.publish(state_msg)
-        self.get_logger().info(f'Published State: {state_msg}')
+        self.get_logger().info(f"Published State: {state_msg}")
+
 
 def main(args=None):
     rclpy.init(args=args)
@@ -71,5 +74,6 @@ def main(args=None):
         node.destroy_node()
         rclpy.shutdown()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

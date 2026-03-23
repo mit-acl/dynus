@@ -23,15 +23,20 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from manim import *
 import numpy as np
 from utils.config import (
-    DYN_OBS_CENTER_T0, DYN_OBS_RADIUS, DYN_OBS_RADII,
-    CORRIDOR_COLORS, CORRIDOR_FILL_OPACITY, CORRIDOR_STROKE_WIDTH,
-    CORRIDORS_3D_T0, CTRL_POINTS,
-    START_A, GOAL_G,
-    TIME_LAYER_HEIGHT, NUM_TIME_LAYERS,
-    SUCCESS_COLOR,
-    TRAJ_STROKE_WIDTH, CTRL_PT_RADIUS,
-    SMOOTH_TRAJ_ALL_POINTS, SMOOTH_TRAJ_DOT_INDICES, SMOOTH_TRAJ_COLOR_BREAKS,
-    GOAL_G_PRIME,
+    DYN_OBS_CENTER_T0,
+    DYN_OBS_RADII,
+    CORRIDOR_COLORS,
+    CORRIDOR_FILL_OPACITY,
+    CORRIDOR_STROKE_WIDTH,
+    CTRL_POINTS,
+    START_A,
+    GOAL_G,
+    TIME_LAYER_HEIGHT,
+    NUM_TIME_LAYERS,
+    TRAJ_STROKE_WIDTH,
+    SMOOTH_TRAJ_ALL_POINTS,
+    SMOOTH_TRAJ_DOT_INDICES,
+    SMOOTH_TRAJ_COLOR_BREAKS,
 )
 
 # Height per time layer when separating in 3D
@@ -59,12 +64,24 @@ class SpatioTemporalSFC(ThreeDScene):
         label_od.set_opacity(0)
         self.add_fixed_in_frame_mobjects(label_od)
 
-        start_dot = Dot(point=START_A, radius=DOT_RADIUS, color=BLACK,
-                        fill_color=BLACK, fill_opacity=1.0)
-        goal_dot = Dot(point=GOAL_G, radius=DOT_RADIUS, color=BLACK,
-                       fill_color=BLACK, fill_opacity=1.0)
+        start_dot = Dot(
+            point=START_A,
+            radius=DOT_RADIUS,
+            color=BLACK,
+            fill_color=BLACK,
+            fill_opacity=1.0,
+        )
+        goal_dot = Dot(
+            point=GOAL_G,
+            radius=DOT_RADIUS,
+            color=BLACK,
+            fill_color=BLACK,
+            fill_opacity=1.0,
+        )
         label_a = MathTex("A", font_size=32).next_to(start_dot, DOWN, buff=0.12)
-        label_g = MathTex("G", font_size=32).next_to(goal_dot, UP + LEFT * 0.5, buff=0.12)
+        label_g = MathTex("G", font_size=32).next_to(
+            goal_dot, UP + LEFT * 0.5, buff=0.12
+        )
         label_a.set_opacity(0)
         label_g.set_opacity(0)
         self.add_fixed_in_frame_mobjects(label_a, label_g)
@@ -72,14 +89,17 @@ class SpatioTemporalSFC(ThreeDScene):
         # ── Step 1 & 2: Show obstacle, A, G ─────────────────────────────────
         label_od.set_opacity(1)
         self.play(
-            FadeIn(dyn_obs_group), FadeIn(label_od),
+            FadeIn(dyn_obs_group),
+            FadeIn(label_od),
             run_time=1.0,
         )
         label_a.set_opacity(1)
         label_g.set_opacity(1)
         self.play(
-            FadeIn(start_dot), FadeIn(label_a),
-            FadeIn(goal_dot), FadeIn(label_g),
+            FadeIn(start_dot),
+            FadeIn(label_a),
+            FadeIn(goal_dot),
+            FadeIn(label_g),
             run_time=0.8,
         )
         self.wait(0.3)
@@ -97,28 +117,37 @@ class SpatioTemporalSFC(ThreeDScene):
         li_gp = VGroup(gp_line, gp_text)
         legend_items.add(li_gp)
         li_od = MathTex(
-            r"\mathcal{O}^d", r"\text{: Dynamic obstacle}",
-            font_size=20, color=BLACK,
+            r"\mathcal{O}^d",
+            r"\text{: Dynamic obstacle}",
+            font_size=20,
+            color=BLACK,
         )
         legend_items.add(li_od)
         li_rn = MathTex(
-            r"r_n", r"\text{: Reachable set radius at layer } n",
-            font_size=20, color=BLACK,
+            r"r_n",
+            r"\text{: Reachable set radius at layer } n",
+            font_size=20,
+            color=BLACK,
         )
         legend_items.add(li_rn)
         li_xn = MathTex(
-            r"\boldsymbol{x}_n", r"\text{: } n\text{-th trajectory piece}",
-            font_size=20, color=BLACK,
+            r"\boldsymbol{x}_n",
+            r"\text{: } n\text{-th trajectory piece}",
+            font_size=20,
+            color=BLACK,
         )
         legend_items.add(li_xn)
         li_cnp = MathTex(
-            r"C[n][p]", r"\text{: Polytope at layer } n \text{, segment } p",
-            font_size=20, color=BLACK,
+            r"C[n][p]",
+            r"\text{: Polytope at layer } n \text{, segment } p",
+            font_size=20,
+            color=BLACK,
         )
         legend_items.add(li_cnp)
         legend_items.arrange(DOWN, buff=0.1, aligned_edge=LEFT)
-        legend_box = SurroundingRectangle(legend_items, color=BLACK, buff=0.15,
-                                           stroke_width=1.5, fill_opacity=0)
+        legend_box = SurroundingRectangle(
+            legend_items, color=BLACK, buff=0.15, stroke_width=1.5, fill_opacity=0
+        )
         legend_all = VGroup(legend_box, legend_items)
         legend_all.to_edge(RIGHT, buff=0.15)
         self.add_fixed_in_frame_mobjects(legend_box, *legend_items)
@@ -126,8 +155,13 @@ class SpatioTemporalSFC(ThreeDScene):
         # ── Step 3: Global plan ───────────────────────────────────────────
         intermediate_dots = VGroup()
         for idx in range(1, len(CTRL_POINTS) - 1):
-            dot = Dot(point=CTRL_POINTS[idx], radius=DOT_RADIUS, color=BLACK,
-                      fill_color=BLACK, fill_opacity=1.0)
+            dot = Dot(
+                point=CTRL_POINTS[idx],
+                radius=DOT_RADIUS,
+                color=BLACK,
+                fill_color=BLACK,
+                fill_opacity=1.0,
+            )
             intermediate_dots.add(dot)
 
         traj_segments_2d = VGroup()
@@ -135,7 +169,8 @@ class SpatioTemporalSFC(ThreeDScene):
             seg = Line(
                 start=np.array(CTRL_POINTS[i]),
                 end=np.array(CTRL_POINTS[i + 1]),
-                color=BLACK, stroke_width=TRAJ_STROKE_WIDTH,
+                color=BLACK,
+                stroke_width=TRAJ_STROKE_WIDTH,
             )
             traj_segments_2d.add(seg)
 
@@ -160,9 +195,11 @@ class SpatioTemporalSFC(ThreeDScene):
             circumference = 2 * np.pi * r
             num_dashes = max(12, int(circumference * DASH_DENSITY))
             dashed = DashedVMobject(
-                Circle(radius=r, color=color, stroke_width=1.0)
-                .move_to(DYN_OBS_CENTER_T0),
-                num_dashes=num_dashes, dashed_ratio=0.5,
+                Circle(radius=r, color=color, stroke_width=1.0).move_to(
+                    DYN_OBS_CENTER_T0
+                ),
+                num_dashes=num_dashes,
+                dashed_ratio=0.5,
             )
             prediction_circles_2d.add(dashed)
             lbl = MathTex(f"r_{n}", font_size=22, color=color)
@@ -190,14 +227,19 @@ class SpatioTemporalSFC(ThreeDScene):
                 color = CORRIDOR_COLORS[n]
                 r = DYN_OBS_RADII[n]
                 verts = self._compute_polytope_verts(
-                    p1[:2], p2[:2],
-                    DYN_OBS_CENTER_T0[:2], r,
-                    far_width=0.4, extend=0.15,
-                    seg_idx=seg_idx, layer_idx=n,
+                    p1[:2],
+                    p2[:2],
+                    DYN_OBS_CENTER_T0[:2],
+                    r,
+                    far_width=0.4,
+                    extend=0.15,
+                    seg_idx=seg_idx,
+                    layer_idx=n,
                 )
                 poly = Polygon(
                     *[np.array([*v, 0]) for v in verts],
-                    color=color, fill_color=color,
+                    color=color,
+                    fill_color=color,
                     fill_opacity=CORRIDOR_FILL_OPACITY,
                     stroke_width=CORRIDOR_STROKE_WIDTH,
                     stroke_color=color,
@@ -212,14 +254,18 @@ class SpatioTemporalSFC(ThreeDScene):
                 # seg 2: top (stacked horizontally)
                 verts_3d = [np.array([*v, 0]) for v in verts]
                 c_lbl = MathTex(
-                    f"C[{n}][{seg_idx}]", font_size=22, color=color,
+                    f"C[{n}][{seg_idx}]",
+                    font_size=22,
+                    color=color,
                 )
                 if seg_idx == 0:
                     right_pt = max(verts_3d, key=lambda v: v[0])
                     c_lbl.move_to(right_pt + np.array([0.45, 0.8 - n * 0.3, 0]))
                 elif seg_idx == 1:
                     bot_left = min(verts_3d, key=lambda v: v[0] + v[1])
-                    c_lbl.move_to(bot_left + np.array([-0.15 - n * 0.05, -0.2 - n * 0.3, 0]))
+                    c_lbl.move_to(
+                        bot_left + np.array([-0.15 - n * 0.05, -0.2 - n * 0.3, 0])
+                    )
                 else:
                     # Last segment — C[3][2] on left, C[0][2] on right, wide spacing
                     top_pt = max(verts_3d, key=lambda v: v[1])
@@ -256,9 +302,7 @@ class SpatioTemporalSFC(ThreeDScene):
 
         # ── Step 6: Smooth colored trajectory + white dots ──────────────────
         full_curve = VMobject()
-        full_curve.set_points_smoothly(
-            [np.array(p) for p in SMOOTH_TRAJ_ALL_POINTS]
-        )
+        full_curve.set_points_smoothly([np.array(p) for p in SMOOTH_TRAJ_ALL_POINTS])
 
         smooth_curves = VGroup()
         for i in range(len(SMOOTH_TRAJ_COLOR_BREAKS) - 1):
@@ -275,8 +319,11 @@ class SpatioTemporalSFC(ThreeDScene):
         for idx in SMOOTH_TRAJ_DOT_INDICES:
             pt = SMOOTH_TRAJ_ALL_POINTS[idx]
             dot = Circle(
-                radius=0.06, color=BLACK,
-                fill_color=WHITE, fill_opacity=1.0, stroke_width=2.0,
+                radius=0.06,
+                color=BLACK,
+                fill_color=WHITE,
+                fill_opacity=1.0,
+                stroke_width=2.0,
             ).move_to(pt)
             smooth_dots.add(dot)
 
@@ -290,18 +337,24 @@ class SpatioTemporalSFC(ThreeDScene):
         # Add bold x labels using \boldsymbol
         traj_x_labels = VGroup()
         x_label_names = [
-            r"\boldsymbol{x}_{0}", r"\boldsymbol{x}_{1}",
-            r"\boldsymbol{x}_{2}", r"\boldsymbol{x}_{3}",
+            r"\boldsymbol{x}_{0}",
+            r"\boldsymbol{x}_{1}",
+            r"\boldsymbol{x}_{2}",
+            r"\boldsymbol{x}_{3}",
         ]
         x_label_offsets = [
-            np.array([-0.2, 0.25, 0]),   # x0: above middle of pink piece
-            np.array([-0.05, 0.3, 0]),   # x1: above middle of red piece, tiny bit up-right
-            np.array([-0.4, -0.1, 0]),   # x2: left and down
-            np.array([-0.35, 0.2, 0]),   # x3: left of blue, a bit up
+            np.array([-0.2, 0.25, 0]),  # x0: above middle of pink piece
+            np.array(
+                [-0.05, 0.3, 0]
+            ),  # x1: above middle of red piece, tiny bit up-right
+            np.array([-0.4, -0.1, 0]),  # x2: left and down
+            np.array([-0.35, 0.2, 0]),  # x3: left of blue, a bit up
         ]
         for i in range(len(SMOOTH_TRAJ_COLOR_BREAKS) - 1):
             color = CORRIDOR_COLORS[i]
-            t_mid = (SMOOTH_TRAJ_COLOR_BREAKS[i] + SMOOTH_TRAJ_COLOR_BREAKS[i + 1]) / (2 * (len(SMOOTH_TRAJ_ALL_POINTS) - 1))
+            t_mid = (SMOOTH_TRAJ_COLOR_BREAKS[i] + SMOOTH_TRAJ_COLOR_BREAKS[i + 1]) / (
+                2 * (len(SMOOTH_TRAJ_ALL_POINTS) - 1)
+            )
             mid_pt = full_curve.point_from_proportion(t_mid)
             x_lbl = MathTex(x_label_names[i], font_size=30, color=color)
             x_lbl.move_to(mid_pt + x_label_offsets[i])
@@ -339,8 +392,9 @@ class SpatioTemporalSFC(ThreeDScene):
 
         miqp_group = VGroup(miqp_title, miqp_entries)
         miqp_group.arrange(DOWN, buff=0.2)
-        miqp_box = SurroundingRectangle(miqp_group, color=BLACK, buff=0.2,
-                                         stroke_width=1.5, fill_opacity=0)
+        miqp_box = SurroundingRectangle(
+            miqp_group, color=BLACK, buff=0.2, stroke_width=1.5, fill_opacity=0
+        )
         miqp_all = VGroup(miqp_box, miqp_group)
         miqp_all.to_edge(RIGHT, buff=0.15)
         self.add_fixed_in_frame_mobjects(miqp_title, miqp_box, *miqp_entries)
@@ -351,7 +405,8 @@ class SpatioTemporalSFC(ThreeDScene):
         # ── Step 8: Bring all polytopes back ────────────────────────────────
         self.play(
             FadeIn(to_fade),
-            FadeOut(miqp_all), FadeOut(traj_x_labels),
+            FadeOut(miqp_all),
+            FadeOut(traj_x_labels),
             run_time=0.8,
         )
         self.wait(0.3)
@@ -359,9 +414,11 @@ class SpatioTemporalSFC(ThreeDScene):
         # ── Step 9: Fade out circles, C labels, and 2D fixed labels ─────────
         self.play(
             FadeOut(label_od),
-            FadeOut(prediction_circles_2d), FadeOut(radius_labels_2d),
+            FadeOut(prediction_circles_2d),
+            FadeOut(radius_labels_2d),
             FadeOut(all_c_labels_flat),
-            FadeOut(label_a), FadeOut(label_g),
+            FadeOut(label_a),
+            FadeOut(label_g),
             run_time=0.8,
         )
         self.wait(0.3)
@@ -383,16 +440,20 @@ class SpatioTemporalSFC(ThreeDScene):
 
         # ── Step 10: Quickly move camera to 3D view from right side ──────────
         self.move_camera(
-            phi=60 * DEGREES, theta=-15 * DEGREES,
+            phi=60 * DEGREES,
+            theta=-15 * DEGREES,
             zoom=0.85,
             frame_center=np.array([0, 0, 1.5]),
-            run_time=0.6, rate_func=smooth,
+            run_time=0.6,
+            rate_func=smooth,
         )
         # Faster rotation
         self.begin_ambient_camera_rotation(rate=0.15)
 
         # Re-add "Temporal View" after 3D transition is complete
-        temporal_title_3d = Text("Temporal View", font_size=22, color=BLACK, weight=BOLD)
+        temporal_title_3d = Text(
+            "Temporal View", font_size=22, color=BLACK, weight=BOLD
+        )
         temporal_title_3d.to_edge(RIGHT, buff=0.5)
         self.add_fixed_in_frame_mobjects(temporal_title_3d)
         self.play(FadeIn(temporal_title_3d), run_time=0.4)
@@ -405,9 +466,7 @@ class SpatioTemporalSFC(ThreeDScene):
 
         lift_anims = []
         for n in range(NUM_TIME_LAYERS):
-            lift_anims.append(
-                layer_groups[n].animate.shift(OUT * LAYER_Z[n])
-            )
+            lift_anims.append(layer_groups[n].animate.shift(OUT * LAYER_Z[n]))
         self.play(*lift_anims, run_time=2.0, rate_func=smooth)
         self.wait(0.3)
 
@@ -423,17 +482,26 @@ class SpatioTemporalSFC(ThreeDScene):
         z_axis = Arrow3D(
             start=axis_origin,
             end=axis_origin + np.array([0, 0, z_top]),
-            color=GREY_C, thickness=0.005, height=0.15, base_radius=0.05,
+            color=GREY_C,
+            thickness=0.005,
+            height=0.15,
+            base_radius=0.05,
         )
         x_axis = Arrow3D(
             start=axis_origin,
             end=axis_origin + np.array([0, ax_len, 0]),
-            color=GREY_C, thickness=0.005, height=0.15, base_radius=0.05,
+            color=GREY_C,
+            thickness=0.005,
+            height=0.15,
+            base_radius=0.05,
         )
         y_axis = Arrow3D(
             start=axis_origin,
             end=axis_origin + np.array([-ax_len, 0, 0]),
-            color=GREY_C, thickness=0.005, height=0.15, base_radius=0.05,
+            color=GREY_C,
+            thickness=0.005,
+            height=0.15,
+            base_radius=0.05,
         )
 
         # Labels upright, positioned at rotated axis tips
@@ -462,14 +530,20 @@ class SpatioTemporalSFC(ThreeDScene):
             tick_line = Line(
                 start=axis_origin + np.array([-0.08, 0, z]),
                 end=axis_origin + np.array([0.08, 0, z]),
-                color=GREY_C, stroke_width=0.8,
+                color=GREY_C,
+                stroke_width=0.8,
             )
             tick_lines.add(tick_line)
 
         self.play(
-            FadeIn(z_axis), FadeIn(x_axis), FadeIn(y_axis),
-            FadeIn(n_label_3d), FadeIn(x_label_3d), FadeIn(y_label_3d),
-            FadeIn(tick_labels), FadeIn(tick_lines),
+            FadeIn(z_axis),
+            FadeIn(x_axis),
+            FadeIn(y_axis),
+            FadeIn(n_label_3d),
+            FadeIn(x_label_3d),
+            FadeIn(y_label_3d),
+            FadeIn(tick_labels),
+            FadeIn(tick_lines),
             run_time=0.8,
         )
         self.wait(0.5)
@@ -490,7 +564,8 @@ class SpatioTemporalSFC(ThreeDScene):
             num_dashes = max(12, int(circumference * 4))
             dashed_ring = DashedVMobject(
                 Circle(radius=r, color=color, stroke_width=1.0).move_to(center_n),
-                num_dashes=num_dashes, dashed_ratio=0.5,
+                num_dashes=num_dashes,
+                dashed_ratio=0.5,
             )
             dyn_3d_group.add(VGroup(double_circ, dashed_ring))
 
@@ -513,8 +588,10 @@ class SpatioTemporalSFC(ThreeDScene):
         traj_3d_labels = VGroup()
         traj_3d_dots = VGroup()
         piece_names = [
-            r"\boldsymbol{x}_{0}", r"\boldsymbol{x}_{1}",
-            r"\boldsymbol{x}_{2}", r"\boldsymbol{x}_{3}",
+            r"\boldsymbol{x}_{0}",
+            r"\boldsymbol{x}_{1}",
+            r"\boldsymbol{x}_{2}",
+            r"\boldsymbol{x}_{3}",
         ]
 
         # Use actual waypoint positions from config for exact alignment
@@ -551,14 +628,20 @@ class SpatioTemporalSFC(ThreeDScene):
                 if (n == 0 and is_start) or (n == NUM_TIME_LAYERS - 1 and not is_start):
                     # A or G level: black filled
                     dot = Circle(
-                        radius=0.06, color=BLACK,
-                        fill_color=BLACK, fill_opacity=1.0, stroke_width=1.5,
+                        radius=0.06,
+                        color=BLACK,
+                        fill_color=BLACK,
+                        fill_opacity=1.0,
+                        stroke_width=1.5,
                     ).move_to(pt)
                 else:
                     # Intermediate: white filled, black edged
                     dot = Circle(
-                        radius=0.06, color=BLACK,
-                        fill_color=WHITE, fill_opacity=1.0, stroke_width=2.0,
+                        radius=0.06,
+                        color=BLACK,
+                        fill_color=WHITE,
+                        fill_opacity=1.0,
+                        stroke_width=2.0,
                     ).move_to(pt)
                 traj_3d_dots.add(dot)
 
@@ -569,10 +652,10 @@ class SpatioTemporalSFC(ThreeDScene):
             # x0: move down in camera view → -y, -z
             # x1: move right in camera view → +x
             lbl_3d_offsets = [
-                np.array([0.6, 0.7, 0.1]),    # x0: down-right in camera view
+                np.array([0.6, 0.7, 0.1]),  # x0: down-right in camera view
                 np.array([-0.4, 0.3, 0.35]),  # x1: toward x2, slightly up
-                np.array([0, 0, 0.3]),         # x2: default above
-                np.array([0.3, 0.3, 0.4]),     # x3: right, above trajectory
+                np.array([0, 0, 0.3]),  # x2: default above
+                np.array([0.3, 0.3, 0.4]),  # x3: right, above trajectory
             ]
             lbl = MathTex(piece_names[n], font_size=26, color=color)
             lbl.move_to(mid_pt + lbl_3d_offsets[n])
@@ -622,35 +705,44 @@ class SpatioTemporalSFC(ThreeDScene):
         self.wait(2.0)
 
         # Early exit for STSFCFirstHalf
-        if getattr(self, 'STOP_AFTER_3D', False):
+        if getattr(self, "STOP_AFTER_3D", False):
             return
 
         # ── Step 17: Reverse 3D → back to 2D view ─────────────────────────
         # Fade out 3D-only elements (trajectories, dots, axes, circles, labels)
         self.play(
-            FadeOut(traj_3d_pieces), FadeOut(traj_3d_dots),
-            FadeOut(traj_3d_labels), FadeOut(vertical_lines),
-            FadeOut(z_axis), FadeOut(x_axis), FadeOut(y_axis),
-            FadeOut(n_label_3d), FadeOut(x_label_3d), FadeOut(y_label_3d),
-            FadeOut(tick_labels), FadeOut(tick_lines), FadeOut(c_labels_3d),
-            FadeOut(label_a_3d), FadeOut(label_g_3d),
+            FadeOut(traj_3d_pieces),
+            FadeOut(traj_3d_dots),
+            FadeOut(traj_3d_labels),
+            FadeOut(vertical_lines),
+            FadeOut(z_axis),
+            FadeOut(x_axis),
+            FadeOut(y_axis),
+            FadeOut(n_label_3d),
+            FadeOut(x_label_3d),
+            FadeOut(y_label_3d),
+            FadeOut(tick_labels),
+            FadeOut(tick_lines),
+            FadeOut(c_labels_3d),
+            FadeOut(label_a_3d),
+            FadeOut(label_g_3d),
             run_time=0.8,
         )
 
         # Lower polytopes back to ground (reverse the lift)
         lower_anims = []
         for n in range(NUM_TIME_LAYERS):
-            lower_anims.append(
-                layer_groups[n].animate.shift(OUT * (-LAYER_Z[n]))
-            )
+            lower_anims.append(layer_groups[n].animate.shift(OUT * (-LAYER_Z[n])))
         self.play(*lower_anims, run_time=1.5, rate_func=smooth)
 
         # Rotate camera back to 2D top-down
         self.move_camera(
-            phi=0 * DEGREES, theta=-90 * DEGREES,
+            phi=0 * DEGREES,
+            theta=-90 * DEGREES,
             zoom=1.0,
             frame_center=ORIGIN,
-            run_time=1.5, rate_func=smooth,
+            run_time=1.5,
+            rate_func=smooth,
         )
         self.wait(0.5)
 
@@ -664,7 +756,9 @@ class SpatioTemporalSFC(ThreeDScene):
         # Bring back label_a and label_g (re-create as fixed in frame)
         label_a2 = MathTex("A", font_size=32).next_to(start_dot, DOWN, buff=0.12)
         self.add_fixed_in_frame_mobjects(label_a2)
-        label_g2 = MathTex("G", font_size=32).next_to(goal_dot, UP + LEFT * 0.5, buff=0.12)
+        label_g2 = MathTex("G", font_size=32).next_to(
+            goal_dot, UP + LEFT * 0.5, buff=0.12
+        )
         self.add_fixed_in_frame_mobjects(label_g2)
         self.play(FadeIn(label_a2), FadeIn(label_g2), run_time=0.4)
 
@@ -676,9 +770,11 @@ class SpatioTemporalSFC(ThreeDScene):
             circumference = 2 * np.pi * r
             num_dashes = max(12, int(circumference * DASH_DENSITY))
             dashed = DashedVMobject(
-                Circle(radius=r, color=color, stroke_width=1.0)
-                .move_to(DYN_OBS_CENTER_T0),
-                num_dashes=num_dashes, dashed_ratio=0.5,
+                Circle(radius=r, color=color, stroke_width=1.0).move_to(
+                    DYN_OBS_CENTER_T0
+                ),
+                num_dashes=num_dashes,
+                dashed_ratio=0.5,
             )
             pred_circles_2.add(dashed)
             lbl = MathTex(f"r_{n}", font_size=22, color=color)
@@ -691,8 +787,9 @@ class SpatioTemporalSFC(ThreeDScene):
 
         # Add "t = t1" box — same position as t0
         t1_text = MathTex(r"t = t_1", font_size=30, color=BLACK)
-        t1_rect = SurroundingRectangle(t1_text, color=BLACK, buff=0.15,
-                                        stroke_width=1.5, fill_opacity=0)
+        t1_rect = SurroundingRectangle(
+            t1_text, color=BLACK, buff=0.15, stroke_width=1.5, fill_opacity=0
+        )
         t1_box = VGroup(t1_rect, t1_text)
         t1_box.move_to([-3.5, 3.5, 0])
         self.add_fixed_in_frame_mobjects(t1_text, t1_rect)
@@ -701,22 +798,36 @@ class SpatioTemporalSFC(ThreeDScene):
 
         # Remove polytopes and global path
         self.play(
-            *[FadeOut(polytopes_2d[s][n]) for s in range(num_segs) for n in range(NUM_TIME_LAYERS)],
-            FadeOut(traj_segments_2d), FadeOut(intermediate_dots),
+            *[
+                FadeOut(polytopes_2d[s][n])
+                for s in range(num_segs)
+                for n in range(NUM_TIME_LAYERS)
+            ],
+            FadeOut(traj_segments_2d),
+            FadeOut(intermediate_dots),
             run_time=0.8,
         )
         self.wait(0.3)
 
         # A' position: ~80% along the pink piece
-        t_a_prime = 0.8 * (SMOOTH_TRAJ_COLOR_BREAKS[1] / (len(SMOOTH_TRAJ_ALL_POINTS) - 1))
+        t_a_prime = 0.8 * (
+            SMOOTH_TRAJ_COLOR_BREAKS[1] / (len(SMOOTH_TRAJ_ALL_POINTS) - 1)
+        )
 
         # Create a partial pink curve from A to A'
-        pink_to_a_prime = full_curve.copy().pointwise_become_partial(full_curve, 0, t_a_prime)
+        pink_to_a_prime = full_curve.copy().pointwise_become_partial(
+            full_curve, 0, t_a_prime
+        )
         # Use the actual end of the partial curve as A' (avoids proportion mismatch)
         a_prime_pos = pink_to_a_prime.get_end()
 
-        moving_dot = Dot(point=START_A, radius=DOT_RADIUS, color=BLACK,
-                         fill_color=BLACK, fill_opacity=1.0)
+        moving_dot = Dot(
+            point=START_A,
+            radius=DOT_RADIUS,
+            color=BLACK,
+            fill_color=BLACK,
+            fill_opacity=1.0,
+        )
         self.add(moving_dot)
 
         # New obstacle position: move left-bottom, slightly inside pink circle
@@ -724,9 +835,13 @@ class SpatioTemporalSFC(ThreeDScene):
 
         # Arrow from old to new position (behind obstacle)
         obs_arrow = Arrow(
-            start=DYN_OBS_CENTER_T0, end=new_obs_center,
-            color=BLACK, stroke_width=8, max_tip_length_to_length_ratio=0.5,
-            buff=0.05, tip_length=0.25,
+            start=DYN_OBS_CENTER_T0,
+            end=new_obs_center,
+            color=BLACK,
+            stroke_width=8,
+            max_tip_length_to_length_ratio=0.5,
+            buff=0.05,
+            tip_length=0.25,
         )
         self.add(obs_arrow)
         self.bring_to_front(dyn_obs_group)
@@ -788,9 +903,9 @@ class SpatioTemporalSFC(ThreeDScene):
             circumference = 2 * np.pi * r
             num_dashes = max(12, int(circumference * DASH_DENSITY))
             dashed = DashedVMobject(
-                Circle(radius=r, color=color, stroke_width=1.0)
-                .move_to(new_obs_center),
-                num_dashes=num_dashes, dashed_ratio=0.5,
+                Circle(radius=r, color=color, stroke_width=1.0).move_to(new_obs_center),
+                num_dashes=num_dashes,
+                dashed_ratio=0.5,
             )
             new_pred_circles.add(dashed)
             lbl = MathTex(f"r'_{n}", font_size=22, color=color)
@@ -811,8 +926,13 @@ class SpatioTemporalSFC(ThreeDScene):
         # G' has same displacement from G as A' has from A
         a_to_a_prime = a_prime_pos - np.array(START_A)
         g_prime_pos = np.array(GOAL_G) + a_to_a_prime
-        g_prime_dot = Dot(point=g_prime_pos, radius=DOT_RADIUS, color=BLACK,
-                          fill_color=BLACK, fill_opacity=1.0)
+        g_prime_dot = Dot(
+            point=g_prime_pos,
+            radius=DOT_RADIUS,
+            color=BLACK,
+            fill_color=BLACK,
+            fill_opacity=1.0,
+        )
         label_g_prime = MathTex("G'", font_size=30, color=BLACK)
         label_g_prime.move_to(g_prime_pos + np.array([0.0, 0.4, 0]))
         self.add_fixed_in_frame_mobjects(label_g_prime)
@@ -823,8 +943,8 @@ class SpatioTemporalSFC(ThreeDScene):
         # New global plan from A' to G' (3 segments going around new obstacle)
         replan_pts = [
             a_prime_pos,
-            np.array([-2.0, -0.5, 0.0]),   # moved up from -1.3
-            np.array([-3.0, 1.2, 0.0]),    # moved up from 0.5
+            np.array([-2.0, -0.5, 0.0]),  # moved up from -1.3
+            np.array([-3.0, 1.2, 0.0]),  # moved up from 0.5
             g_prime_pos,
         ]
         replan_num_segs = len(replan_pts) - 1
@@ -836,13 +956,19 @@ class SpatioTemporalSFC(ThreeDScene):
             seg = Line(
                 start=np.array(replan_pts[i]),
                 end=np.array(replan_pts[i + 1]),
-                color=BLACK, stroke_width=TRAJ_STROKE_WIDTH,
+                color=BLACK,
+                stroke_width=TRAJ_STROKE_WIDTH,
             )
             replan_segments.add(seg)
 
         for idx in range(1, len(replan_pts) - 1):
-            dot = Dot(point=replan_pts[idx], radius=DOT_RADIUS, color=BLACK,
-                      fill_color=BLACK, fill_opacity=1.0)
+            dot = Dot(
+                point=replan_pts[idx],
+                radius=DOT_RADIUS,
+                color=BLACK,
+                fill_color=BLACK,
+                fill_opacity=1.0,
+            )
             replan_inter_dots.add(dot)
 
         for i, seg in enumerate(replan_segments):
@@ -896,10 +1022,15 @@ class SpatioTemporalSFC(ThreeDScene):
                     r_use = r
 
                 verts = self._compute_polytope_verts(
-                    p1[:2], p2[:2],
-                    new_obs_center[:2], r_use,
-                    far_width=fw, extend=ext, skew=sk,
-                    seg_idx=seg_idx + 100, layer_idx=n,
+                    p1[:2],
+                    p2[:2],
+                    new_obs_center[:2],
+                    r_use,
+                    far_width=fw,
+                    extend=ext,
+                    skew=sk,
+                    seg_idx=seg_idx + 100,
+                    layer_idx=n,
                 )
 
                 # Seg 1: make near-side edge nearly vertical (tangent to circle)
@@ -920,7 +1051,8 @@ class SpatioTemporalSFC(ThreeDScene):
 
                 poly = Polygon(
                     *[np.array([*v, 0]) for v in verts],
-                    color=color, fill_color=color,
+                    color=color,
+                    fill_color=color,
                     fill_opacity=CORRIDOR_FILL_OPACITY,
                     stroke_width=CORRIDOR_STROKE_WIDTH,
                     stroke_color=color,
@@ -931,7 +1063,9 @@ class SpatioTemporalSFC(ThreeDScene):
 
                 # C' labels — fixed positions decoupled from polytope vertices
                 c_lbl = MathTex(
-                    f"C'[{n}][{seg_idx}]", font_size=20, color=color,
+                    f"C'[{n}][{seg_idx}]",
+                    font_size=20,
+                    color=color,
                 )
                 if seg_idx == 0:
                     c_lbl.move_to(np.array([0.85, -0.6 - n * 0.25, 0]))
@@ -971,11 +1105,11 @@ class SpatioTemporalSFC(ThreeDScene):
 
         # ── Smooth trajectory A'→G' ──────────────────────────────────────
         replan_traj_pts = [
-            a_prime_pos,                          # A'
-            np.array([-1.5, -0.6, 0.0]),          # w1' near obstacle
-            np.array([-2.4, 0.2, 0.0]),           # w2' close to O^d
-            np.array([-2.8, 1.5, 0.0]),           # w3'
-            g_prime_pos,                           # G'
+            a_prime_pos,  # A'
+            np.array([-1.5, -0.6, 0.0]),  # w1' near obstacle
+            np.array([-2.4, 0.2, 0.0]),  # w2' close to O^d
+            np.array([-2.8, 1.5, 0.0]),  # w3'
+            g_prime_pos,  # G'
         ]
         replan_curve = VMobject()
         replan_curve.set_points_smoothly([np.array(p) for p in replan_traj_pts])
@@ -993,17 +1127,30 @@ class SpatioTemporalSFC(ThreeDScene):
 
         replan_smooth_dots = VGroup()
         for idx in range(1, len(replan_traj_pts) - 1):
-            dot = Circle(radius=0.06, color=BLACK,
-                         fill_color=WHITE, fill_opacity=1.0, stroke_width=2.0)
+            dot = Circle(
+                radius=0.06,
+                color=BLACK,
+                fill_color=WHITE,
+                fill_opacity=1.0,
+                stroke_width=2.0,
+            )
             dot.move_to(replan_traj_pts[idx])
             replan_smooth_dots.add(dot)
         self.play(FadeIn(replan_smooth_dots), run_time=0.4)
 
         replan_x_labels = VGroup()
-        rxn = [r"\boldsymbol{x}'_{0}", r"\boldsymbol{x}'_{1}",
-               r"\boldsymbol{x}'_{2}", r"\boldsymbol{x}'_{3}"]
-        rxo = [np.array([0.0, -0.3, 0]), np.array([0.4, 0.1, 0]),
-               np.array([0.35, -0.2, 0]), np.array([0.3, -0.2, 0])]
+        rxn = [
+            r"\boldsymbol{x}'_{0}",
+            r"\boldsymbol{x}'_{1}",
+            r"\boldsymbol{x}'_{2}",
+            r"\boldsymbol{x}'_{3}",
+        ]
+        rxo = [
+            np.array([0.0, -0.3, 0]),
+            np.array([0.4, 0.1, 0]),
+            np.array([0.35, -0.2, 0]),
+            np.array([0.3, -0.2, 0]),
+        ]
         for i in range(4):
             tm = (i + 0.5) / (len(replan_traj_pts) - 1)
             mp = replan_curve.point_from_proportion(tm)
@@ -1019,10 +1166,12 @@ class SpatioTemporalSFC(ThreeDScene):
         miqp_title2.to_edge(DOWN, buff=0.9)
         self.add_fixed_in_frame_mobjects(miqp_title2)
         miqp_entries2 = VGroup()
-        for tex, color in [(r"x'_0 \subseteq C'[0][0]", CORRIDOR_COLORS[0]),
-                           (r"x'_1 \subseteq C'[1][1]", CORRIDOR_COLORS[1]),
-                           (r"x'_2 \subseteq C'[2][1]", CORRIDOR_COLORS[2]),
-                           (r"x'_3 \subseteq C'[3][2]", CORRIDOR_COLORS[3])]:
+        for tex, color in [
+            (r"x'_0 \subseteq C'[0][0]", CORRIDOR_COLORS[0]),
+            (r"x'_1 \subseteq C'[1][1]", CORRIDOR_COLORS[1]),
+            (r"x'_2 \subseteq C'[2][1]", CORRIDOR_COLORS[2]),
+            (r"x'_3 \subseteq C'[3][2]", CORRIDOR_COLORS[3]),
+        ]:
             miqp_entries2.add(MathTex(tex, font_size=26, color=color))
         miqp_entries2.arrange(RIGHT, buff=0.4)
         miqp_entries2.next_to(miqp_title2, DOWN, buff=0.15)
@@ -1037,20 +1186,34 @@ class SpatioTemporalSFC(ThreeDScene):
                     to_fade_rp.add(replan_polytopes[si][ni])
                 if (ni, si) not in assigned and replan_c_labels[si][ni] is not None:
                     to_fade_rp.add(replan_c_labels[si][ni])
-        self.play(FadeOut(to_fade_rp), FadeIn(miqp_title2), FadeIn(miqp_entries2), run_time=0.8)
+        self.play(
+            FadeOut(to_fade_rp),
+            FadeIn(miqp_title2),
+            FadeIn(miqp_entries2),
+            run_time=0.8,
+        )
         self.wait(1.5)
 
         # Bring back and transition to 3D
-        self.play(FadeIn(to_fade_rp), FadeOut(miqp_title2), FadeOut(miqp_entries2),
-                  FadeOut(replan_x_labels), run_time=0.6)
+        self.play(
+            FadeIn(to_fade_rp),
+            FadeOut(miqp_title2),
+            FadeOut(miqp_entries2),
+            FadeOut(replan_x_labels),
+            run_time=0.6,
+        )
 
         # ── Transition to 3D ─────────────────────────────────────────────
         self.play(
             FadeOut(replan_all_labels),
-            FadeOut(old_elements), FadeOut(label_a2), FadeOut(label_g2),
-            FadeOut(label_a_prime), FadeOut(label_g_prime),
+            FadeOut(old_elements),
+            FadeOut(label_a2),
+            FadeOut(label_g2),
+            FadeOut(label_a_prime),
+            FadeOut(label_g_prime),
             FadeOut(label_od_new),
-            FadeOut(new_pred_circles), FadeOut(new_r_labels),
+            FadeOut(new_pred_circles),
+            FadeOut(new_r_labels),
             run_time=0.8,
         )
         for seg in replan_segments:
@@ -1072,11 +1235,22 @@ class SpatioTemporalSFC(ThreeDScene):
         label_gp_3d = MathTex("G'", font_size=28, color=BLACK)
         label_gp_3d.move_to(np.array([*g_prime_pos[:2], 0]) + np.array([-0.25, 0.2, 0]))
         self.add_fixed_orientation_mobjects(label_gp_3d)
-        self.play(FadeIn(label_ap_3d), FadeIn(label_gp_3d),
-                  FadeIn(label_a_3d2), FadeIn(label_g_3d2), run_time=0.3)
+        self.play(
+            FadeIn(label_ap_3d),
+            FadeIn(label_gp_3d),
+            FadeIn(label_a_3d2),
+            FadeIn(label_g_3d2),
+            run_time=0.3,
+        )
 
-        self.move_camera(phi=60*DEGREES, theta=-15*DEGREES, zoom=0.85,
-                         frame_center=np.array([0,0,1.5]), run_time=0.6, rate_func=smooth)
+        self.move_camera(
+            phi=60 * DEGREES,
+            theta=-15 * DEGREES,
+            zoom=0.85,
+            frame_center=np.array([0, 0, 1.5]),
+            run_time=0.6,
+            rate_func=smooth,
+        )
         self.begin_ambient_camera_rotation(rate=0.15)
 
         # Separate polytopes
@@ -1085,86 +1259,212 @@ class SpatioTemporalSFC(ThreeDScene):
             for ni in range(NUM_TIME_LAYERS):
                 if replan_polytopes[si][ni] is not None:
                     replan_layer_groups[ni].add(replan_polytopes[si][ni])
-        la = [g.animate.shift(OUT*LAYER_Z[n]) for n,g in enumerate(replan_layer_groups) if len(g)>0]
+        la = [
+            g.animate.shift(OUT * LAYER_Z[n])
+            for n, g in enumerate(replan_layer_groups)
+            if len(g) > 0
+        ]
         self.play(*la, run_time=2.0, rate_func=smooth)
 
         # Axes
-        ao = np.array([3.5,-2.5,0.0]); al,zt = 1.2,4.8
-        za = Arrow3D(start=ao,end=ao+np.array([0,0,zt]),color=GREY_C,thickness=0.005,height=0.15,base_radius=0.05)
-        xa = Arrow3D(start=ao,end=ao+np.array([0,al,0]),color=GREY_C,thickness=0.005,height=0.15,base_radius=0.05)
-        ya = Arrow3D(start=ao,end=ao+np.array([-al,0,0]),color=GREY_C,thickness=0.005,height=0.15,base_radius=0.05)
-        nl2 = MathTex(r"\text{Time Layer } n",font_size=28,color=BLACK)
-        nl2.move_to(ao+np.array([0,0,zt+0.4])); self.add_fixed_orientation_mobjects(nl2)
-        xl2 = MathTex("x",font_size=28,color=BLACK)
-        xl2.move_to(ao+np.array([0,al+0.25,0])); self.add_fixed_orientation_mobjects(xl2)
-        yl2 = MathTex("y",font_size=28,color=BLACK)
-        yl2.move_to(ao+np.array([-al-0.25,0,0])); self.add_fixed_orientation_mobjects(yl2)
-        tl2,tln2 = VGroup(),VGroup()
+        ao = np.array([3.5, -2.5, 0.0])
+        al, zt = 1.2, 4.8
+        za = Arrow3D(
+            start=ao,
+            end=ao + np.array([0, 0, zt]),
+            color=GREY_C,
+            thickness=0.005,
+            height=0.15,
+            base_radius=0.05,
+        )
+        xa = Arrow3D(
+            start=ao,
+            end=ao + np.array([0, al, 0]),
+            color=GREY_C,
+            thickness=0.005,
+            height=0.15,
+            base_radius=0.05,
+        )
+        ya = Arrow3D(
+            start=ao,
+            end=ao + np.array([-al, 0, 0]),
+            color=GREY_C,
+            thickness=0.005,
+            height=0.15,
+            base_radius=0.05,
+        )
+        nl2 = MathTex(r"\text{Time Layer } n", font_size=28, color=BLACK)
+        nl2.move_to(ao + np.array([0, 0, zt + 0.4]))
+        self.add_fixed_orientation_mobjects(nl2)
+        xl2 = MathTex("x", font_size=28, color=BLACK)
+        xl2.move_to(ao + np.array([0, al + 0.25, 0]))
+        self.add_fixed_orientation_mobjects(xl2)
+        yl2 = MathTex("y", font_size=28, color=BLACK)
+        yl2.move_to(ao + np.array([-al - 0.25, 0, 0]))
+        self.add_fixed_orientation_mobjects(yl2)
+        tl2, tln2 = VGroup(), VGroup()
         for ni in range(NUM_TIME_LAYERS):
-            zz=LAYER_Z[ni]; tl=MathTex(str(ni),font_size=26,color=CORRIDOR_COLORS[ni])
-            tl.move_to(ao+np.array([0.3,0,zz])); self.add_fixed_orientation_mobjects(tl)
-            tl2.add(tl); tln2.add(Line(start=ao+np.array([-0.08,0,zz]),end=ao+np.array([0.08,0,zz]),color=GREY_C,stroke_width=0.8))
-        self.play(FadeIn(za),FadeIn(xa),FadeIn(ya),FadeIn(nl2),FadeIn(xl2),FadeIn(yl2),FadeIn(tl2),FadeIn(tln2),run_time=0.6)
+            zz = LAYER_Z[ni]
+            tl = MathTex(str(ni), font_size=26, color=CORRIDOR_COLORS[ni])
+            tl.move_to(ao + np.array([0.3, 0, zz]))
+            self.add_fixed_orientation_mobjects(tl)
+            tl2.add(tl)
+            tln2.add(
+                Line(
+                    start=ao + np.array([-0.08, 0, zz]),
+                    end=ao + np.array([0.08, 0, zz]),
+                    color=GREY_C,
+                    stroke_width=0.8,
+                )
+            )
+        self.play(
+            FadeIn(za),
+            FadeIn(xa),
+            FadeIn(ya),
+            FadeIn(nl2),
+            FadeIn(xl2),
+            FadeIn(yl2),
+            FadeIn(tl2),
+            FadeIn(tln2),
+            run_time=0.6,
+        )
 
         # Circles at each layer
         d3r = VGroup()
         for n in range(NUM_TIME_LAYERS):
-            z=LAYER_Z[n]; r=DYN_OBS_RADII[n]; c=CORRIDOR_COLORS[n]
-            cn=np.array([new_obs_center[0],new_obs_center[1],z])
-            dc=self._make_double_circle(cn,0.12)
-            dr=DashedVMobject(Circle(radius=r,color=c,stroke_width=1.0).move_to(cn),num_dashes=max(12,int(2*np.pi*r*4)),dashed_ratio=0.5)
-            d3r.add(VGroup(dc,dr))
-        self.play(LaggedStart(*[FadeIn(g,scale=0.6) for g in d3r],lag_ratio=0.2),run_time=1.0)
+            z = LAYER_Z[n]
+            r = DYN_OBS_RADII[n]
+            c = CORRIDOR_COLORS[n]
+            cn = np.array([new_obs_center[0], new_obs_center[1], z])
+            dc = self._make_double_circle(cn, 0.12)
+            dr = DashedVMobject(
+                Circle(radius=r, color=c, stroke_width=1.0).move_to(cn),
+                num_dashes=max(12, int(2 * np.pi * r * 4)),
+                dashed_ratio=0.5,
+            )
+            d3r.add(VGroup(dc, dr))
+        self.play(
+            LaggedStart(*[FadeIn(g, scale=0.6) for g in d3r], lag_ratio=0.2),
+            run_time=1.0,
+        )
 
-        self.wait(1.0); self.stop_ambient_camera_rotation()
-        self.play(FadeOut(d3r),run_time=0.5); self.wait(0.3)
+        self.wait(1.0)
+        self.stop_ambient_camera_rotation()
+        self.play(FadeOut(d3r), run_time=0.5)
+        self.wait(0.3)
 
         # Trajectory pieces at each level
-        rtp=VGroup(); rtl=VGroup(); rtd=VGroup()
-        rpn=[r"\boldsymbol{x}'_{0}",r"\boldsymbol{x}'_{1}",r"\boldsymbol{x}'_{2}",r"\boldsymbol{x}'_{3}"]
-        rwp=[]
+        rtp = VGroup()
+        rtl = VGroup()
+        rtd = VGroup()
+        rpn = [
+            r"\boldsymbol{x}'_{0}",
+            r"\boldsymbol{x}'_{1}",
+            r"\boldsymbol{x}'_{2}",
+            r"\boldsymbol{x}'_{3}",
+        ]
+        rwp = []
         for n in range(NUM_TIME_LAYERS):
-            if len(replan_layer_groups[n])==0: rwp.append(None); continue
-            color=CORRIDOR_COLORS[n]; z=LAYER_Z[n]
-            ts=n/(len(replan_traj_pts)-1); te=(n+1)/(len(replan_traj_pts)-1)
-            sub=replan_curve.copy().pointwise_become_partial(replan_curve,ts,te)
-            sub.set_color(color).set_stroke(width=TRAJ_STROKE_WIDTH); sub.shift(OUT*z)
+            if len(replan_layer_groups[n]) == 0:
+                rwp.append(None)
+                continue
+            color = CORRIDOR_COLORS[n]
+            z = LAYER_Z[n]
+            ts = n / (len(replan_traj_pts) - 1)
+            te = (n + 1) / (len(replan_traj_pts) - 1)
+            sub = replan_curve.copy().pointwise_become_partial(replan_curve, ts, te)
+            sub.set_color(color).set_stroke(width=TRAJ_STROKE_WIDTH)
+            sub.shift(OUT * z)
             rtp.add(sub)
-            s3=np.array([*replan_traj_pts[n][:2],z]); e3=np.array([*replan_traj_pts[n+1][:2],z])
-            rwp.append((s3,e3))
-            for is_s,pt in [(True,s3),(False,e3)]:
-                fl=BLACK if (n==0 and is_s) or (n==3 and not is_s) else WHITE
-                rtd.add(Circle(radius=0.06,color=BLACK,fill_color=fl,fill_opacity=1.0,stroke_width=2.0).move_to(pt))
-            mp=replan_curve.point_from_proportion((ts+te)/2)+np.array([0,0,z])
+            s3 = np.array([*replan_traj_pts[n][:2], z])
+            e3 = np.array([*replan_traj_pts[n + 1][:2], z])
+            rwp.append((s3, e3))
+            for is_s, pt in [(True, s3), (False, e3)]:
+                fl = BLACK if (n == 0 and is_s) or (n == 3 and not is_s) else WHITE
+                rtd.add(
+                    Circle(
+                        radius=0.06,
+                        color=BLACK,
+                        fill_color=fl,
+                        fill_opacity=1.0,
+                        stroke_width=2.0,
+                    ).move_to(pt)
+                )
+            mp = replan_curve.point_from_proportion((ts + te) / 2) + np.array([0, 0, z])
             # Per-layer offsets: x'3 moved left-down to avoid polytope overlap
-            lo3d=[np.array([-0.3,0,0.3]), np.array([0,-0.3,0.3]),
-                  np.array([0,-0.3,0.3]), np.array([-0.3,-0.3,0.3])]
-            lb=MathTex(rpn[n],font_size=26,color=color); lb.move_to(mp+lo3d[n]); rtl.add(lb)
+            lo3d = [
+                np.array([-0.3, 0, 0.3]),
+                np.array([0, -0.3, 0.3]),
+                np.array([0, -0.3, 0.3]),
+                np.array([-0.3, -0.3, 0.3]),
+            ]
+            lb = MathTex(rpn[n], font_size=26, color=color)
+            lb.move_to(mp + lo3d[n])
+            rtl.add(lb)
         for i in range(len(rtp)):
             self.add_fixed_orientation_mobjects(rtl[i])
-            self.play(Create(rtp[i]),FadeIn(rtl[i]),run_time=0.5)
-        self.play(FadeIn(rtd),run_time=0.4)
+            self.play(Create(rtp[i]), FadeIn(rtl[i]), run_time=0.5)
+        self.play(FadeIn(rtd), run_time=0.4)
 
         # Vertical lines
-        rv=VGroup(); wxz={}
+        rv = VGroup()
+        wxz = {}
         for p in rwp:
-            if p is None: continue
+            if p is None:
+                continue
             for pt in p:
-                k=(round(pt[0],4),round(pt[1],4)); wxz[k]=max(wxz.get(k,0),pt[2])
-        for (x,y),zm in wxz.items():
-            rv.add(DashedVMobject(Line(start=np.array([x,y,0]),end=np.array([x,y,zm]),color=BLACK,stroke_width=1.0),num_dashes=max(6,int(zm*4)),dashed_ratio=0.5))
-        self.play(FadeIn(rv),run_time=0.8)
+                k = (round(pt[0], 4), round(pt[1], 4))
+                wxz[k] = max(wxz.get(k, 0), pt[2])
+        for (x, y), zm in wxz.items():
+            rv.add(
+                DashedVMobject(
+                    Line(
+                        start=np.array([x, y, 0]),
+                        end=np.array([x, y, zm]),
+                        color=BLACK,
+                        stroke_width=1.0,
+                    ),
+                    num_dashes=max(6, int(zm * 4)),
+                    dashed_ratio=0.5,
+                )
+            )
+        self.play(FadeIn(rv), run_time=0.8)
         self.wait(2.0)
 
         # ── Reverse to 2D ─────────────────────────────────────────────────
-        self.play(FadeOut(rtp),FadeOut(rtd),FadeOut(rtl),FadeOut(rv),
-                  FadeOut(za),FadeOut(xa),FadeOut(ya),FadeOut(nl2),FadeOut(xl2),FadeOut(yl2),
-                  FadeOut(tl2),FadeOut(tln2),
-                  FadeOut(label_ap_3d),FadeOut(label_gp_3d),
-                  FadeOut(label_a_3d2),FadeOut(label_g_3d2),run_time=0.8)
-        low_a = [g.animate.shift(OUT*(-LAYER_Z[n])) for n,g in enumerate(replan_layer_groups) if len(g)>0]
+        self.play(
+            FadeOut(rtp),
+            FadeOut(rtd),
+            FadeOut(rtl),
+            FadeOut(rv),
+            FadeOut(za),
+            FadeOut(xa),
+            FadeOut(ya),
+            FadeOut(nl2),
+            FadeOut(xl2),
+            FadeOut(yl2),
+            FadeOut(tl2),
+            FadeOut(tln2),
+            FadeOut(label_ap_3d),
+            FadeOut(label_gp_3d),
+            FadeOut(label_a_3d2),
+            FadeOut(label_g_3d2),
+            run_time=0.8,
+        )
+        low_a = [
+            g.animate.shift(OUT * (-LAYER_Z[n]))
+            for n, g in enumerate(replan_layer_groups)
+            if len(g) > 0
+        ]
         self.play(*low_a, run_time=1.5, rate_func=smooth)
-        self.move_camera(phi=0*DEGREES,theta=-90*DEGREES,zoom=1.0,frame_center=np.array([-0.8,0,0]),run_time=1.5,rate_func=smooth)
+        self.move_camera(
+            phi=0 * DEGREES,
+            theta=-90 * DEGREES,
+            zoom=1.0,
+            frame_center=np.array([-0.8, 0, 0]),
+            run_time=1.5,
+            rate_func=smooth,
+        )
 
         # Re-add all labels in 2D after returning from 3D
         label_a_final = MathTex("A", font_size=30, color=BLACK)
@@ -1187,9 +1487,18 @@ class SpatioTemporalSFC(ThreeDScene):
 
     # ── Helpers ──────────────────────────────────────────────────────────────
 
-    def _compute_polytope_verts(self, p1, p2, circle_center, circle_radius,
-                                 far_width=0.4, extend=0.15, skew=0.3,
-                                 seg_idx=0, layer_idx=0):
+    def _compute_polytope_verts(
+        self,
+        p1,
+        p2,
+        circle_center,
+        circle_radius,
+        far_width=0.4,
+        extend=0.15,
+        skew=0.3,
+        seg_idx=0,
+        layer_idx=0,
+    ):
         p1, p2 = np.array(p1), np.array(p2)
         cc = np.array(circle_center)
 
@@ -1202,9 +1511,11 @@ class SpatioTemporalSFC(ThreeDScene):
 
         mid = (p1 + p2) / 2.0
         if np.dot(cc - mid, n1) > 0:
-            n_toward = n1; n_away = n2
+            n_toward = n1
+            n_away = n2
         else:
-            n_toward = n2; n_away = n1
+            n_toward = n2
+            n_away = n1
 
         ext_p1 = p1 - seg_hat * extend
         ext_p2 = p2 + seg_hat * extend
@@ -1236,7 +1547,9 @@ class SpatioTemporalSFC(ThreeDScene):
         t_far = 0.45
         far_extra = 0.2
         v1 = ext_p1 + n_away * (far_width + far_tilt1)
-        v_far_mid = (ext_p1 + seg_hat * seg_ext_len * t_far) + n_away * (far_width + far_extra)
+        v_far_mid = (ext_p1 + seg_hat * seg_ext_len * t_far) + n_away * (
+            far_width + far_extra
+        )
         v2 = ext_p2 + n_away * (far_width + far_tilt2)
         v3 = ext_p2 + n_toward * tw2
         v4 = ext_p1 + n_toward * tw1
@@ -1261,10 +1574,12 @@ class SpatioTemporalSFC(ThreeDScene):
 
     def _make_double_circle(self, center, radius):
         center = np.array(center)
-        outer = Circle(radius=radius, color=BLACK, stroke_width=1.5,
-                       fill_opacity=0).move_to(center)
-        inner = Circle(radius=radius * 0.6, color=BLACK, stroke_width=1.2,
-                       fill_opacity=0).move_to(center)
+        outer = Circle(
+            radius=radius, color=BLACK, stroke_width=1.5, fill_opacity=0
+        ).move_to(center)
+        inner = Circle(
+            radius=radius * 0.6, color=BLACK, stroke_width=1.2, fill_opacity=0
+        ).move_to(center)
         return VGroup(outer, inner)
 
     def _make_3d_slab(self, base_verts_2d, n_low, n_high, color_n):
@@ -1276,26 +1591,42 @@ class SpatioTemporalSFC(ThreeDScene):
         top = [np.array([v[0], v[1], z_high]) for v in base_verts_2d]
 
         faces = VGroup()
-        faces.add(Polygon(
-            *bottom, color=color, fill_color=color,
-            fill_opacity=CORRIDOR_FILL_OPACITY,
-            stroke_width=CORRIDOR_STROKE_WIDTH, stroke_color=color,
-        ))
-        faces.add(Polygon(
-            *top, color=color, fill_color=color,
-            fill_opacity=CORRIDOR_FILL_OPACITY,
-            stroke_width=CORRIDOR_STROKE_WIDTH, stroke_color=color,
-        ))
+        faces.add(
+            Polygon(
+                *bottom,
+                color=color,
+                fill_color=color,
+                fill_opacity=CORRIDOR_FILL_OPACITY,
+                stroke_width=CORRIDOR_STROKE_WIDTH,
+                stroke_color=color,
+            )
+        )
+        faces.add(
+            Polygon(
+                *top,
+                color=color,
+                fill_color=color,
+                fill_opacity=CORRIDOR_FILL_OPACITY,
+                stroke_width=CORRIDOR_STROKE_WIDTH,
+                stroke_color=color,
+            )
+        )
         n = len(bottom)
         for i in range(n):
             j = (i + 1) % n
-            faces.add(Polygon(
-                bottom[i], bottom[j], top[j], top[i],
-                color=color, fill_color=color,
-                fill_opacity=CORRIDOR_FILL_OPACITY * 0.7,
-                stroke_width=CORRIDOR_STROKE_WIDTH * 0.5,
-                stroke_color=color,
-            ))
+            faces.add(
+                Polygon(
+                    bottom[i],
+                    bottom[j],
+                    top[j],
+                    top[i],
+                    color=color,
+                    fill_color=color,
+                    fill_opacity=CORRIDOR_FILL_OPACITY * 0.7,
+                    stroke_width=CORRIDOR_STROKE_WIDTH * 0.5,
+                    stroke_color=color,
+                )
+            )
         return faces
 
 
@@ -1338,28 +1669,49 @@ class ReplanScene(SpatioTemporalSFC):
         self.add(dyn_obs_group)
 
         # A and G dots
-        start_dot = Dot(point=START_A, radius=DOT_RADIUS, color=BLACK,
-                        fill_color=BLACK, fill_opacity=1.0)
-        goal_dot = Dot(point=GOAL_G, radius=DOT_RADIUS, color=BLACK,
-                       fill_color=BLACK, fill_opacity=1.0)
+        start_dot = Dot(
+            point=START_A,
+            radius=DOT_RADIUS,
+            color=BLACK,
+            fill_color=BLACK,
+            fill_opacity=1.0,
+        )
+        goal_dot = Dot(
+            point=GOAL_G,
+            radius=DOT_RADIUS,
+            color=BLACK,
+            fill_color=BLACK,
+            fill_opacity=1.0,
+        )
         self.add(start_dot, goal_dot)
 
         label_a2 = MathTex("A", font_size=32).next_to(start_dot, DOWN, buff=0.12)
-        label_g2 = MathTex("G", font_size=32).next_to(goal_dot, UP + LEFT * 0.5, buff=0.12)
+        label_g2 = MathTex("G", font_size=32).next_to(
+            goal_dot, UP + LEFT * 0.5, buff=0.12
+        )
         self.add_fixed_in_frame_mobjects(label_a2, label_g2)
 
         # Global path + intermediate dots
         intermediate_dots = VGroup()
         for idx in range(1, len(CTRL_POINTS) - 1):
-            dot = Dot(point=CTRL_POINTS[idx], radius=DOT_RADIUS, color=BLACK,
-                      fill_color=BLACK, fill_opacity=1.0)
+            dot = Dot(
+                point=CTRL_POINTS[idx],
+                radius=DOT_RADIUS,
+                color=BLACK,
+                fill_color=BLACK,
+                fill_opacity=1.0,
+            )
             intermediate_dots.add(dot)
         self.add(intermediate_dots)
 
         traj_segments_2d = VGroup()
         for i in range(num_segs):
-            seg = Line(start=np.array(CTRL_POINTS[i]), end=np.array(CTRL_POINTS[i + 1]),
-                       color=BLACK, stroke_width=TRAJ_STROKE_WIDTH)
+            seg = Line(
+                start=np.array(CTRL_POINTS[i]),
+                end=np.array(CTRL_POINTS[i + 1]),
+                color=BLACK,
+                stroke_width=TRAJ_STROKE_WIDTH,
+            )
             traj_segments_2d.add(seg)
         self.add(traj_segments_2d)
 
@@ -1382,8 +1734,13 @@ class ReplanScene(SpatioTemporalSFC):
         smooth_dots = VGroup()
         for idx in SMOOTH_TRAJ_DOT_INDICES:
             pt = SMOOTH_TRAJ_ALL_POINTS[idx]
-            dot = Circle(radius=0.06, color=BLACK,
-                         fill_color=WHITE, fill_opacity=1.0, stroke_width=2.0).move_to(pt)
+            dot = Circle(
+                radius=0.06,
+                color=BLACK,
+                fill_color=WHITE,
+                fill_opacity=1.0,
+                stroke_width=2.0,
+            ).move_to(pt)
             smooth_dots.add(dot)
         self.add(smooth_dots)
 
@@ -1396,14 +1753,22 @@ class ReplanScene(SpatioTemporalSFC):
                 r = DYN_OBS_RADII[n]
                 color = CORRIDOR_COLORS[n]
                 verts = self._compute_polytope_verts(
-                    p1[:2], p2[:2], DYN_OBS_CENTER_T0[:2], r,
-                    far_width=0.4, extend=0.15, seg_idx=seg_idx, layer_idx=n,
+                    p1[:2],
+                    p2[:2],
+                    DYN_OBS_CENTER_T0[:2],
+                    r,
+                    far_width=0.4,
+                    extend=0.15,
+                    seg_idx=seg_idx,
+                    layer_idx=n,
                 )
                 poly = Polygon(
                     *[np.array([*v, 0]) for v in verts],
-                    color=color, fill_color=color,
+                    color=color,
+                    fill_color=color,
                     fill_opacity=CORRIDOR_FILL_OPACITY,
-                    stroke_width=CORRIDOR_STROKE_WIDTH, stroke_color=color,
+                    stroke_width=CORRIDOR_STROKE_WIDTH,
+                    stroke_color=color,
                 )
                 poly.set_z_index(seg_idx * 10 + n)
                 polytopes_2d[seg_idx][n] = poly
@@ -1417,9 +1782,11 @@ class ReplanScene(SpatioTemporalSFC):
             circumference = 2 * np.pi * r
             num_dashes = max(12, int(circumference * DASH_DENSITY))
             dashed = DashedVMobject(
-                Circle(radius=r, color=color, stroke_width=1.0)
-                .move_to(DYN_OBS_CENTER_T0),
-                num_dashes=num_dashes, dashed_ratio=0.5,
+                Circle(radius=r, color=color, stroke_width=1.0).move_to(
+                    DYN_OBS_CENTER_T0
+                ),
+                num_dashes=num_dashes,
+                dashed_ratio=0.5,
             )
             prediction_circles_2d.add(dashed)
             lbl = MathTex(f"r_{n}", font_size=22, color=color)
@@ -1433,7 +1800,9 @@ class ReplanScene(SpatioTemporalSFC):
         # ── Now run Step 18+ (replanning) ────────────────────────────────────
         # Add "t = t1" box
         t1_text = MathTex(r"t = t_1", font_size=30, color=BLACK)
-        t1_rect = SurroundingRectangle(t1_text, color=BLACK, buff=0.15, stroke_width=1.5)
+        t1_rect = SurroundingRectangle(
+            t1_text, color=BLACK, buff=0.15, stroke_width=1.5
+        )
         t1_box = VGroup(t1_rect, t1_text)
         t1_box.to_edge(UP, buff=0.3)
         self.add_fixed_in_frame_mobjects(t1_text, t1_rect)
@@ -1441,28 +1810,46 @@ class ReplanScene(SpatioTemporalSFC):
 
         # Remove polytopes and global path
         self.play(
-            *[FadeOut(polytopes_2d[s][n]) for s in range(num_segs) for n in range(NUM_TIME_LAYERS)],
-            FadeOut(traj_segments_2d), FadeOut(intermediate_dots),
+            *[
+                FadeOut(polytopes_2d[s][n])
+                for s in range(num_segs)
+                for n in range(NUM_TIME_LAYERS)
+            ],
+            FadeOut(traj_segments_2d),
+            FadeOut(intermediate_dots),
             run_time=0.8,
         )
         self.wait(0.3)
 
         # Move dot from A to A' along pink trajectory
-        t_a_prime = 0.8 * (SMOOTH_TRAJ_COLOR_BREAKS[1] / (len(SMOOTH_TRAJ_ALL_POINTS) - 1))
-        pink_to_a_prime = full_curve.copy().pointwise_become_partial(full_curve, 0, t_a_prime)
+        t_a_prime = 0.8 * (
+            SMOOTH_TRAJ_COLOR_BREAKS[1] / (len(SMOOTH_TRAJ_ALL_POINTS) - 1)
+        )
+        pink_to_a_prime = full_curve.copy().pointwise_become_partial(
+            full_curve, 0, t_a_prime
+        )
         a_prime_pos = pink_to_a_prime.get_end()
 
-        moving_dot = Dot(point=START_A, radius=DOT_RADIUS, color=BLACK,
-                         fill_color=BLACK, fill_opacity=1.0)
+        moving_dot = Dot(
+            point=START_A,
+            radius=DOT_RADIUS,
+            color=BLACK,
+            fill_color=BLACK,
+            fill_opacity=1.0,
+        )
         self.add(moving_dot)
 
         new_obs_center = DYN_OBS_CENTER_T0 + np.array([-0.3, -0.25, 0])
 
         # Show arrow behind obstacle as it starts moving
         obs_arrow = Arrow(
-            start=DYN_OBS_CENTER_T0, end=new_obs_center,
-            color=BLACK, stroke_width=8, max_tip_length_to_length_ratio=0.5,
-            buff=0.05, tip_length=0.25,
+            start=DYN_OBS_CENTER_T0,
+            end=new_obs_center,
+            color=BLACK,
+            stroke_width=8,
+            max_tip_length_to_length_ratio=0.5,
+            buff=0.05,
+            tip_length=0.25,
         )
         self.add(obs_arrow)
         self.bring_to_front(dyn_obs_group)
@@ -1506,7 +1893,9 @@ class ReplanScene(SpatioTemporalSFC):
         label_od_new = label_od_moving
 
         # Remove old circles, show new ones
-        self.play(FadeOut(prediction_circles_2d), FadeOut(radius_labels_2d), run_time=0.5)
+        self.play(
+            FadeOut(prediction_circles_2d), FadeOut(radius_labels_2d), run_time=0.5
+        )
 
         new_pred_circles = VGroup()
         new_r_labels = VGroup()
@@ -1516,7 +1905,8 @@ class ReplanScene(SpatioTemporalSFC):
             num_dashes = max(12, int(circumference * DASH_DENSITY))
             dashed = DashedVMobject(
                 Circle(radius=r, color=color, stroke_width=1.0).move_to(new_obs_center),
-                num_dashes=num_dashes, dashed_ratio=0.5,
+                num_dashes=num_dashes,
+                dashed_ratio=0.5,
             )
             new_pred_circles.add(dashed)
             lbl = MathTex(f"r'_{n}", font_size=22, color=color)
@@ -1526,15 +1916,21 @@ class ReplanScene(SpatioTemporalSFC):
 
         self.play(
             LaggedStart(*[FadeIn(c) for c in new_pred_circles], lag_ratio=0.15),
-            FadeIn(new_r_labels), run_time=1.0,
+            FadeIn(new_r_labels),
+            run_time=1.0,
         )
         self.wait(0.5)
 
         # G' with same displacement as A→A'
         a_to_a_prime = a_prime_pos - np.array(START_A)
         g_prime_pos = np.array(GOAL_G) + a_to_a_prime
-        g_prime_dot = Dot(point=g_prime_pos, radius=DOT_RADIUS, color=BLACK,
-                          fill_color=BLACK, fill_opacity=1.0)
+        g_prime_dot = Dot(
+            point=g_prime_pos,
+            radius=DOT_RADIUS,
+            color=BLACK,
+            fill_color=BLACK,
+            fill_opacity=1.0,
+        )
         label_g_prime = MathTex("G'", font_size=30, color=BLACK)
         label_g_prime.move_to(g_prime_pos + np.array([-0.25, 0.2, 0]))
         self.add_fixed_in_frame_mobjects(label_g_prime)
@@ -1543,8 +1939,8 @@ class ReplanScene(SpatioTemporalSFC):
         # New global path (waypoints moved up, seg 1 extends toward G')
         replan_pts = [
             a_prime_pos,
-            np.array([-2.0, -0.5, 0.0]),   # moved up from -1.3
-            np.array([-3.0, 1.2, 0.0]),    # moved up from 0.5
+            np.array([-2.0, -0.5, 0.0]),  # moved up from -1.3
+            np.array([-3.0, 1.2, 0.0]),  # moved up from 0.5
             g_prime_pos,
         ]
         replan_num_segs = len(replan_pts) - 1
@@ -1552,12 +1948,21 @@ class ReplanScene(SpatioTemporalSFC):
         replan_segments = VGroup()
         replan_inter_dots = VGroup()
         for i in range(replan_num_segs):
-            seg = Line(start=np.array(replan_pts[i]), end=np.array(replan_pts[i + 1]),
-                       color=BLACK, stroke_width=TRAJ_STROKE_WIDTH)
+            seg = Line(
+                start=np.array(replan_pts[i]),
+                end=np.array(replan_pts[i + 1]),
+                color=BLACK,
+                stroke_width=TRAJ_STROKE_WIDTH,
+            )
             replan_segments.add(seg)
         for idx in range(1, len(replan_pts) - 1):
-            dot = Dot(point=replan_pts[idx], radius=DOT_RADIUS, color=BLACK,
-                      fill_color=BLACK, fill_opacity=1.0)
+            dot = Dot(
+                point=replan_pts[idx],
+                radius=DOT_RADIUS,
+                color=BLACK,
+                fill_color=BLACK,
+                fill_opacity=1.0,
+            )
             replan_inter_dots.add(dot)
 
         for i, seg in enumerate(replan_segments):
@@ -1607,9 +2012,15 @@ class ReplanScene(SpatioTemporalSFC):
                     r_use = r
 
                 verts = self._compute_polytope_verts(
-                    p1[:2], p2[:2], new_obs_center[:2], r_use,
-                    far_width=fw, extend=ext, skew=sk,
-                    seg_idx=seg_idx + 100, layer_idx=n,
+                    p1[:2],
+                    p2[:2],
+                    new_obs_center[:2],
+                    r_use,
+                    far_width=fw,
+                    extend=ext,
+                    skew=sk,
+                    seg_idx=seg_idx + 100,
+                    layer_idx=n,
                 )
 
                 # Seg 1: make near-side edge nearly vertical (tangent to circle)
@@ -1635,9 +2046,11 @@ class ReplanScene(SpatioTemporalSFC):
 
                 poly = Polygon(
                     *verts_3d,
-                    color=color, fill_color=color,
+                    color=color,
+                    fill_color=color,
                     fill_opacity=CORRIDOR_FILL_OPACITY,
-                    stroke_width=CORRIDOR_STROKE_WIDTH, stroke_color=color,
+                    stroke_width=CORRIDOR_STROKE_WIDTH,
+                    stroke_color=color,
                 )
                 poly.set_z_index(seg_idx * 10 + n)
                 replan_polytopes[seg_idx][n] = poly
@@ -1683,11 +2096,11 @@ class ReplanScene(SpatioTemporalSFC):
         # ── Smooth trajectory A' → G' (4 colored pieces, close to O^d) ────
         # 5 key points: A', w1', w2', w3', G' — trajectory arcs close to obstacle
         replan_traj_pts = [
-            a_prime_pos,                          # A'
-            np.array([-1.5, -0.6, 0.0]),          # w1' near obstacle
-            np.array([-2.4, 0.2, 0.0]),           # w2' close to O^d
-            np.array([-2.8, 1.5, 0.0]),           # w3'
-            g_prime_pos,                           # G'
+            a_prime_pos,  # A'
+            np.array([-1.5, -0.6, 0.0]),  # w1' near obstacle
+            np.array([-2.4, 0.2, 0.0]),  # w2' close to O^d
+            np.array([-2.8, 1.5, 0.0]),  # w3'
+            g_prime_pos,  # G'
         ]
 
         replan_curve = VMobject()
@@ -1710,8 +2123,13 @@ class ReplanScene(SpatioTemporalSFC):
         # Waypoint dots at w1', w2', w3'
         replan_smooth_dots = VGroup()
         for idx in range(1, len(replan_traj_pts) - 1):
-            dot = Circle(radius=0.06, color=BLACK,
-                         fill_color=WHITE, fill_opacity=1.0, stroke_width=2.0)
+            dot = Circle(
+                radius=0.06,
+                color=BLACK,
+                fill_color=WHITE,
+                fill_opacity=1.0,
+                stroke_width=2.0,
+            )
             dot.move_to(replan_traj_pts[idx])
             replan_smooth_dots.add(dot)
         self.play(FadeIn(replan_smooth_dots), run_time=0.4)
@@ -1719,14 +2137,16 @@ class ReplanScene(SpatioTemporalSFC):
         # x'_0 to x'_3 labels (4 pieces)
         replan_x_labels = VGroup()
         replan_x_names = [
-            r"\boldsymbol{x}'_{0}", r"\boldsymbol{x}'_{1}",
-            r"\boldsymbol{x}'_{2}", r"\boldsymbol{x}'_{3}",
+            r"\boldsymbol{x}'_{0}",
+            r"\boldsymbol{x}'_{1}",
+            r"\boldsymbol{x}'_{2}",
+            r"\boldsymbol{x}'_{3}",
         ]
         replan_x_offsets = [
-            np.array([0.0, -0.3, 0]),    # x'0: below trajectory
-            np.array([0.4, 0.1, 0]),    # x'1: upward
-            np.array([0.35, -0.2, 0]),    # x'2: right side
-            np.array([0.3, -0.2, 0]),    # x'3: right
+            np.array([0.0, -0.3, 0]),  # x'0: below trajectory
+            np.array([0.4, 0.1, 0]),  # x'1: upward
+            np.array([0.35, -0.2, 0]),  # x'2: right side
+            np.array([0.3, -0.2, 0]),  # x'3: right
         ]
         for i in range(4):
             color = CORRIDOR_COLORS[i]
@@ -1772,7 +2192,8 @@ class ReplanScene(SpatioTemporalSFC):
 
         self.play(
             FadeOut(to_fade_replan),
-            FadeIn(miqp_title2), FadeIn(miqp_entries2),
+            FadeIn(miqp_title2),
+            FadeIn(miqp_entries2),
             run_time=0.8,
         )
         self.wait(1.5)
@@ -1780,7 +2201,8 @@ class ReplanScene(SpatioTemporalSFC):
         # Bring back all polytopes before 3D transition
         self.play(
             FadeIn(to_fade_replan),
-            FadeOut(miqp_title2), FadeOut(miqp_entries2),
+            FadeOut(miqp_title2),
+            FadeOut(miqp_entries2),
             FadeOut(replan_x_labels),
             run_time=0.6,
         )
@@ -1789,10 +2211,14 @@ class ReplanScene(SpatioTemporalSFC):
         # ── Transition to 3D (keep ground elements + A', G', t=t1) ──────
         self.play(
             FadeOut(replan_all_labels),
-            FadeOut(old_elements), FadeOut(label_a2), FadeOut(label_g2),
-            FadeOut(label_a_prime), FadeOut(label_g_prime),
+            FadeOut(old_elements),
+            FadeOut(label_a2),
+            FadeOut(label_g2),
+            FadeOut(label_a_prime),
+            FadeOut(label_g_prime),
             FadeOut(label_od_new),
-            FadeOut(new_pred_circles), FadeOut(new_r_labels),
+            FadeOut(new_pred_circles),
+            FadeOut(new_r_labels),
             run_time=0.8,
         )
         # Keep dyn_obs_group on ground (already at new_obs_center)
@@ -1810,9 +2236,12 @@ class ReplanScene(SpatioTemporalSFC):
             seg.set_stroke(width=1.5)
 
         self.move_camera(
-            phi=60 * DEGREES, theta=-15 * DEGREES,
-            zoom=0.85, frame_center=np.array([0, 0, 1.5]),
-            run_time=0.6, rate_func=smooth,
+            phi=60 * DEGREES,
+            theta=-15 * DEGREES,
+            zoom=0.85,
+            frame_center=np.array([0, 0, 1.5]),
+            run_time=0.6,
+            rate_func=smooth,
         )
         self.begin_ambient_camera_rotation(rate=0.15)
 
@@ -1822,41 +2251,95 @@ class ReplanScene(SpatioTemporalSFC):
             for n in range(NUM_TIME_LAYERS):
                 if replan_polytopes[seg_idx][n] is not None:
                     replan_layer_groups[n].add(replan_polytopes[seg_idx][n])
-        lift_anims = [g.animate.shift(OUT * LAYER_Z[n])
-                      for n, g in enumerate(replan_layer_groups) if len(g) > 0]
+        lift_anims = [
+            g.animate.shift(OUT * LAYER_Z[n])
+            for n, g in enumerate(replan_layer_groups)
+            if len(g) > 0
+        ]
         self.play(*lift_anims, run_time=2.0, rate_func=smooth)
         self.wait(0.3)
 
         # Axes
         ao = np.array([3.5, -2.5, 0.0])
         al, zt = 1.2, 4.8
-        z_ax = Arrow3D(start=ao, end=ao+np.array([0,0,zt]), color=GREY_C, thickness=0.005, height=0.15, base_radius=0.05)
-        x_ax = Arrow3D(start=ao, end=ao+np.array([0,al,0]), color=GREY_C, thickness=0.005, height=0.15, base_radius=0.05)
-        y_ax = Arrow3D(start=ao, end=ao+np.array([-al,0,0]), color=GREY_C, thickness=0.005, height=0.15, base_radius=0.05)
+        z_ax = Arrow3D(
+            start=ao,
+            end=ao + np.array([0, 0, zt]),
+            color=GREY_C,
+            thickness=0.005,
+            height=0.15,
+            base_radius=0.05,
+        )
+        x_ax = Arrow3D(
+            start=ao,
+            end=ao + np.array([0, al, 0]),
+            color=GREY_C,
+            thickness=0.005,
+            height=0.15,
+            base_radius=0.05,
+        )
+        y_ax = Arrow3D(
+            start=ao,
+            end=ao + np.array([-al, 0, 0]),
+            color=GREY_C,
+            thickness=0.005,
+            height=0.15,
+            base_radius=0.05,
+        )
         nl = MathTex(r"\text{Time Layer } n", font_size=28, color=BLACK)
-        nl.move_to(ao+np.array([0,0,zt+0.4])); self.add_fixed_orientation_mobjects(nl)
+        nl.move_to(ao + np.array([0, 0, zt + 0.4]))
+        self.add_fixed_orientation_mobjects(nl)
         xl = MathTex("x", font_size=28, color=BLACK)
-        xl.move_to(ao+np.array([0,al+0.25,0])); self.add_fixed_orientation_mobjects(xl)
+        xl.move_to(ao + np.array([0, al + 0.25, 0]))
+        self.add_fixed_orientation_mobjects(xl)
         yl = MathTex("y", font_size=28, color=BLACK)
-        yl.move_to(ao+np.array([-al-0.25,0,0])); self.add_fixed_orientation_mobjects(yl)
+        yl.move_to(ao + np.array([-al - 0.25, 0, 0]))
+        self.add_fixed_orientation_mobjects(yl)
         tl2, tln2 = VGroup(), VGroup()
         for ni in range(NUM_TIME_LAYERS):
             zz = LAYER_Z[ni]
             tl = MathTex(str(ni), font_size=26, color=CORRIDOR_COLORS[ni])
-            tl.move_to(ao+np.array([0.3,0,zz])); self.add_fixed_orientation_mobjects(tl)
+            tl.move_to(ao + np.array([0.3, 0, zz]))
+            self.add_fixed_orientation_mobjects(tl)
             tl2.add(tl)
-            tln2.add(Line(start=ao+np.array([-0.08,0,zz]), end=ao+np.array([0.08,0,zz]), color=GREY_C, stroke_width=0.8))
-        self.play(FadeIn(z_ax),FadeIn(x_ax),FadeIn(y_ax),FadeIn(nl),FadeIn(xl),FadeIn(yl),FadeIn(tl2),FadeIn(tln2), run_time=0.6)
+            tln2.add(
+                Line(
+                    start=ao + np.array([-0.08, 0, zz]),
+                    end=ao + np.array([0.08, 0, zz]),
+                    color=GREY_C,
+                    stroke_width=0.8,
+                )
+            )
+        self.play(
+            FadeIn(z_ax),
+            FadeIn(x_ax),
+            FadeIn(y_ax),
+            FadeIn(nl),
+            FadeIn(xl),
+            FadeIn(yl),
+            FadeIn(tl2),
+            FadeIn(tln2),
+            run_time=0.6,
+        )
 
         # Prediction circles at each layer
         d3r = VGroup()
         for n in range(NUM_TIME_LAYERS):
-            z=LAYER_Z[n]; r=DYN_OBS_RADII[n]; c=CORRIDOR_COLORS[n]
-            cn=np.array([new_obs_center[0],new_obs_center[1],z])
-            dc=self._make_double_circle(cn,0.12)
-            dr=DashedVMobject(Circle(radius=r,color=c,stroke_width=1.0).move_to(cn),num_dashes=max(12,int(2*np.pi*r*4)),dashed_ratio=0.5)
-            d3r.add(VGroup(dc,dr))
-        self.play(LaggedStart(*[FadeIn(g,scale=0.6) for g in d3r],lag_ratio=0.2),run_time=1.0)
+            z = LAYER_Z[n]
+            r = DYN_OBS_RADII[n]
+            c = CORRIDOR_COLORS[n]
+            cn = np.array([new_obs_center[0], new_obs_center[1], z])
+            dc = self._make_double_circle(cn, 0.12)
+            dr = DashedVMobject(
+                Circle(radius=r, color=c, stroke_width=1.0).move_to(cn),
+                num_dashes=max(12, int(2 * np.pi * r * 4)),
+                dashed_ratio=0.5,
+            )
+            d3r.add(VGroup(dc, dr))
+        self.play(
+            LaggedStart(*[FadeIn(g, scale=0.6) for g in d3r], lag_ratio=0.2),
+            run_time=1.0,
+        )
 
         # Rotate then stop
         self.wait(1.0)
@@ -1865,53 +2348,101 @@ class ReplanScene(SpatioTemporalSFC):
         self.wait(0.3)
 
         # ── Trajectory pieces at each n level ─────────────────────────────
-        rtp = VGroup(); rtl = VGroup(); rtd = VGroup()
-        rpn = [r"\boldsymbol{x}'_{0}",r"\boldsymbol{x}'_{1}",r"\boldsymbol{x}'_{2}",r"\boldsymbol{x}'_{3}"]
+        rtp = VGroup()
+        rtl = VGroup()
+        rtd = VGroup()
+        rpn = [
+            r"\boldsymbol{x}'_{0}",
+            r"\boldsymbol{x}'_{1}",
+            r"\boldsymbol{x}'_{2}",
+            r"\boldsymbol{x}'_{3}",
+        ]
         rwp = []
         for n in range(NUM_TIME_LAYERS):
             if len(replan_layer_groups[n]) == 0:
-                rwp.append(None); continue
-            color=CORRIDOR_COLORS[n]; z=LAYER_Z[n]
-            ts=n/(len(replan_traj_pts)-1); te=(n+1)/(len(replan_traj_pts)-1)
-            sub=replan_curve.copy().pointwise_become_partial(replan_curve,ts,te)
-            sub.set_color(color).set_stroke(width=TRAJ_STROKE_WIDTH); sub.shift(OUT*z)
+                rwp.append(None)
+                continue
+            color = CORRIDOR_COLORS[n]
+            z = LAYER_Z[n]
+            ts = n / (len(replan_traj_pts) - 1)
+            te = (n + 1) / (len(replan_traj_pts) - 1)
+            sub = replan_curve.copy().pointwise_become_partial(replan_curve, ts, te)
+            sub.set_color(color).set_stroke(width=TRAJ_STROKE_WIDTH)
+            sub.shift(OUT * z)
             rtp.add(sub)
-            s3=np.array([*replan_traj_pts[n][:2],z]); e3=np.array([*replan_traj_pts[n+1][:2],z])
-            rwp.append((s3,e3))
-            for is_s,pt in [(True,s3),(False,e3)]:
-                fl=BLACK if (n==0 and is_s) or (n==3 and not is_s) else WHITE
-                rtd.add(Circle(radius=0.06,color=BLACK,fill_color=fl,fill_opacity=1.0,stroke_width=2.0).move_to(pt))
-            mp=replan_curve.point_from_proportion((ts+te)/2)+np.array([0,0,z])
+            s3 = np.array([*replan_traj_pts[n][:2], z])
+            e3 = np.array([*replan_traj_pts[n + 1][:2], z])
+            rwp.append((s3, e3))
+            for is_s, pt in [(True, s3), (False, e3)]:
+                fl = BLACK if (n == 0 and is_s) or (n == 3 and not is_s) else WHITE
+                rtd.add(
+                    Circle(
+                        radius=0.06,
+                        color=BLACK,
+                        fill_color=fl,
+                        fill_opacity=1.0,
+                        stroke_width=2.0,
+                    ).move_to(pt)
+                )
+            mp = replan_curve.point_from_proportion((ts + te) / 2) + np.array([0, 0, z])
             # Per-layer offsets: x'3 moved left-down to avoid polytope overlap
-            lbl_offsets_3d = [np.array([-0.3,0,0.3]), np.array([0,-0.3,0.3]),
-                              np.array([0,-0.3,0.3]), np.array([-0.3,-0.3,0.3])]
-            lb=MathTex(rpn[n],font_size=26,color=color); lb.move_to(mp+lbl_offsets_3d[n])
+            lbl_offsets_3d = [
+                np.array([-0.3, 0, 0.3]),
+                np.array([0, -0.3, 0.3]),
+                np.array([0, -0.3, 0.3]),
+                np.array([-0.3, -0.3, 0.3]),
+            ]
+            lb = MathTex(rpn[n], font_size=26, color=color)
+            lb.move_to(mp + lbl_offsets_3d[n])
             rtl.add(lb)
 
         for i in range(len(rtp)):
             self.add_fixed_orientation_mobjects(rtl[i])
-            self.play(Create(rtp[i]),FadeIn(rtl[i]),run_time=0.5)
-        self.play(FadeIn(rtd),run_time=0.4)
+            self.play(Create(rtp[i]), FadeIn(rtl[i]), run_time=0.5)
+        self.play(FadeIn(rtd), run_time=0.4)
 
         # Vertical dotted connections from ground
-        rv=VGroup(); wxz={}
+        rv = VGroup()
+        wxz = {}
         for p in rwp:
-            if p is None: continue
+            if p is None:
+                continue
             for pt in p:
-                k=(round(pt[0],4),round(pt[1],4)); wxz[k]=max(wxz.get(k,0),pt[2])
-        for (x,y),zm in wxz.items():
-            rv.add(DashedVMobject(Line(start=np.array([x,y,0]),end=np.array([x,y,zm]),color=BLACK,stroke_width=1.0),num_dashes=max(6,int(zm*4)),dashed_ratio=0.5))
-        self.play(FadeIn(rv),run_time=0.8)
+                k = (round(pt[0], 4), round(pt[1], 4))
+                wxz[k] = max(wxz.get(k, 0), pt[2])
+        for (x, y), zm in wxz.items():
+            rv.add(
+                DashedVMobject(
+                    Line(
+                        start=np.array([x, y, 0]),
+                        end=np.array([x, y, zm]),
+                        color=BLACK,
+                        stroke_width=1.0,
+                    ),
+                    num_dashes=max(6, int(zm * 4)),
+                    dashed_ratio=0.5,
+                )
+            )
+        self.play(FadeIn(rv), run_time=0.8)
         self.wait(2.0)
 
         # ── Reverse to 2D view ────────────────────────────────────────────
         # Fade 3D-only elements
         self.play(
-            FadeOut(rtp), FadeOut(rtd), FadeOut(rtl), FadeOut(rv),
-            FadeOut(z_ax), FadeOut(x_ax), FadeOut(y_ax),
-            FadeOut(nl), FadeOut(xl), FadeOut(yl),
-            FadeOut(tl2), FadeOut(tln2),
-            FadeOut(label_ap_3d), FadeOut(label_gp_3d),
+            FadeOut(rtp),
+            FadeOut(rtd),
+            FadeOut(rtl),
+            FadeOut(rv),
+            FadeOut(z_ax),
+            FadeOut(x_ax),
+            FadeOut(y_ax),
+            FadeOut(nl),
+            FadeOut(xl),
+            FadeOut(yl),
+            FadeOut(tl2),
+            FadeOut(tln2),
+            FadeOut(label_ap_3d),
+            FadeOut(label_gp_3d),
             run_time=0.8,
         )
 
@@ -1924,8 +2455,11 @@ class ReplanScene(SpatioTemporalSFC):
 
         # Rotate camera back to 2D top-down
         self.move_camera(
-            phi=0 * DEGREES, theta=-90 * DEGREES,
-            zoom=1.0, frame_center=np.array([-0.8, 0, 0]),
-            run_time=1.5, rate_func=smooth,
+            phi=0 * DEGREES,
+            theta=-90 * DEGREES,
+            zoom=1.0,
+            frame_center=np.array([-0.8, 0, 0]),
+            run_time=1.5,
+            rate_func=smooth,
         )
         self.wait(1.0)

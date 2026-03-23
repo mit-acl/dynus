@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------------
+# Copyright 2025, Kota Kondo, Aerospace Controls Laboratory
+# Massachusetts Institute of Technology
+# All Rights Reserved
+# Authors: Kota Kondo, et al.
+# See LICENSE file for the license information
+# ----------------------------------------------------------------------------
 """
 Analyze hardware ROS2 bag data from SANDO flights.
 
@@ -24,13 +31,10 @@ Usage:
 import argparse
 import os
 import sys
-import glob
 import numpy as np
-import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 
-import rosbag2_py
 from rosbag2_py import StorageOptions, ConverterOptions, SequentialReader, StorageFilter
 from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
@@ -39,6 +43,7 @@ from rosidl_runtime_py.utilities import get_message
 # ---------------------------------------------------------------------------
 # Bag reading
 # ---------------------------------------------------------------------------
+
 
 def is_ros2_bag(path):
     """Check if a directory looks like a ROS2 bag (contains metadata.yaml)."""
@@ -97,6 +102,7 @@ def discover_namespace(bag_path, storage_id="sqlite3"):
 # Computation time statistics
 # ---------------------------------------------------------------------------
 
+
 def compute_time_stats(comp_msgs):
     """Compute avg and std for computation time fields."""
     fields = [
@@ -129,11 +135,11 @@ def compute_time_stats(comp_msgs):
 
 def print_comp_stats(stats, bag_name):
     """Pretty-print computation time statistics."""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Computation Times: {bag_name}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"{'Metric':<30} {'Avg':>10} {'Std':>10}")
-    print(f"{'-'*50}")
+    print(f"{'-' * 50}")
     for name, s in stats.items():
         print(f"{name:<30} {s['avg']:>10.3f} {s['std']:>10.3f}")
     print()
@@ -152,21 +158,28 @@ def save_comp_stats_csv(stats, save_path):
 # Plotting (matches unc_benchmark_data_analysis.ipynb style)
 # ---------------------------------------------------------------------------
 
+
 def setup_plot_style(use_tex=False):
     """Configure matplotlib to match the notebook style."""
     if use_tex:
-        plt.rcParams.update({
-            "text.usetex": True,
-            "text.latex.preamble": (
-                r"\usepackage{amsmath}\usepackage{bm}"
-                r"\newcommand{\vect}[1]{\bm{#1}}"
-            ),
-        })
+        plt.rcParams.update(
+            {
+                "text.usetex": True,
+                "text.latex.preamble": (
+                    r"\usepackage{amsmath}\usepackage{bm}"
+                    r"\newcommand{\vect}[1]{\bm{#1}}"
+                ),
+            }
+        )
     else:
         plt.rcParams.update({"text.usetex": False})
         candidates = [
-            "Times New Roman", "Nimbus Roman", "TeX Gyre Termes",
-            "Times", "CMU Serif", "DejaVu Serif",
+            "Times New Roman",
+            "Nimbus Roman",
+            "TeX Gyre Termes",
+            "Times",
+            "CMU Serif",
+            "DejaVu Serif",
         ]
         avail = {f.name for f in fm.fontManager.ttflist}
         chosen = next((c for c in candidates if c in avail), "DejaVu Serif")
@@ -180,10 +193,23 @@ def vect_label(sym, use_tex=False):
     return rf"$\vect{{{sym}}}$" if use_tex else rf"$\mathbf{{{sym}}}$"
 
 
-def plot_history(t, p, v, a, j, save_path,
-                 v_max=5.0, a_max=20.0, j_max=100.0,
-                 use_tex=False, tol_abs=0.001,
-                 p_ylim=None, v_ylim=None, a_ylim=None, j_ylim=None):
+def plot_history(
+    t,
+    p,
+    v,
+    a,
+    j,
+    save_path,
+    v_max=5.0,
+    a_max=20.0,
+    j_max=100.0,
+    use_tex=False,
+    tol_abs=0.001,
+    p_ylim=None,
+    v_ylim=None,
+    a_ylim=None,
+    j_ylim=None,
+):
     """
     Plot 4-row stacked history: position, velocity, acceleration, jerk.
     Style matches unc_benchmark_data_analysis.ipynb.
@@ -204,7 +230,10 @@ def plot_history(t, p, v, a, j, save_path,
     height = (width / phi) * 1.3  # taller for 4 subplots
 
     fig, (ax_p, ax_v, ax_a, ax_j) = plt.subplots(
-        4, 1, sharex=True, figsize=(width, height),
+        4,
+        1,
+        sharex=True,
+        figsize=(width, height),
         gridspec_kw=dict(hspace=0.35),
     )
 
@@ -243,21 +272,41 @@ def plot_history(t, p, v, a, j, save_path,
         return lines, lim_handle
 
     # Position (no limits)
-    p_lines, _ = plot_xyz(ax_p, p, None,
-                          rf"{vect_label('p', use_tex)} [m]", "Position",
-                          ylim_range=p_ylim or (-5, 17))
+    p_lines, _ = plot_xyz(
+        ax_p,
+        p,
+        None,
+        rf"{vect_label('p', use_tex)} [m]",
+        "Position",
+        ylim_range=p_ylim or (-5, 17),
+    )
     # Velocity
-    v_lines, _ = plot_xyz(ax_v, v, v_max,
-                          rf"{vect_label('v', use_tex)} [m/s]", "Velocity",
-                          ylim_range=v_ylim or (-v_max * 1.1, v_max * 1.1))
+    v_lines, _ = plot_xyz(
+        ax_v,
+        v,
+        v_max,
+        rf"{vect_label('v', use_tex)} [m/s]",
+        "Velocity",
+        ylim_range=v_ylim or (-v_max * 1.1, v_max * 1.1),
+    )
     # Acceleration
-    a_lines, _ = plot_xyz(ax_a, a, a_max,
-                          rf"{vect_label('a', use_tex)} [m/s$^2$]", "Acceleration",
-                          ylim_range=a_ylim or (-a_max * 1.1, a_max * 1.1))
+    a_lines, _ = plot_xyz(
+        ax_a,
+        a,
+        a_max,
+        rf"{vect_label('a', use_tex)} [m/s$^2$]",
+        "Acceleration",
+        ylim_range=a_ylim or (-a_max * 1.1, a_max * 1.1),
+    )
     # Jerk
-    j_lines, j_lim = plot_xyz(ax_j, j, j_max,
-                               rf"{vect_label('j', use_tex)} [m/s$^3$]", "Jerk",
-                               ylim_range=j_ylim or (-j_max * 1.1, j_max * 1.1))
+    j_lines, j_lim = plot_xyz(
+        ax_j,
+        j,
+        j_max,
+        rf"{vect_label('j', use_tex)} [m/s$^3$]",
+        "Jerk",
+        ylim_range=j_ylim or (-j_max * 1.1, j_max * 1.1),
+    )
 
     ax_j.set_xlabel("Time [s]", fontsize=label_font)
     ax_j.tick_params(axis="x", labelsize=tick_font)
@@ -271,7 +320,8 @@ def plot_history(t, p, v, a, j, save_path,
 
     plt.tight_layout(rect=[0.0, 0.12, 1.0, 1.0])
     fig.legend(
-        handles, labels,
+        handles,
+        labels,
         loc="lower center",
         bbox_to_anchor=(0.5, -0.08),
         frameon=False,
@@ -282,7 +332,9 @@ def plot_history(t, p, v, a, j, save_path,
         columnspacing=2.0,
     )
 
-    os.makedirs(os.path.dirname(save_path) if os.path.dirname(save_path) else ".", exist_ok=True)
+    os.makedirs(
+        os.path.dirname(save_path) if os.path.dirname(save_path) else ".", exist_ok=True
+    )
     fig.savefig(save_path, bbox_inches="tight", dpi=300)
     plt.close(fig)
     print(f"Saved history plot to {save_path}")
@@ -291,6 +343,7 @@ def plot_history(t, p, v, a, j, save_path,
 # ---------------------------------------------------------------------------
 # Processing a single bag
 # ---------------------------------------------------------------------------
+
 
 def process_bag(bag_path, args):
     """Process a single ROS2 bag: compute stats and generate plot."""
@@ -318,12 +371,12 @@ def process_bag(bag_path, args):
         csv_path = os.path.join(bag_path, f"comp_stats_{bag_name}.csv")
         save_comp_stats_csv(stats, csv_path)
     else:
-        print(f"  No computation_times messages found.")
+        print("  No computation_times messages found.")
 
     # --- History plot ---
     goal_msgs = data[goal_topic]
     if not goal_msgs:
-        print(f"  No goal messages found. Skipping plot.")
+        print("  No goal messages found. Skipping plot.")
         return
 
     # Extract arrays
@@ -346,9 +399,18 @@ def process_bag(bag_path, args):
     t = t_abs - t_abs[0]
 
     save_path = os.path.join(bag_path, f"history_{bag_name}.pdf")
-    plot_history(t, p, v, a, j, save_path,
-                 v_max=args.v_max, a_max=args.a_max, j_max=args.j_max,
-                 use_tex=args.use_tex)
+    plot_history(
+        t,
+        p,
+        v,
+        a,
+        j,
+        save_path,
+        v_max=args.v_max,
+        a_max=args.a_max,
+        j_max=args.j_max,
+        use_tex=args.use_tex,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -368,30 +430,30 @@ HW_STATIC_TESTS = {
 # Dynamic test configurations: test_name -> (description,)
 # All dynamic tests use v_max=2.0 m/s
 HW_DYNAMIC_TESTS = [
-    ("test1",       "1 obst, line"),
+    ("test1", "1 obst, line"),
     ("test1-take3", "1 obst, circle (take 3)"),
     ("test1-take4", "1 obst, circle (take 4)"),
-    ("test2",       "1 obst, figure 8"),
-    ("test4",       "5 obsts, line-ish (run 1)"),
-    ("test5",       "5 obsts, line-ish (run 2)"),
-    ("test6",       "5 obsts, line-ish (run 3)"),
+    ("test2", "1 obst, figure 8"),
+    ("test4", "5 obsts, line-ish (run 1)"),
+    ("test5", "5 obsts, line-ish (run 2)"),
+    ("test6", "5 obsts, line-ish (run 3)"),
 ]
 
 # Dynamic round2 test configurations: test_name -> (obst_type, num_obst, obst_traj, v_max, a_max, j_max)
 HW_DYNAMIC_ROUND2_TESTS = [
     # Exp 7-10: single obstacle, different trajectories
-    ("test28", "1 Dyn.",                              "Line",       2.0, 5.0, 7.5),
-    ("test29", "1 Dyn.",                              "Circle",     2.0, 5.0, 7.5),
-    ("test30", "1 Dyn.",                              "Fig. Eight", 2.0, 5.0, 7.5),
-    ("test31", "1 Dyn.",                              "Person",     2.0, 5.0, 7.5),
+    ("test28", "1 Dyn.", "Line", 2.0, 5.0, 7.5),
+    ("test29", "1 Dyn.", "Circle", 2.0, 5.0, 7.5),
+    ("test30", "1 Dyn.", "Fig. Eight", 2.0, 5.0, 7.5),
+    ("test31", "1 Dyn.", "Person", 2.0, 5.0, 7.5),
     # Exp 11-13: five dynamic obstacles
-    ("test14", "5 Dyn.",                              "Line",       2.0, 5.0, 7.5),
-    ("test15", "5 Dyn.",                              "Line",       2.0, 5.0, 7.5),
-    ("test16", "5 Dyn.",                              "Line",       2.0, 5.0, 7.5),
+    ("test14", "5 Dyn.", "Line", 2.0, 5.0, 7.5),
+    ("test15", "5 Dyn.", "Line", 2.0, 5.0, 7.5),
+    ("test16", "5 Dyn.", "Line", 2.0, 5.0, 7.5),
     # Exp 14-16: dynamic + static, varying v_max
-    ("test18", r"\makecell{5 Dyn. \\ \& Static}",    "Line",       2.0, 5.0, 7.5),
-    ("test23", r"\makecell{5 Dyn. \\ \& Static}",    "Line",       3.0, 5.0, 7.5),
-    ("test24", r"\makecell{5 Dyn. \\ \& Static}",    "Line",       4.0, 5.0, 7.5),
+    ("test18", r"\makecell{5 Dyn. \\ \& Static}", "Line", 2.0, 5.0, 7.5),
+    ("test23", r"\makecell{5 Dyn. \\ \& Static}", "Line", 3.0, 5.0, 7.5),
+    ("test24", r"\makecell{5 Dyn. \\ \& Static}", "Line", 4.0, 5.0, 7.5),
 ]
 
 
@@ -470,7 +532,11 @@ def build_comp_time_table(rows, row_header_col, caption, label, row_header_unit=
     lines.append(
         r"      \multirow{2}{*}[-0.4ex]{\textbf{Exp.}}"
         r" & \multirow{2}{*}[-0.4ex]{"
-        + (rf"\makecell{{{row_header_col} \\ {{{row_header_unit}}}}}" if row_header_unit else row_header_col)
+        + (
+            rf"\makecell{{{row_header_col} \\ {{{row_header_unit}}}}}"
+            if row_header_unit
+            else row_header_col
+        )
         + r"}"
         r" & \multicolumn{4}{c}{\textbf{Computation Time}}"
         r" \\"
@@ -519,7 +585,9 @@ def extract_goal_arrays(bag_path, ns):
     if not goal_msgs:
         return None
 
-    t_abs = np.array([m.header.stamp.sec + m.header.stamp.nanosec * 1e-9 for m in goal_msgs])
+    t_abs = np.array(
+        [m.header.stamp.sec + m.header.stamp.nanosec * 1e-9 for m in goal_msgs]
+    )
     p = np.array([[m.p.x, m.p.y, m.p.z] for m in goal_msgs])
     v = np.array([[m.v.x, m.v.y, m.v.z] for m in goal_msgs])
     a = np.array([[m.a.x, m.a.y, m.a.z] for m in goal_msgs])
@@ -550,22 +618,33 @@ def generate_hw_static_table(static_dir, table_output):
         ns = discover_namespace(bag_path)
         comp_stats = get_comp_stats(bag_path, ns)
 
-        rows.append({
-            "row_label": f"{v_max:.1f}",
-            "comp_stats": comp_stats,
-        })
+        rows.append(
+            {
+                "row_label": f"{v_max:.1f}",
+                "comp_stats": comp_stats,
+            }
+        )
 
         # Generate history plot
         goal_data = extract_goal_arrays(bag_path, ns)
         if goal_data is not None:
             t, p, v_arr, a_arr, j_arr = goal_data
             plot_path = os.path.join(bag_path, f"history_{test_name}.pdf")
-            plot_history(t, p, v_arr, a_arr, j_arr, plot_path,
-                         v_max=v_max, a_max=a_max, j_max=j_max,
-                         p_ylim=(0, 20),
-                         v_ylim=(-v_max * 1.1, v_max * 1.1),
-                         a_ylim=(-a_max * 1.1, a_max * 1.1),
-                         j_ylim=(-j_max * 1.1, j_max * 1.1))
+            plot_history(
+                t,
+                p,
+                v_arr,
+                a_arr,
+                j_arr,
+                plot_path,
+                v_max=v_max,
+                a_max=a_max,
+                j_max=j_max,
+                p_ylim=(0, 20),
+                v_ylim=(-v_max * 1.1, v_max * 1.1),
+                a_ylim=(-a_max * 1.1, a_max * 1.1),
+                j_ylim=(-j_max * 1.1, j_max * 1.1),
+            )
         else:
             print(f"    No goal messages found for {test_name}, skipping plot.")
 
@@ -607,10 +686,12 @@ def generate_hw_dynamic_table(dynamic_dir, table_output):
         ns = discover_namespace(bag_path)
         comp_stats = get_comp_stats(bag_path, ns)
 
-        rows.append({
-            "row_label": description,
-            "comp_stats": comp_stats,
-        })
+        rows.append(
+            {
+                "row_label": description,
+                "comp_stats": comp_stats,
+            }
+        )
 
     if not rows:
         print("No data collected. Cannot generate table.")
@@ -647,10 +728,12 @@ def generate_hw_dynamic_static_table(dynamic_static_dir, table_output):
     ns = discover_namespace(bag_path)
     comp_stats = get_comp_stats(bag_path, ns)
 
-    rows = [{
-        "row_label": "5 obsts + static",
-        "comp_stats": comp_stats,
-    }]
+    rows = [
+        {
+            "row_label": "5 obsts + static",
+            "comp_stats": comp_stats,
+        }
+    ]
 
     caption = (
         "Hardware flight computation times in combined dynamic and static environments. "
@@ -737,11 +820,25 @@ def build_dynamic_round2_table(rows, caption, label):
                     v_max_str = f"{row['v_max']:.1f}"
             else:
                 # Subsequent rows: empty if multirow, otherwise show value
-                obst_type_str = "" if all(v == obst_type_vals[0] for v in obst_type_vals) else row["obst_type"]
-                obst_traj_str = "" if all(v == obst_traj_vals[0] for v in obst_traj_vals) else row["obst_traj"]
-                v_max_str = "" if all(v == v_max_vals[0] for v in v_max_vals) else f"{row['v_max']:.1f}"
+                obst_type_str = (
+                    ""
+                    if all(v == obst_type_vals[0] for v in obst_type_vals)
+                    else row["obst_type"]
+                )
+                obst_traj_str = (
+                    ""
+                    if all(v == obst_traj_vals[0] for v in obst_traj_vals)
+                    else row["obst_traj"]
+                )
+                v_max_str = (
+                    ""
+                    if all(v == v_max_vals[0] for v in v_max_vals)
+                    else f"{row['v_max']:.1f}"
+                )
 
-            lines.append(f"      {exp_num} & {obst_type_str} & {obst_traj_str} & {v_max_str} & {cell_str} \\\\")
+            lines.append(
+                f"      {exp_num} & {obst_type_str} & {obst_traj_str} & {v_max_str} & {cell_str} \\\\"
+            )
 
         if gi < len(groups) - 1:
             lines.append(r"      \midrule")
@@ -774,12 +871,14 @@ def generate_hw_dynamic_round2(dynamic_dir, table_output):
         ns = discover_namespace(bag_path)
         comp_stats = get_comp_stats(bag_path, ns)
 
-        rows.append({
-            "obst_type": obst_type,
-            "obst_traj": obst_traj,
-            "v_max": v_max,
-            "comp_stats": comp_stats,
-        })
+        rows.append(
+            {
+                "obst_type": obst_type,
+                "obst_traj": obst_traj,
+                "v_max": v_max,
+                "comp_stats": comp_stats,
+            }
+        )
 
         # Generate history plot
         goal_data = extract_goal_arrays(bag_path, ns)
@@ -791,12 +890,21 @@ def generate_hw_dynamic_round2(dynamic_dir, table_output):
                 p_ylim_val = (-2, 12)
             else:
                 p_ylim_val = (0, 20)
-            plot_history(t, p, v_arr, a_arr, j_arr, plot_path,
-                         v_max=v_max, a_max=a_max, j_max=j_max,
-                         p_ylim=p_ylim_val,
-                         v_ylim=(-v_max * 1.1, v_max * 1.1),
-                         a_ylim=(-a_max * 1.1, a_max * 1.1),
-                         j_ylim=(-j_max * 1.1, j_max * 1.1))
+            plot_history(
+                t,
+                p,
+                v_arr,
+                a_arr,
+                j_arr,
+                plot_path,
+                v_max=v_max,
+                a_max=a_max,
+                j_max=j_max,
+                p_ylim=p_ylim_val,
+                v_ylim=(-v_max * 1.1, v_max * 1.1),
+                a_ylim=(-a_max * 1.1, a_max * 1.1),
+                j_ylim=(-j_max * 1.1, j_max * 1.1),
+            )
         else:
             print(f"    No goal messages found for {test_name}, skipping plot.")
 
@@ -820,25 +928,48 @@ def generate_hw_dynamic_round2(dynamic_dir, table_output):
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Analyze SANDO hardware ROS2 bag data."
     )
-    parser.add_argument("path", help="Path to a bag folder or parent directory containing bags")
+    parser.add_argument(
+        "path", help="Path to a bag folder or parent directory containing bags"
+    )
     parser.add_argument("--v_max", type=float, default=5.0, help="Velocity limit [m/s]")
-    parser.add_argument("--a_max", type=float, default=20.0, help="Acceleration limit [m/s^2]")
+    parser.add_argument(
+        "--a_max", type=float, default=20.0, help="Acceleration limit [m/s^2]"
+    )
     parser.add_argument("--j_max", type=float, default=100.0, help="Jerk limit [m/s^3]")
-    parser.add_argument("--use_tex", action="store_true", help="Use LaTeX for text rendering")
-    parser.add_argument("--generate_table", type=str, choices=["static", "dynamic", "dynamic_static", "dynamic_round2"],
-                        help="Generate LaTeX table: 'static', 'dynamic', 'dynamic_static', or 'dynamic_round2'")
-    parser.add_argument("--table_output", type=str, default=None,
-                        help="Output path for the LaTeX table (auto-set if not provided)")
+    parser.add_argument(
+        "--use_tex", action="store_true", help="Use LaTeX for text rendering"
+    )
+    parser.add_argument(
+        "--generate_table",
+        type=str,
+        choices=["static", "dynamic", "dynamic_static", "dynamic_round2"],
+        help="Generate LaTeX table: 'static', 'dynamic', 'dynamic_static', or 'dynamic_round2'",
+    )
+    parser.add_argument(
+        "--table_output",
+        type=str,
+        default=None,
+        help="Output path for the LaTeX table (auto-set if not provided)",
+    )
+    parser.add_argument(
+        "--tables_dir",
+        type=str,
+        default=None,
+        help="Directory for LaTeX table output (required when using --generate_table without --table_output)",
+    )
     args = parser.parse_args()
 
     path = os.path.abspath(args.path)
 
     if args.generate_table:
-        tables_dir = "/home/kkondo/paper_writing/SANDO_v3/tables"
+        tables_dir = args.tables_dir
+        if not tables_dir and not args.table_output:
+            parser.error("--tables_dir is required when using --generate_table without --table_output")
         if args.generate_table == "static":
             output = args.table_output or os.path.join(tables_dir, "hw_static.tex")
             generate_hw_static_table(path, output)
@@ -846,10 +977,14 @@ def main():
             output = args.table_output or os.path.join(tables_dir, "hw_dynamic.tex")
             generate_hw_dynamic_table(path, output)
         elif args.generate_table == "dynamic_static":
-            output = args.table_output or os.path.join(tables_dir, "hw_dynamic_static.tex")
+            output = args.table_output or os.path.join(
+                tables_dir, "hw_dynamic_static.tex"
+            )
             generate_hw_dynamic_static_table(path, output)
         elif args.generate_table == "dynamic_round2":
-            output = args.table_output or os.path.join(tables_dir, "hw_dynamic_round2.tex")
+            output = args.table_output or os.path.join(
+                tables_dir, "hw_dynamic_round2.tex"
+            )
             generate_hw_dynamic_round2(path, output)
         return
 
@@ -858,11 +993,13 @@ def main():
         process_bag(path, args)
     elif os.path.isdir(path):
         # Directory of bags
-        bags = sorted([
-            os.path.join(path, d)
-            for d in os.listdir(path)
-            if is_ros2_bag(os.path.join(path, d))
-        ])
+        bags = sorted(
+            [
+                os.path.join(path, d)
+                for d in os.listdir(path)
+                if is_ros2_bag(os.path.join(path, d))
+            ]
+        )
         if not bags:
             print(f"No ROS2 bags found in {path}")
             sys.exit(1)

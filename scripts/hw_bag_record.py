@@ -1,9 +1,17 @@
+# ----------------------------------------------------------------------------
+# Copyright 2025, Kota Kondo, Aerospace Controls Laboratory
+# Massachusetts Institute of Technology
+# All Rights Reserved
+# Authors: Kota Kondo, et al.
+# See LICENSE file for the license information
+# ----------------------------------------------------------------------------
 import os
 import subprocess
 import argparse
 
+
 def record_ros2_bag(bag_name, bag_path, agents, topics=None):
-    
+
     # Define the topics template that is common across all agents
     base_topics = [
         "/agent_initial_guess_pos",
@@ -18,8 +26,8 @@ def record_ros2_bag(bag_name, bag_path, agents, topics=None):
         "/goal",
         "/image_raw",
         "/joint_states",
-        "/dgp_path_marker",
-        "/free_dgp_path_marker",
+        "/hgp_path_marker",
+        "/free_hgp_path_marker",
         "/lidar/free_cells_vis_array",
         "/lidar/occupied_cells_vis_array",
         "/mode",
@@ -63,9 +71,9 @@ def record_ros2_bag(bag_name, bag_path, agents, topics=None):
         "/trajs",
         "/rosout",
         "/tf",
-        "/tf_static"
+        "/tf_static",
     ]
-    
+
     # Generate topics for all agents
     all_topics = []
     for agent in agents:
@@ -78,10 +86,10 @@ def record_ros2_bag(bag_name, bag_path, agents, topics=None):
     # Use provided topics if specified, otherwise default to generated topics
     if topics is None:
         topics = all_topics
-    
+
     # Build the ros2 bag record command
     command = ["ros2", "bag", "record", "-o", os.path.join(bag_path, bag_name)] + topics
-    
+
     # Execute the command
     try:
         subprocess.run(command, check=True)
@@ -89,16 +97,22 @@ def record_ros2_bag(bag_name, bag_path, agents, topics=None):
     except subprocess.CalledProcessError as e:
         print(f"Failed to start recording: {e}")
 
+
 # Main function
 if __name__ == "__main__":
-
     # Create arguments for record_ros2_bag
     parser = argparse.ArgumentParser(description="Record a ROS2 bag")
     parser.add_argument("--bag_number", type=int, help="Bag number to record")
-    # parser.add_argument("--bag_path", type=str, help="Path to save the bag", default="/media/kkondo/T7/sando/sim/multiagent")
-    parser.add_argument("--bag_path", type=str, help="Path to save the bag", default="/home/swarm/data/sando")
+    parser.add_argument(
+        "--bag_path",
+        type=str,
+        help="Path to save the bag",
+        default="/home/swarm/data/sando",
+    )
     # parser.add_argument("--agents", nargs="+", help="List of agents to record", default=["NX01", "NX02", "NX03"])
-    parser.add_argument("--agents", nargs="+", help="List of agents to record", default=["BD01"])
+    parser.add_argument(
+        "--agents", nargs="+", help="List of agents to record", default=["BD01"]
+    )
     args = parser.parse_args()
 
     # Customize bag name and path as needed
@@ -108,7 +122,13 @@ if __name__ == "__main__":
 
     # Convert string list (eg. "['NX01', 'NX02']") to list (eg. ['NX01', 'NX02'])
     if args.agents:
-        args.agents = args.agents[0].replace("[", "").replace("]", "").replace("'", "").split(", ")
+        args.agents = (
+            args.agents[0]
+            .replace("[", "")
+            .replace("]", "")
+            .replace("'", "")
+            .split(", ")
+        )
 
     print("Bag name:", bag_name)
     print("Bag path:", bag_path)

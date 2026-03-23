@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# ----------------------------------------------------------------------------
+# Copyright 2025, Kota Kondo, Aerospace Controls Laboratory
+# Massachusetts Institute of Technology
+# All Rights Reserved
+# Authors: Kota Kondo, et al.
+# See LICENSE file for the license information
+# ----------------------------------------------------------------------------
 """Publish a point cloud with fixed cylindrical obstacles for benchmarking."""
 
 import rclpy
@@ -63,7 +70,9 @@ class FixedObstaclesPublisher(Node):
         all_pts = []
         for cx, cy, r in OBSTACLES:
             all_pts.extend(make_cylinder_points(cx, cy, r, RESOLUTION, HEIGHT))
-        self.get_logger().info(f"Generated {len(all_pts)} points for {len(OBSTACLES)} obstacles")
+        self.get_logger().info(
+            f"Generated {len(all_pts)} points for {len(OBSTACLES)} obstacles"
+        )
         self.cloud_msg = points_to_pc2(all_pts)
 
         qos = QoSProfile(
@@ -71,8 +80,12 @@ class FixedObstaclesPublisher(Node):
             history=QoSHistoryPolicy.KEEP_LAST,
             depth=1,
         )
-        self.pub = self.create_publisher(PointCloud2, "/map_generator/global_cloud", qos)
-        self.timer = self.create_timer(1.0 / 50.0, self.publish)  # 50 Hz like random_forest
+        self.pub = self.create_publisher(
+            PointCloud2, "/map_generator/global_cloud", qos
+        )
+        self.timer = self.create_timer(
+            1.0 / 50.0, self.publish
+        )  # 50 Hz like random_forest
 
     def publish(self):
         self.cloud_msg.header.stamp = self.get_clock().now().to_msg()

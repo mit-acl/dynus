@@ -9,21 +9,18 @@
 // Transforms DLIO local-frame odometry into global-frame State and PoseStamped
 // using the TF2 lookup of world -> {veh}/init_pose.
 
-#include <rclcpp/rclcpp.hpp>
-#include <nav_msgs/msg/odometry.hpp>
-#include <geometry_msgs/msg/pose_stamped.hpp>
-#include <dynus_interfaces/msg/state.hpp>
-
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 
 #include <Eigen/Geometry>
+#include <dynus_interfaces/msg/state.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <nav_msgs/msg/odometry.hpp>
+#include <rclcpp/rclcpp.hpp>
 
-class OdomToGlobalState : public rclcpp::Node
-{
-public:
-  OdomToGlobalState() : Node("odom_to_global_state")
-  {
+class OdomToGlobalState : public rclcpp::Node {
+ public:
+  OdomToGlobalState() : Node("odom_to_global_state") {
     // Derive vehicle name from namespace (e.g. "/PX04" -> "PX04")
     std::string ns = this->get_namespace();
     veh_name_ = ns.substr(ns.find_last_of("/") + 1);
@@ -38,85 +35,63 @@ public:
 
     // Subscriber
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-        "odom", 10,
-        std::bind(&OdomToGlobalState::odomCallback, this, std::placeholders::_1));
+        "odom", 10, std::bind(&OdomToGlobalState::odomCallback, this, std::placeholders::_1));
 
     // Timer to poll for TF (100ms)
-    tf_timer_ = this->create_wall_timer(
-        std::chrono::milliseconds(100),
-        std::bind(&OdomToGlobalState::pollTF, this));
+    tf_timer_ = this->create_wall_timer(std::chrono::milliseconds(100),
+                                        std::bind(&OdomToGlobalState::pollTF, this));
 
     RCLCPP_INFO(this->get_logger(), "Waiting for TF: world -> %s/init_pose", veh_name_.c_str());
   }
 
-private:
-  void pollTF()
-  {
+ private:
+  void pollTF() {
     std::string target_frame = "world";
     std::string source_frame = veh_name_ + "/init_pose";
 
-    if (!tf_buffer_->canTransform(target_frame, source_frame, tf2::TimePointZero))
-      return;
+    if (!tf_buffer_->canTransform(target_frame, source_frame, tf2::TimePointZero)) return;
 
-    try
-    {
+    try {
       auto tf = tf_buffer_->lookupTransform(target_frame, source_frame, tf2::TimePointZero);
 
       // Cache translation
-      t_init_ = Eigen::Vector3d(
-          tf.transform.translation.x,
-          tf.transform.translation.y,
-          tf.transform.translation.z);
+      t_init_ = Eigen::Vector3d(tf.transform.translation.x, tf.transform.translation.y,
+                                tf.transform.translation.z);
 
       // Cache rotation
-      q_init_ = Eigen::Quaterniond(
-          tf.transform.rotation.w,
-          tf.transform.rotation.x,
-          tf.transform.rotation.y,
-          tf.transform.rotation.z);
+      q_init_ = Eigen::Quaterniond(tf.transform.rotation.w, tf.transform.rotation.x,
+                                   tf.transform.rotation.y, tf.transform.rotation.z);
       R_init_ = q_init_.toRotationMatrix();
 
       // Extract yaw offset from quaternion
-      Eigen::Vector3d euler = R_init_.eulerAngles(2, 1, 0); // ZYX
+      Eigen::Vector3d euler = R_init_.eulerAngles(2, 1, 0);  // ZYX
       yaw_offset_ = euler[0];
 
       tf_acquired_ = true;
       tf_timer_->cancel();
 
-      RCLCPP_INFO(this->get_logger(),
-                  "TF acquired: t=[%.3f, %.3f, %.3f], yaw=%.3f rad",
+      RCLCPP_INFO(this->get_logger(), "TF acquired: t=[%.3f, %.3f, %.3f], yaw=%.3f rad",
                   t_init_.x(), t_init_.y(), t_init_.z(), yaw_offset_);
-    }
-    catch (const tf2::TransformException &ex)
-    {
-      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
-                           "TF lookup failed: %s", ex.what());
+    } catch (const tf2::TransformException& ex) {
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "TF lookup failed: %s",
+                           ex.what());
     }
   }
 
-  void odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg)
-  {
-    if (!tf_acquired_)
-      return;
+  void odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg) {
+    if (!tf_acquired_) return;
 
     // Local position
-    Eigen::Vector3d local_pos(
-        msg->pose.pose.position.x,
-        msg->pose.pose.position.y,
-        msg->pose.pose.position.z);
+    Eigen::Vector3d local_pos(msg->pose.pose.position.x, msg->pose.pose.position.y,
+                              msg->pose.pose.position.z);
 
     // Local velocity (body-frame twist from DLIO)
-    Eigen::Vector3d local_vel(
-        msg->twist.twist.linear.x,
-        msg->twist.twist.linear.y,
-        msg->twist.twist.linear.z);
+    Eigen::Vector3d local_vel(msg->twist.twist.linear.x, msg->twist.twist.linear.y,
+                              msg->twist.twist.linear.z);
 
     // Local quaternion
-    Eigen::Quaterniond local_quat(
-        msg->pose.pose.orientation.w,
-        msg->pose.pose.orientation.x,
-        msg->pose.pose.orientation.y,
-        msg->pose.pose.orientation.z);
+    Eigen::Quaterniond local_quat(msg->pose.pose.orientation.w, msg->pose.pose.orientation.x,
+                                  msg->pose.pose.orientation.y, msg->pose.pose.orientation.z);
 
     // Transform to global frame
     Eigen::Vector3d global_pos = R_init_ * local_pos + t_init_;
@@ -181,8 +156,7 @@ private:
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
 };
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char* argv[]) {
   rclcpp::init(argc, argv);
   rclcpp::spin(std::make_shared<OdomToGlobalState>());
   rclcpp::shutdown();

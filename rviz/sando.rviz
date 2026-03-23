@@ -227,7 +227,7 @@ Visualization Manager:
                 Durability Policy: Volatile
                 History Policy: Keep Last
                 Reliability Policy: Reliable
-                Value: /NX01/original_dgp_path_marker
+                Value: /NX01/original_hgp_path_marker
               Value: true
             - Class: rviz_default_plugins/MarkerArray
               Enabled: true
@@ -239,7 +239,7 @@ Visualization Manager:
                 Durability Policy: Volatile
                 History Policy: Keep Last
                 Reliability Policy: Reliable
-                Value: /NX01/dgp_path_marker
+                Value: /NX01/hgp_path_marker
               Value: true
             - Alpha: 0.009999999776482582
               BoundColor: 38; 162; 105

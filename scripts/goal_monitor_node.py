@@ -15,65 +15,70 @@ from geometry_msgs.msg import PoseStamped, Vector3
 from std_msgs.msg import Header
 import math
 
+
 class GoalMonitorNode(Node):
     def __init__(self):
-        super().__init__('goal_monitor_node')
+        super().__init__("goal_monitor_node")
 
         # Get namespace
-        self.namespace = self.get_namespace().strip('/')
+        self.namespace = self.get_namespace().strip("/")
         self.get_logger().info(f"Namespace: {self.namespace}")
 
         # Parameters
-        self.declare_parameter('goal_tolerance', 0.6)  # Distance tolerance to consider goal reached
-        self.goal_tolerance = self.get_parameter('goal_tolerance').value
-        self.distance_check_frequency = 1.0  # Frequency to check the distance to the goal
+        self.declare_parameter(
+            "goal_tolerance", 0.6
+        )  # Distance tolerance to consider goal reached
+        self.goal_tolerance = self.get_parameter("goal_tolerance").value
+        self.distance_check_frequency = (
+            1.0  # Frequency to check the distance to the goal
+        )
         self.current_goal_index = 0
 
         # Define goal points (x, y, z) in the world frame
         # Agents are on a circle of radius 10.0 at z=1.0 and swap with their opposite partner (i <-> i+5).
 
-        if self.namespace == 'NX01':
+        if self.namespace == "NX01":
             # start: ( 10.000,  0.000) ↔ opposite: (-10.000,  0.000) (NX06)
             # self.goal_points = [[-10.000,  0.000, 1.0], [ 10.000,  0.000, 1.0]]
-            self.goal_points = [[305.000,  0.000, 3.0]]
+            self.goal_points = [[305.000, 0.000, 3.0]]
 
-        elif self.namespace == 'NX02':
+        elif self.namespace == "NX02":
             # start: (  8.090,  5.878) ↔ opposite: ( -8.090, -5.878) (NX07)
-            self.goal_points = [[ -8.090, -5.878, 1.0], [  8.090,  5.878, 1.0]]
+            self.goal_points = [[-8.090, -5.878, 1.0], [8.090, 5.878, 1.0]]
 
-        elif self.namespace == 'NX03':
+        elif self.namespace == "NX03":
             # start: (  3.090,  9.511) ↔ opposite: ( -3.090, -9.511) (NX08)
-            self.goal_points = [[ -3.090, -9.511, 1.0], [  3.090,  9.511, 1.0]]
+            self.goal_points = [[-3.090, -9.511, 1.0], [3.090, 9.511, 1.0]]
 
-        elif self.namespace == 'NX04':
+        elif self.namespace == "NX04":
             # start: ( -3.090,  9.511) ↔ opposite: (  3.090, -9.511) (NX09)
-            self.goal_points = [[  3.090, -9.511, 1.0], [ -3.090,  9.511, 1.0]]
+            self.goal_points = [[3.090, -9.511, 1.0], [-3.090, 9.511, 1.0]]
 
-        elif self.namespace == 'NX05':
+        elif self.namespace == "NX05":
             # start: ( -8.090,  5.878) ↔ opposite: (  8.090, -5.878) (NX10)
-            self.goal_points = [[  8.090, -5.878, 1.0], [ -8.090,  5.878, 1.0]]
+            self.goal_points = [[8.090, -5.878, 1.0], [-8.090, 5.878, 1.0]]
 
-        elif self.namespace == 'NX06':
+        elif self.namespace == "NX06":
             # opposite of NX01
-            self.goal_points = [[ 10.000,  0.000, 1.0], [-10.000,  0.000, 1.0]]
+            self.goal_points = [[10.000, 0.000, 1.0], [-10.000, 0.000, 1.0]]
 
-        elif self.namespace == 'NX07':
+        elif self.namespace == "NX07":
             # opposite of NX02
-            self.goal_points = [[  8.090,  5.878, 1.0], [ -8.090, -5.878, 1.0]]
+            self.goal_points = [[8.090, 5.878, 1.0], [-8.090, -5.878, 1.0]]
 
-        elif self.namespace == 'NX08':
+        elif self.namespace == "NX08":
             # opposite of NX03
-            self.goal_points = [[  3.090,  9.511, 1.0], [ -3.090, -9.511, 1.0]]
+            self.goal_points = [[3.090, 9.511, 1.0], [-3.090, -9.511, 1.0]]
 
-        elif self.namespace == 'NX09':
+        elif self.namespace == "NX09":
             # opposite of NX04
-            self.goal_points = [[ -3.090,  9.511, 1.0], [  3.090, -9.511, 1.0]]
+            self.goal_points = [[-3.090, 9.511, 1.0], [3.090, -9.511, 1.0]]
 
-        elif self.namespace == 'NX10':
+        elif self.namespace == "NX10":
             # opposite of NX05
-            self.goal_points = [[ -8.090,  5.878, 1.0], [  8.090, -5.878, 1.0]]
-            
-        elif self.namespace == 'PX03':
+            self.goal_points = [[-8.090, 5.878, 1.0], [8.090, -5.878, 1.0]]
+
+        elif self.namespace == "PX03":
             self.goal_points = [[15.2, 0.9, 0.85], [-4.0, 0.0, 0.85]]
             # self.goal_points = [[6.0, 0.0, 0.85], [-4.0, 0.0, 0.85],
             #                     [6.0, 0.0, 0.85], [-4.0, 0.0, 0.85],
@@ -82,15 +87,23 @@ class GoalMonitorNode(Node):
             #                     [6.0, 0.0, 0.85], [-4.0, 0.0, 0.85]
             #                     ]
         else:
-            self.get_logger().error(f"Unknown namespace: {self.namespace}. No goal points defined.")
-            self.goal_points = [[0.0, 0.0, 0.0]]  # Default goal point if namespace is unknown
+            self.get_logger().error(
+                f"Unknown namespace: {self.namespace}. No goal points defined."
+            )
+            self.goal_points = [
+                [0.0, 0.0, 0.0]
+            ]  # Default goal point if namespace is unknown
 
         # Publishers and Subscribers
-        self.state_sub = self.create_subscription(State, 'state', self.state_callback, 10)
-        self.term_goal_pub = self.create_publisher(PoseStamped, 'term_goal', 10)
+        self.state_sub = self.create_subscription(
+            State, "state", self.state_callback, 10
+        )
+        self.term_goal_pub = self.create_publisher(PoseStamped, "term_goal", 10)
 
         # Timer to check the distance to the current goal
-        self.goal_timer = self.create_timer(self.distance_check_frequency, self.distance_check_callback)
+        self.goal_timer = self.create_timer(
+            self.distance_check_frequency, self.distance_check_callback
+        )
 
         # Data to store
         self.current_position = Vector3()
@@ -99,7 +112,6 @@ class GoalMonitorNode(Node):
         self.get_logger().info("Goal Monitor Node initialized.")
 
     def state_callback(self, msg: State):
-
         """Callback for monitoring the drone's position."""
         self.current_position = msg.pos
 
@@ -110,9 +122,9 @@ class GoalMonitorNode(Node):
 
         # Compute the Euclidean distance to the current goal
         distance = math.sqrt(
-            (self.current_position.x - goal_x) ** 2 +
-            (self.current_position.y - goal_y) ** 2 +
-            (self.current_position.z - goal_z) ** 2
+            (self.current_position.x - goal_x) ** 2
+            + (self.current_position.y - goal_y) ** 2
+            + (self.current_position.z - goal_z) ** 2
         )
 
         self.get_logger().info(f"Distance to goal: {distance:.2f}")
@@ -123,7 +135,10 @@ class GoalMonitorNode(Node):
             self.goal_published = True
 
         # Check if the drone has reached the current goal and next goal is not out of bounds
-        if distance < self.goal_tolerance and self.current_goal_index < len(self.goal_points) - 1:
+        if (
+            distance < self.goal_tolerance
+            and self.current_goal_index < len(self.goal_points) - 1
+        ):
             self.get_logger().info(f"Goal {self.current_goal_index} reached!")
             self.current_goal_index = self.current_goal_index + 1
             self.goal_published = False  # Publish the new goal once
@@ -151,6 +166,7 @@ class GoalMonitorNode(Node):
         self.term_goal_pub.publish(term_goal)
         self.get_logger().info(f"Published term goal: [{goal_x}, {goal_y}, {goal_z}]")
 
+
 def main(args=None):
     rclpy.init(args=args)
     node = GoalMonitorNode()
@@ -158,5 +174,6 @@ def main(args=None):
     node.destroy_node()
     rclpy.shutdown()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

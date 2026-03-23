@@ -17,6 +17,7 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <nlohmann/json.hpp>
 #include <numeric>
 #include <optional>
 #include <regex>
@@ -25,16 +26,14 @@
 #include <tuple>
 #include <vector>
 
-#include <nlohmann/json.hpp>
-
 // ROS2 bag reading
+#include <rclcpp/serialization.hpp>
 #include <rosbag2_cpp/reader.hpp>
 #include <rosbag2_cpp/readers/sequential_reader.hpp>
-#include <rclcpp/serialization.hpp>
 
 // Message types
-#include "dynus_interfaces/msg/goal.hpp"
 #include "dynus_interfaces/msg/dyn_traj.hpp"
+#include "dynus_interfaces/msg/goal.hpp"
 #include "tf2_msgs/msg/tf_message.hpp"
 
 namespace fs = std::filesystem;
@@ -253,17 +252,23 @@ static int find_column(const std::vector<std::string>& header, const std::string
 
 static double safe_stod(const std::string& s) {
   if (s.empty() || s == "inf" || s == "nan" || s == "N/A") return 0.0;
-  try { return std::stod(s); } catch (...) { return 0.0; }
+  try {
+    return std::stod(s);
+  } catch (...) {
+    return 0.0;
+  }
 }
 
 static int safe_stoi(const std::string& s) {
   if (s.empty()) return 0;
-  try { return std::stoi(s); } catch (...) { return 0; }
+  try {
+    return std::stoi(s);
+  } catch (...) {
+    return 0;
+  }
 }
 
-static bool safe_stob(const std::string& s) {
-  return s == "True" || s == "true" || s == "1";
-}
+static bool safe_stob(const std::string& s) { return s == "True" || s == "true" || s == "1"; }
 
 static std::vector<TrialData> load_benchmark_csv(const fs::path& csv_path) {
   std::vector<TrialData> trials;
@@ -274,7 +279,7 @@ static std::vector<TrialData> load_benchmark_csv(const fs::path& csv_path) {
   }
 
   std::string line;
-  std::getline(file, line); // header
+  std::getline(file, line);  // header
   auto header = split_csv_line(line);
 
   // Find column indices
@@ -302,25 +307,44 @@ static std::vector<TrialData> load_benchmark_csv(const fs::path& csv_path) {
     if (line.empty()) continue;
     auto cols = split_csv_line(line);
     TrialData t;
-    if (col_trial_id >= 0 && col_trial_id < (int)cols.size()) t.trial_id = safe_stoi(cols[col_trial_id]);
-    if (col_goal_reached >= 0 && col_goal_reached < (int)cols.size()) t.goal_reached = safe_stob(cols[col_goal_reached]);
-    if (col_timeout >= 0 && col_timeout < (int)cols.size()) t.timeout_reached = safe_stob(cols[col_timeout]);
-    if (col_collision >= 0 && col_collision < (int)cols.size()) t.collision = safe_stob(cols[col_collision]);
-    if (col_travel_time >= 0 && col_travel_time < (int)cols.size()) t.flight_travel_time = safe_stod(cols[col_travel_time]);
-    if (col_path_length >= 0 && col_path_length < (int)cols.size()) t.path_length = safe_stod(cols[col_path_length]);
-    if (col_path_efficiency >= 0 && col_path_efficiency < (int)cols.size()) t.path_efficiency = safe_stod(cols[col_path_efficiency]);
-    if (col_jerk_rms >= 0 && col_jerk_rms < (int)cols.size()) t.jerk_rms = safe_stod(cols[col_jerk_rms]);
-    if (col_jerk_integral >= 0 && col_jerk_integral < (int)cols.size()) t.jerk_integral = safe_stod(cols[col_jerk_integral]);
-    if (col_collision_count >= 0 && col_collision_count < (int)cols.size()) t.collision_count = safe_stoi(cols[col_collision_count]);
-    if (col_min_dist >= 0 && col_min_dist < (int)cols.size()) t.min_distance_to_obstacles = safe_stod(cols[col_min_dist]);
-    if (col_sfc_viol_count >= 0 && col_sfc_viol_count < (int)cols.size()) t.sfc_violation_count = safe_stoi(cols[col_sfc_viol_count]);
-    if (col_sfc_viol_total >= 0 && col_sfc_viol_total < (int)cols.size()) t.sfc_violation_total = safe_stoi(cols[col_sfc_viol_total]);
-    if (col_vel_viol_count >= 0 && col_vel_viol_count < (int)cols.size()) t.vel_violation_count = safe_stoi(cols[col_vel_viol_count]);
-    if (col_vel_viol_total >= 0 && col_vel_viol_total < (int)cols.size()) t.vel_violation_total = safe_stoi(cols[col_vel_viol_total]);
-    if (col_acc_viol_count >= 0 && col_acc_viol_count < (int)cols.size()) t.acc_violation_count = safe_stoi(cols[col_acc_viol_count]);
-    if (col_acc_viol_total >= 0 && col_acc_viol_total < (int)cols.size()) t.acc_violation_total = safe_stoi(cols[col_acc_viol_total]);
-    if (col_jerk_viol_count >= 0 && col_jerk_viol_count < (int)cols.size()) t.jerk_violation_count = safe_stoi(cols[col_jerk_viol_count]);
-    if (col_jerk_viol_total >= 0 && col_jerk_viol_total < (int)cols.size()) t.jerk_violation_total = safe_stoi(cols[col_jerk_viol_total]);
+    if (col_trial_id >= 0 && col_trial_id < (int)cols.size())
+      t.trial_id = safe_stoi(cols[col_trial_id]);
+    if (col_goal_reached >= 0 && col_goal_reached < (int)cols.size())
+      t.goal_reached = safe_stob(cols[col_goal_reached]);
+    if (col_timeout >= 0 && col_timeout < (int)cols.size())
+      t.timeout_reached = safe_stob(cols[col_timeout]);
+    if (col_collision >= 0 && col_collision < (int)cols.size())
+      t.collision = safe_stob(cols[col_collision]);
+    if (col_travel_time >= 0 && col_travel_time < (int)cols.size())
+      t.flight_travel_time = safe_stod(cols[col_travel_time]);
+    if (col_path_length >= 0 && col_path_length < (int)cols.size())
+      t.path_length = safe_stod(cols[col_path_length]);
+    if (col_path_efficiency >= 0 && col_path_efficiency < (int)cols.size())
+      t.path_efficiency = safe_stod(cols[col_path_efficiency]);
+    if (col_jerk_rms >= 0 && col_jerk_rms < (int)cols.size())
+      t.jerk_rms = safe_stod(cols[col_jerk_rms]);
+    if (col_jerk_integral >= 0 && col_jerk_integral < (int)cols.size())
+      t.jerk_integral = safe_stod(cols[col_jerk_integral]);
+    if (col_collision_count >= 0 && col_collision_count < (int)cols.size())
+      t.collision_count = safe_stoi(cols[col_collision_count]);
+    if (col_min_dist >= 0 && col_min_dist < (int)cols.size())
+      t.min_distance_to_obstacles = safe_stod(cols[col_min_dist]);
+    if (col_sfc_viol_count >= 0 && col_sfc_viol_count < (int)cols.size())
+      t.sfc_violation_count = safe_stoi(cols[col_sfc_viol_count]);
+    if (col_sfc_viol_total >= 0 && col_sfc_viol_total < (int)cols.size())
+      t.sfc_violation_total = safe_stoi(cols[col_sfc_viol_total]);
+    if (col_vel_viol_count >= 0 && col_vel_viol_count < (int)cols.size())
+      t.vel_violation_count = safe_stoi(cols[col_vel_viol_count]);
+    if (col_vel_viol_total >= 0 && col_vel_viol_total < (int)cols.size())
+      t.vel_violation_total = safe_stoi(cols[col_vel_viol_total]);
+    if (col_acc_viol_count >= 0 && col_acc_viol_count < (int)cols.size())
+      t.acc_violation_count = safe_stoi(cols[col_acc_viol_count]);
+    if (col_acc_viol_total >= 0 && col_acc_viol_total < (int)cols.size())
+      t.acc_violation_total = safe_stoi(cols[col_acc_viol_total]);
+    if (col_jerk_viol_count >= 0 && col_jerk_viol_count < (int)cols.size())
+      t.jerk_violation_count = safe_stoi(cols[col_jerk_viol_count]);
+    if (col_jerk_viol_total >= 0 && col_jerk_viol_total < (int)cols.size())
+      t.jerk_violation_total = safe_stoi(cols[col_jerk_viol_total]);
     trials.push_back(t);
   }
 
@@ -374,13 +398,15 @@ static std::map<int, ComputationStats> load_computation_data(const fs::path& dat
     try {
       auto stem = entry.path().stem().string();
       trial_id = std::stoi(stem.substr(4));
-    } catch (...) { continue; }
+    } catch (...) {
+      continue;
+    }
 
     std::ifstream file(entry.path());
     if (!file.is_open()) continue;
 
     std::string line;
-    std::getline(file, line); // header
+    std::getline(file, line);  // header
     auto header = split_csv_line(line);
 
     int col_result = find_column(header, "Result");
@@ -397,13 +423,16 @@ static std::map<int, ComputationStats> load_computation_data(const fs::path& dat
       if (line.empty()) continue;
       auto cols = split_csv_line(line);
       if (col_result < 0 || col_result >= (int)cols.size()) continue;
-      if (safe_stoi(cols[col_result]) != 1) continue; // only successful replans
+      if (safe_stoi(cols[col_result]) != 1) continue;  // only successful replans
 
       count++;
-      double r = (col_total_replan >= 0 && col_total_replan < (int)cols.size()) ? safe_stod(cols[col_total_replan]) : 0.0;
+      double r = (col_total_replan >= 0 && col_total_replan < (int)cols.size())
+                     ? safe_stod(cols[col_total_replan])
+                     : 0.0;
       sum_replan += r;
       max_replan = std::max(max_replan, r);
-      if (col_global >= 0 && col_global < (int)cols.size()) sum_global += safe_stod(cols[col_global]);
+      if (col_global >= 0 && col_global < (int)cols.size())
+        sum_global += safe_stod(cols[col_global]);
       if (col_local >= 0 && col_local < (int)cols.size()) sum_local += safe_stod(cols[col_local]);
       if (col_cvx >= 0 && col_cvx < (int)cols.size()) sum_cvx += safe_stod(cols[col_cvx]);
     }
@@ -430,13 +459,12 @@ static std::map<int, ComputationStats> load_computation_data(const fs::path& dat
 // ============================================================================
 
 struct BagData {
-  std::vector<AgentSnapshot> agent; // from /NX01/goal
-  std::map<int, ObstacleTrack> obstacles; // from /trajs_ground_truth or /tf
+  std::vector<AgentSnapshot> agent;        // from /NX01/goal
+  std::map<int, ObstacleTrack> obstacles;  // from /trajs_ground_truth or /tf
 };
 
 static Vec3 interpolate_position(const std::vector<double>& times,
-                                  const std::vector<Vec3>& positions,
-                                  double t_query) {
+                                 const std::vector<Vec3>& positions, double t_query) {
   if (times.empty()) return {0, 0, 0};
   if (times.size() == 1) return positions[0];
   if (t_query <= times.front()) return positions.front();
@@ -452,16 +480,11 @@ static Vec3 interpolate_position(const std::vector<double>& times,
   double alpha = (t1 > t0) ? (t_query - t0) / (t1 - t0) : 0.0;
   const auto& p0 = positions[idx - 1];
   const auto& p1 = positions[idx];
-  return {
-    p0.x + alpha * (p1.x - p0.x),
-    p0.y + alpha * (p1.y - p0.y),
-    p0.z + alpha * (p1.z - p0.z)
-  };
+  return {p0.x + alpha * (p1.x - p0.x), p0.y + alpha * (p1.y - p0.y), p0.z + alpha * (p1.z - p0.z)};
 }
 
-static BagData read_bag_single_pass(const fs::path& bag_path,
-                                     const std::string& trajs_topic,
-                                     bool read_tf) {
+static BagData read_bag_single_pass(const fs::path& bag_path, const std::string& trajs_topic,
+                                    bool read_tf) {
   BagData data;
 
   rosbag2_cpp::Reader reader;
@@ -497,8 +520,7 @@ static BagData read_bag_single_pass(const fs::path& bag_path,
         snap.acc = {goal_msg.a.x, goal_msg.a.y, goal_msg.a.z};
         snap.jerk = {goal_msg.j.x, goal_msg.j.y, goal_msg.j.z};
         data.agent.push_back(snap);
-      }
-      else if (!trajs_topic.empty() && msg->topic_name == trajs_topic) {
+      } else if (!trajs_topic.empty() && msg->topic_name == trajs_topic) {
         dynus_interfaces::msg::DynTraj dyntraj_msg;
         rclcpp::SerializedMessage serialized(*msg->serialized_data);
         dyntraj_ser.deserialize_message(&serialized, &dyntraj_msg);
@@ -515,8 +537,7 @@ static BagData read_bag_single_pass(const fs::path& bag_path,
           track.half_y = dyntraj_msg.bbox[1] / 2.0;
           track.half_z = dyntraj_msg.bbox[2] / 2.0;
         }
-      }
-      else if (read_tf && msg->topic_name == "/tf") {
+      } else if (read_tf && msg->topic_name == "/tf") {
         tf2_msgs::msg::TFMessage tf_msg;
         rclcpp::SerializedMessage serialized(*msg->serialized_data);
         tf_ser.deserialize_message(&serialized, &tf_msg);
@@ -524,14 +545,12 @@ static BagData read_bag_single_pass(const fs::path& bag_path,
         for (auto& transform : tf_msg.transforms) {
           std::string frame = transform.child_frame_id;
           if (frame.find("obstacle") != std::string::npos || frame.find("obs_") == 0) {
-            int obs_id = static_cast<int>(std::hash<std::string>{}(frame) & 0x7FFFFFFF);
+            int obs_id = static_cast<int>(std::hash<std::string>{}(frame)&0x7FFFFFFF);
             auto& track = data.obstacles[obs_id];
             track.times.push_back(timestamp);
-            track.positions.push_back({
-              transform.transform.translation.x,
-              transform.transform.translation.y,
-              transform.transform.translation.z
-            });
+            track.positions.push_back({transform.transform.translation.x,
+                                       transform.transform.translation.y,
+                                       transform.transform.translation.z});
           }
         }
       }
@@ -591,9 +610,8 @@ static CollisionResult analyze_collisions(const BagData& data) {
       result.min_distance = std::min(result.min_distance, distance);
 
       // Check collision: point inside AABB
-      if (obs_pos.x - hx <= px && px <= obs_pos.x + hx &&
-          obs_pos.y - hy <= py && py <= obs_pos.y + hy &&
-          obs_pos.z - hz <= pz && pz <= obs_pos.z + hz) {
+      if (obs_pos.x - hx <= px && px <= obs_pos.x + hx && obs_pos.y - hy <= py &&
+          py <= obs_pos.y + hy && obs_pos.z - hz <= pz && pz <= obs_pos.z + hz) {
         segment_collision_free = false;
         result.collision_count++;
       }
@@ -622,7 +640,7 @@ static std::vector<StaticObstacle> load_static_obstacles(const fs::path& csv_pat
   if (!file.is_open()) return obstacles;
 
   std::string line;
-  std::getline(file, line); // header
+  std::getline(file, line);  // header
   auto header = split_csv_line(line);
   int col_id = find_column(header, "id");
   int col_x = find_column(header, "x");
@@ -639,15 +657,17 @@ static std::vector<StaticObstacle> load_static_obstacles(const fs::path& csv_pat
     obs.x = (col_x >= 0 && col_x < (int)cols.size()) ? safe_stod(cols[col_x]) : 0;
     obs.y = (col_y >= 0 && col_y < (int)cols.size()) ? safe_stod(cols[col_y]) : 0;
     obs.z = (col_z >= 0 && col_z < (int)cols.size()) ? safe_stod(cols[col_z]) : 0;
-    obs.radius = (col_radius >= 0 && col_radius < (int)cols.size()) ? safe_stod(cols[col_radius]) : 0;
-    obs.height = (col_height >= 0 && col_height < (int)cols.size()) ? safe_stod(cols[col_height]) : 0;
+    obs.radius =
+        (col_radius >= 0 && col_radius < (int)cols.size()) ? safe_stod(cols[col_radius]) : 0;
+    obs.height =
+        (col_height >= 0 && col_height < (int)cols.size()) ? safe_stod(cols[col_height]) : 0;
     obstacles.push_back(obs);
   }
   return obstacles;
 }
 
 static CollisionResult analyze_static_collisions(const BagData& data,
-                                                   const std::vector<StaticObstacle>& obstacles) {
+                                                 const std::vector<StaticObstacle>& obstacles) {
   CollisionResult result;
   if (data.agent.empty() || obstacles.empty()) return result;
 
@@ -695,11 +715,9 @@ struct ViolationResult {
   int jerk_count = 0, jerk_total = 0;
 };
 
-static ViolationResult analyze_violations(const BagData& data,
-                                           double vel_limit = 5.0,
-                                           double acc_limit = 20.0,
-                                           double jerk_limit = 100.0,
-                                           double tolerance = 1e-3) {
+static ViolationResult analyze_violations(const BagData& data, double vel_limit = 5.0,
+                                          double acc_limit = 20.0, double jerk_limit = 100.0,
+                                          double tolerance = 1e-3) {
   ViolationResult result;
   for (const auto& snap : data.agent) {
     result.vel_total++;
@@ -728,16 +746,15 @@ struct PathMetrics {
 };
 
 static PathMetrics compute_path_metrics(const BagData& data, Vec3 goal_pos, Vec3 start_pos,
-                                         double dist_threshold = 0.5, double speed_threshold = 0.1) {
+                                        double dist_threshold = 0.5, double speed_threshold = 0.1) {
   PathMetrics result;
   if (data.agent.empty()) return result;
 
   // Detect gap
   auto& first = data.agent.front();
-  double gap_dist = std::sqrt(
-    (first.pos.x - start_pos.x) * (first.pos.x - start_pos.x) +
-    (first.pos.y - start_pos.y) * (first.pos.y - start_pos.y) +
-    (first.pos.z - start_pos.z) * (first.pos.z - start_pos.z));
+  double gap_dist = std::sqrt((first.pos.x - start_pos.x) * (first.pos.x - start_pos.x) +
+                              (first.pos.y - start_pos.y) * (first.pos.y - start_pos.y) +
+                              (first.pos.z - start_pos.z) * (first.pos.z - start_pos.z));
   bool has_gap = gap_dist > 0.5;
 
   // Find first movement
@@ -745,17 +762,19 @@ static PathMetrics compute_path_metrics(const BagData& data, Vec3 goal_pos, Vec3
   for (size_t i = 0; i < data.agent.size(); i++) {
     auto& s = data.agent[i];
     double speed = std::sqrt(s.vel.x * s.vel.x + s.vel.y * s.vel.y + s.vel.z * s.vel.z);
-    if (speed > 0.01) { move_start_idx = i; break; }
+    if (speed > 0.01) {
+      move_start_idx = i;
+      break;
+    }
   }
 
   // Find goal arrival
   std::optional<size_t> goal_idx;
   for (size_t i = 0; i < data.agent.size(); i++) {
     auto& s = data.agent[i];
-    double dist = std::sqrt(
-      (s.pos.x - goal_pos.x) * (s.pos.x - goal_pos.x) +
-      (s.pos.y - goal_pos.y) * (s.pos.y - goal_pos.y) +
-      (s.pos.z - goal_pos.z) * (s.pos.z - goal_pos.z));
+    double dist = std::sqrt((s.pos.x - goal_pos.x) * (s.pos.x - goal_pos.x) +
+                            (s.pos.y - goal_pos.y) * (s.pos.y - goal_pos.y) +
+                            (s.pos.z - goal_pos.z) * (s.pos.z - goal_pos.z));
     double speed = std::sqrt(s.vel.x * s.vel.x + s.vel.y * s.vel.y + s.vel.z * s.vel.z);
     if (dist < dist_threshold && speed < speed_threshold) {
       goal_idx = i;
@@ -767,9 +786,9 @@ static PathMetrics compute_path_metrics(const BagData& data, Vec3 goal_pos, Vec3
   size_t end_idx = goal_idx.value_or(data.agent.size() - 1);
   double path_length = gap_dist;
   for (size_t i = 1; i <= end_idx; i++) {
-    double dx = data.agent[i].pos.x - data.agent[i-1].pos.x;
-    double dy = data.agent[i].pos.y - data.agent[i-1].pos.y;
-    double dz = data.agent[i].pos.z - data.agent[i-1].pos.z;
+    double dx = data.agent[i].pos.x - data.agent[i - 1].pos.x;
+    double dy = data.agent[i].pos.y - data.agent[i - 1].pos.y;
+    double dz = data.agent[i].pos.z - data.agent[i - 1].pos.z;
     path_length += std::sqrt(dx * dx + dy * dy + dz * dz);
   }
   result.path_length = path_length;
@@ -845,7 +864,8 @@ static Statistics compute_statistics(std::vector<TrialData>& trials) {
     stats.min_distance_to_obstacles_min = *std::min_element(min_dists.begin(), min_dists.end());
     stats.min_distance_to_obstacles_max = *std::max_element(min_dists.begin(), min_dists.end());
     stats.min_distance_to_obstacles_mean = compute_mean(min_dists);
-    stats.min_distance_to_obstacles_std = compute_std(min_dists, stats.min_distance_to_obstacles_mean);
+    stats.min_distance_to_obstacles_std =
+        compute_std(min_dists, stats.min_distance_to_obstacles_mean);
   }
 
   // Successful trials
@@ -897,10 +917,14 @@ static Statistics compute_statistics(std::vector<TrialData>& trials) {
   long total_jerk_v = 0, total_jerk_s = 0;
   long total_sfc_v = 0, total_sfc_s = 0;
   for (auto* t : successful) {
-    total_vel_v += t->vel_violation_count; total_vel_s += t->vel_violation_total;
-    total_acc_v += t->acc_violation_count; total_acc_s += t->acc_violation_total;
-    total_jerk_v += t->jerk_violation_count; total_jerk_s += t->jerk_violation_total;
-    total_sfc_v += t->sfc_violation_count; total_sfc_s += t->sfc_violation_total;
+    total_vel_v += t->vel_violation_count;
+    total_vel_s += t->vel_violation_total;
+    total_acc_v += t->acc_violation_count;
+    total_acc_s += t->acc_violation_total;
+    total_jerk_v += t->jerk_violation_count;
+    total_jerk_s += t->jerk_violation_total;
+    total_sfc_v += t->sfc_violation_count;
+    total_sfc_s += t->sfc_violation_total;
   }
   stats.vel_violation_rate = (total_vel_s > 0) ? 100.0 * total_vel_v / total_vel_s : 0.0;
   stats.acc_violation_rate = (total_acc_s > 0) ? 100.0 * total_acc_v / total_acc_s : 0.0;
@@ -928,27 +952,32 @@ static void print_statistics(const Statistics& s) {
   std::cout << "  Timeout rate: " << s.timeout_rate << "%\n";
   std::cout << "  Collision rate: " << s.collision_rate << "%\n";
 
-  std::cout << "\n" << std::string(25, '-') << " COMPUTATION TIME (ms) " << std::string(25, '-') << "\n";
+  std::cout << "\n"
+            << std::string(25, '-') << " COMPUTATION TIME (ms) " << std::string(25, '-') << "\n";
   std::cout << std::fixed << std::setprecision(2);
   std::cout << "  Local Traj Time: " << s.avg_local_traj_time_mean << " ms\n";
   std::cout << "  Replanning Time: " << s.avg_replanning_time_mean << " ms\n";
   std::cout << "  Global Planning Time: " << s.avg_global_planning_time_mean << " ms\n";
   std::cout << "  SFC Corridor Time: " << s.avg_sfc_corridor_time_mean << " ms\n";
 
-  std::cout << "\n" << std::string(25, '-') << " PERFORMANCE METRICS " << std::string(25, '-') << "\n";
-  std::cout << "  Travel Time: " << s.flight_travel_time_mean << " +/- " << s.flight_travel_time_std << " s\n";
+  std::cout << "\n"
+            << std::string(25, '-') << " PERFORMANCE METRICS " << std::string(25, '-') << "\n";
+  std::cout << "  Travel Time: " << s.flight_travel_time_mean << " +/- " << s.flight_travel_time_std
+            << " s\n";
   std::cout << "  Path Length: " << s.path_length_mean << " +/- " << s.path_length_std << " m\n";
   std::cout << "  Path Efficiency: " << std::setprecision(3) << s.path_efficiency_mean << "\n";
   std::cout << "  Jerk RMS: " << std::setprecision(2) << s.jerk_rms_mean << " m/s^3\n";
   std::cout << "  Jerk Integral: " << s.jerk_integral_mean << "\n";
 
-  std::cout << "\n" << std::string(25, '-') << " CONSTRAINT VIOLATIONS " << std::string(25, '-') << "\n";
+  std::cout << "\n"
+            << std::string(25, '-') << " CONSTRAINT VIOLATIONS " << std::string(25, '-') << "\n";
   std::cout << std::setprecision(1);
   std::cout << "  VEL Violation Rate: " << s.vel_violation_rate << "%\n";
   std::cout << "  ACC Violation Rate: " << s.acc_violation_rate << "%\n";
   std::cout << "  JERK Violation Rate: " << s.jerk_violation_rate << "%\n";
 
-  std::cout << "\n" << std::string(25, '-') << " COLLISION METRICS " << std::string(25, '-') << "\n";
+  std::cout << "\n"
+            << std::string(25, '-') << " COLLISION METRICS " << std::string(25, '-') << "\n";
   std::cout << "  Collision-free rate: " << s.collision_free_rate << "%\n";
   std::cout << "  Total collision events: " << s.collision_count_total << "\n";
   std::cout << std::setprecision(2);
@@ -990,21 +1019,15 @@ static void save_statistics_csv(const Statistics& s, const fs::path& output_path
     << "vel_violation_rate,acc_violation_rate,jerk_violation_rate\n";
 
   f << std::fixed;
-  f << s.total_trials << "," << s.n_successful << ","
-    << std::setprecision(1) << s.success_rate << ","
-    << s.timeout_rate << "," << s.collision_rate << ","
-    << s.collision_count_total << ","
-    << std::setprecision(2) << s.collision_count_mean << ","
-    << std::setprecision(1) << s.collision_free_rate << ","
-    << std::setprecision(2) << s.avg_local_traj_time_mean << ","
-    << s.avg_replanning_time_mean << ","
-    << std::setprecision(6) << s.flight_travel_time_mean << "," << s.flight_travel_time_std << ","
-    << s.path_length_mean << "," << s.path_length_std << ","
-    << s.jerk_integral_mean << "," << s.jerk_rms_mean << ","
-    << s.min_distance_to_obstacles_mean << ","
-    << s.min_distance_to_obstacles_std << ","
-    << std::setprecision(1) << s.vel_violation_rate << ","
-    << s.acc_violation_rate << "," << s.jerk_violation_rate << "\n";
+  f << s.total_trials << "," << s.n_successful << "," << std::setprecision(1) << s.success_rate
+    << "," << s.timeout_rate << "," << s.collision_rate << "," << s.collision_count_total << ","
+    << std::setprecision(2) << s.collision_count_mean << "," << std::setprecision(1)
+    << s.collision_free_rate << "," << std::setprecision(2) << s.avg_local_traj_time_mean << ","
+    << s.avg_replanning_time_mean << "," << std::setprecision(6) << s.flight_travel_time_mean << ","
+    << s.flight_travel_time_std << "," << s.path_length_mean << "," << s.path_length_std << ","
+    << s.jerk_integral_mean << "," << s.jerk_rms_mean << "," << s.min_distance_to_obstacles_mean
+    << "," << s.min_distance_to_obstacles_std << "," << std::setprecision(1) << s.vel_violation_rate
+    << "," << s.acc_violation_rate << "," << s.jerk_violation_rate << "\n";
 
   std::cout << "Statistics saved to CSV: " << output_path << "\n";
 }
@@ -1014,8 +1037,8 @@ static void save_statistics_csv(const Statistics& s, const fs::path& output_path
 // ============================================================================
 
 static std::string generate_sando_row(const Statistics& s, const std::string& case_name,
-                                        const std::string& table_type,
-                                        const std::string& algo_name = "SANDO") {
+                                      const std::string& table_type,
+                                      const std::string& algo_name = "SANDO") {
   std::ostringstream oss;
   oss << std::fixed;
 
@@ -1030,8 +1053,8 @@ static std::string generate_sando_row(const Statistics& s, const std::string& ca
   if (table_type == "static") {
     double total_opt_time = s.avg_local_traj_time_mean;
     double total_replan_time = s.avg_replanning_time_mean;
-    oss << "       & " << algo_name << " & Hard & $L_\\infty$ & "
-        << std::setprecision(1) << "{" << success_rate << "} & "
+    oss << "       & " << algo_name << " & Hard & $L_\\infty$ & " << std::setprecision(1) << "{"
+        << success_rate << "} & "
         << "{" << total_opt_time << "} & "
         << "{" << total_replan_time << "} & "
         << "\\best{" << travel_time << "} & "
@@ -1053,14 +1076,10 @@ static std::string generate_sando_row(const Statistics& s, const std::string& ca
       min_dist_str = "N/A";
     }
 
-    oss << "      " << case_name << " & "
-        << std::setprecision(1)
-        << success_rate << " & " << per_opt_time << " & "
-        << total_replan_time << " & " << cvx_decomp_time << " & "
-        << travel_time << " & " << path_length << " & "
-        << jerk_integral << " & " << min_dist_str << " & "
-        << vel_viol << " & " << acc_viol << " & "
-        << jerk_viol << " \\\\";
+    oss << "      " << case_name << " & " << std::setprecision(1) << success_rate << " & "
+        << per_opt_time << " & " << total_replan_time << " & " << cvx_decomp_time << " & "
+        << travel_time << " & " << path_length << " & " << jerk_integral << " & " << min_dist_str
+        << " & " << vel_viol << " & " << acc_viol << " & " << jerk_viol << " \\\\";
   } else {
     // dynamic
     double per_opt_time = s.avg_local_traj_time_mean;
@@ -1073,20 +1092,17 @@ static std::string generate_sando_row(const Statistics& s, const std::string& ca
       min_dist_str = "N/A";
     }
 
-    oss << "      & \\multicolumn{2}{c}{" << algo_name << "} & "
-        << std::setprecision(1)
-        << success_rate << " & " << per_opt_time << " & "
-        << travel_time << " & " << path_length << " & "
-        << jerk_integral << " & " << min_dist_str << " & "
-        << vel_viol << " & " << acc_viol << " & "
-        << jerk_viol << " \\\\";
+    oss << "      & \\multicolumn{2}{c}{" << algo_name << "} & " << std::setprecision(1)
+        << success_rate << " & " << per_opt_time << " & " << travel_time << " & " << path_length
+        << " & " << jerk_integral << " & " << min_dist_str << " & " << vel_viol << " & " << acc_viol
+        << " & " << jerk_viol << " \\\\";
   }
 
   return oss.str();
 }
 
 static std::string generate_new_unknown_dynamic_table(const std::string& case_name,
-                                                       const std::string& sando_row) {
+                                                      const std::string& sando_row) {
   std::string dashes = "{-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} \\\\";
   std::vector<std::string> cases = {"Easy", "Medium", "Hard"};
 
@@ -1149,7 +1165,8 @@ static std::string generate_new_unknown_dynamic_table(const std::string& case_na
 static std::string generate_new_dynamic_table(const std::string& sando_row) {
   std::ostringstream oss;
   oss << "\\begin{table*}\n"
-      << "  \\caption{Dynamic obstacle benchmarking results: SANDO performance with moving obstacles. "
+      << "  \\caption{Dynamic obstacle benchmarking results: SANDO performance with moving "
+         "obstacles. "
       << "We report success rate, computation time, flight performance, smoothness, safety, "
       << "and constraint violation metrics.}\n"
       << "  \\label{tab:dynamic_benchmark}\n"
@@ -1194,8 +1211,8 @@ static std::string generate_new_dynamic_table(const std::string& sando_row) {
 }
 
 static std::string generate_new_static_table(const std::string& case_name,
-                                               const std::string& /*sando_row*/,
-                                               const std::string& data_values) {
+                                             const std::string& /*sando_row*/,
+                                             const std::string& data_values) {
   std::string dashes = "{-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} & {-} \\\\";
   std::vector<std::string> cases = {"Easy", "Medium", "Hard"};
 
@@ -1236,7 +1253,8 @@ static std::string generate_new_static_table(const std::string& case_name,
   for (size_t i = 0; i < cases.size(); i++) {
     if (i > 0) oss << "\n      \\midrule\n\n";
 
-    oss << "      \\multirow{5}{*}{" << cases[i] << "} & EGO-Swarm2 & Soft & $L_\\infty$ & " << dashes << "\n";
+    oss << "      \\multirow{5}{*}{" << cases[i] << "} & EGO-Swarm2 & Soft & $L_\\infty$ & "
+        << dashes << "\n";
     oss << "       & \\multirow{2}{*}{SUPER} & Soft & $L_2$ & " << dashes << "\n";
     oss << "       & & Soft & $L_\\infty$ & " << dashes << "\n";
     oss << "       & FASTER & Hard & $L_\\infty$ & " << dashes << "\n";
@@ -1257,11 +1275,10 @@ static std::string generate_new_static_table(const std::string& case_name,
   return oss.str();
 }
 
-static std::string update_existing_table(const fs::path& tex_path,
-                                          const std::string& case_name,
-                                          const std::string& sando_row,
-                                          const std::string& table_type,
-                                          const std::string& algo_name = "SANDO") {
+static std::string update_existing_table(const fs::path& tex_path, const std::string& case_name,
+                                         const std::string& sando_row,
+                                         const std::string& table_type,
+                                         const std::string& algo_name = "SANDO") {
   std::ifstream f(tex_path);
   if (!f.is_open()) return "";
 
@@ -1306,18 +1323,19 @@ static std::string update_existing_table(const fs::path& tex_path,
     }
     // Case 3: unknown_dynamic format
     else if (table_type == "unknown_dynamic" && stripped.find(case_name) == 0 &&
-             stripped.find("&") != std::string::npos && stripped.find("\\\\") != std::string::npos) {
+             stripped.find("&") != std::string::npos &&
+             stripped.find("\\\\") != std::string::npos) {
       updated_lines.push_back(sando_row);
       row_updated = true;
-    }
-    else {
+    } else {
       updated_lines.push_back(line);
     }
   }
 
   if (!row_updated) {
     // Insert before the next \midrule or \bottomrule after the current case block
-    std::cout << "  No matching " << case_name << " + " << algo_name << " row found, inserting new row...\n";
+    std::cout << "  No matching " << case_name << " + " << algo_name
+              << " row found, inserting new row...\n";
     bool inserted = false;
     bool in_target_case = false;
     for (size_t i = 0; i < updated_lines.size(); i++) {
@@ -1378,15 +1396,17 @@ static std::string update_existing_table(const fs::path& tex_path,
 }
 
 static std::string generate_latex_table(const Statistics& s, const std::string& case_name,
-                                         const fs::path& existing_file,
-                                         const std::string& table_type,
-                                         const std::string& algo_name = "SANDO") {
+                                        const fs::path& existing_file,
+                                        const std::string& table_type,
+                                        const std::string& algo_name = "SANDO") {
   std::string sando_row = generate_sando_row(s, case_name, table_type, algo_name);
 
   // Try updating existing table
   if (fs::exists(existing_file)) {
-    std::cout << "  Found existing table, updating " << case_name << " + " << algo_name << " row...\n";
-    std::string updated = update_existing_table(existing_file, case_name, sando_row, table_type, algo_name);
+    std::cout << "  Found existing table, updating " << case_name << " + " << algo_name
+              << " row...\n";
+    std::string updated =
+        update_existing_table(existing_file, case_name, sando_row, table_type, algo_name);
     if (!updated.empty()) return updated;
   }
 
@@ -1421,15 +1441,18 @@ static std::string generate_latex_table(const Statistics& s, const std::string& 
 // ============================================================================
 
 static Statistics analyze_single_case(const fs::path& data_dir, const std::string& output_name,
-                                       const fs::path& latex_output, const std::string& table_type,
-                                       Vec3 goal_pos, const std::string& algo_name = "SANDO",
-                                       bool skip_latex = false) {
+                                      const fs::path& latex_output, const std::string& table_type,
+                                      Vec3 goal_pos, const std::string& algo_name = "SANDO",
+                                      bool skip_latex = false) {
   // Extract case name
   std::string dir_name = data_dir.filename().string();
   std::string case_name = "Unknown";
-  if (dir_name == "easy" || dir_name.find("easy_") == 0) case_name = "Easy";
-  else if (dir_name == "medium" || dir_name.find("medium_") == 0) case_name = "Medium";
-  else if (dir_name == "hard" || dir_name.find("hard_") == 0) case_name = "Hard";
+  if (dir_name == "easy" || dir_name.find("easy_") == 0)
+    case_name = "Easy";
+  else if (dir_name == "medium" || dir_name.find("medium_") == 0)
+    case_name = "Medium";
+  else if (dir_name == "hard" || dir_name.find("hard_") == 0)
+    case_name = "Hard";
 
   std::string sep(80, '=');
   std::cout << sep << "\n";
@@ -1447,7 +1470,8 @@ static Statistics analyze_single_case(const fs::path& data_dir, const std::strin
 
       if (!skip_latex) {
         std::cout << "\nUpdating LaTeX table...\n";
-        std::string latex = generate_latex_table(cached, case_name, latex_output, table_type, algo_name);
+        std::string latex =
+            generate_latex_table(cached, case_name, latex_output, table_type, algo_name);
         fs::create_directories(latex_output.parent_path());
         std::ofstream tex_file(latex_output);
         tex_file << latex;
@@ -1545,14 +1569,14 @@ static Statistics analyze_single_case(const fs::path& data_dir, const std::strin
         trial.min_distance_to_obstacles = coll.min_distance;
         trial.collision_free_ratio = coll.collision_free_ratio;
         trial.collision = (coll.collision_count > 0);
-        std::cout << "    Collisions: " << coll.collision_count
-                  << ", min_dist: " << std::fixed << std::setprecision(3) << coll.min_distance << "m\n";
+        std::cout << "    Collisions: " << coll.collision_count << ", min_dist: " << std::fixed
+                  << std::setprecision(3) << coll.min_distance << "m\n";
       } else if (table_type == "static") {
         // Static collisions need obstacle CSV
         std::map<std::string, std::string> case_csv_map = {
-          {"Easy", "easy_forest_obstacle_parameters.csv"},
-          {"Medium", "medium_forest_obstacle_parameters.csv"},
-          {"Hard", "hard_forest_obstacle_parameters.csv"},
+            {"Easy", "easy_forest_obstacle_parameters.csv"},
+            {"Medium", "medium_forest_obstacle_parameters.csv"},
+            {"Hard", "hard_forest_obstacle_parameters.csv"},
         };
         auto csv_it = case_csv_map.find(case_name);
         if (csv_it != case_csv_map.end()) {
@@ -1573,7 +1597,8 @@ static Statistics analyze_single_case(const fs::path& data_dir, const std::strin
 
       std::cout << "    vel=" << trial.vel_violation_count << "/" << trial.vel_violation_total
                 << ", acc=" << trial.acc_violation_count << "/" << trial.acc_violation_total
-                << ", jerk=" << trial.jerk_violation_count << "/" << trial.jerk_violation_total << "\n";
+                << ", jerk=" << trial.jerk_violation_count << "/" << trial.jerk_violation_total
+                << "\n";
     }
     std::cout << "\n";
   }
@@ -1636,7 +1661,8 @@ static std::string extract_case_name(const fs::path& data_dir) {
   return "Unknown";
 }
 
-static std::vector<UnknownDynamicConfig> discover_unknown_dynamic_configs(const fs::path& base_dir) {
+static std::vector<UnknownDynamicConfig> discover_unknown_dynamic_configs(
+    const fs::path& base_dir) {
   std::vector<UnknownDynamicConfig> configs;
   if (!fs::exists(base_dir)) return configs;
 
@@ -1654,9 +1680,9 @@ static std::vector<UnknownDynamicConfig> discover_unknown_dynamic_configs(const 
     if (std::regex_match(name, match, config_re)) {
       UnknownDynamicConfig cfg;
       cfg.dir_name = name;
-      cfg.unk_infl = match[1].str().empty(); // no "no_" prefix means inflate=yes
+      cfg.unk_infl = match[1].str().empty();  // no "no_" prefix means inflate=yes
       cfg.heat_weight = std::stoi(match[2]);
-      cfg.n_segments = match[3].matched ? std::stoi(match[3]) : 3; // default N=3
+      cfg.n_segments = match[3].matched ? std::stoi(match[3]) : 3;  // default N=3
       configs.push_back(cfg);
     }
   }
@@ -1665,7 +1691,7 @@ static std::vector<UnknownDynamicConfig> discover_unknown_dynamic_configs(const 
   std::sort(configs.begin(), configs.end(), [](const auto& a, const auto& b) {
     if (a.heat_weight != b.heat_weight) return a.heat_weight < b.heat_weight;
     if (a.n_segments != b.n_segments) return a.n_segments < b.n_segments;
-    return a.unk_infl > b.unk_infl; // true (Yes) before false (No)
+    return a.unk_infl > b.unk_infl;  // true (Yes) before false (No)
   });
 
   return configs;
@@ -1677,7 +1703,7 @@ static std::string format_with_best_worst(double val, double best, double worst,
   std::string formatted = oss.str();
 
   double tol = std::pow(10.0, -prec) * 0.5;
-  if (std::abs(best - worst) < tol) return "\\best{" + formatted + "}"; // all tied = all best
+  if (std::abs(best - worst) < tol) return "\\best{" + formatted + "}";  // all tied = all best
   if (std::abs(val - best) < tol) return "\\best{" + formatted + "}";
   if (std::abs(val - worst) < tol) return "\\worst{" + formatted + "}";
   return formatted;
@@ -1692,8 +1718,7 @@ static std::vector<BatchRowData> parse_unknown_dynamic_table(const std::string& 
     return rows;
   }
 
-  std::string content((std::istreambuf_iterator<char>(file)),
-                       std::istreambuf_iterator<char>());
+  std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
   file.close();
 
   // Helper to strip \best{...} and \worst{...} wrappers
@@ -1798,15 +1823,14 @@ static std::vector<BatchRowData> parse_unknown_dynamic_table(const std::string& 
 
 // Merge new SANDO rows into existing dynamic table, replacing old SANDO rows
 // and updating multirow counts. case_rows maps case_name -> sando_row string.
-static std::string merge_dynamic_table(const std::string& tex_path,
-                                        const std::map<std::string, std::vector<std::string>>& case_rows) {
+static std::string merge_dynamic_table(
+    const std::string& tex_path, const std::map<std::string, std::vector<std::string>>& case_rows) {
   std::ifstream file(tex_path);
   if (!file.is_open()) {
     std::cerr << "WARNING: Could not open merge table: " << tex_path << "\n";
     return "";
   }
-  std::string content((std::istreambuf_iterator<char>(file)),
-                       std::istreambuf_iterator<char>());
+  std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
   file.close();
 
   std::istringstream iss(content);
@@ -1892,7 +1916,8 @@ static std::string merge_dynamic_table(const std::string& tex_path,
   return oss.str();
 }
 
-static std::string generate_unknown_dynamic_batch_table(const std::vector<BatchRowData>& rows, bool use_p_label = false) {
+static std::string generate_unknown_dynamic_batch_table(const std::vector<BatchRowData>& rows,
+                                                        bool use_p_label = false) {
   std::vector<std::string> cases = {"Easy", "Medium", "Hard"};
 
   // Check if rows have multiple heat weights (ablation mode) or just N variants
@@ -1903,23 +1928,34 @@ static std::string generate_unknown_dynamic_batch_table(const std::vector<BatchR
   // Metric definitions: id, higher_is_better, precision
   // IDs: 0=success_rate, 1=per_opt_time, 2=total_replan_time, 3=cvx_decomp_time,
   //      4=travel_time, 5=path_length, 6=jerk_integral, 7=constraint_violation
-  struct MetricDef { int id; bool higher_is_better; int precision; };
-  std::vector<MetricDef> metrics = {
-    {0, true, 1}, {1, false, 1}, {2, false, 1}, {3, false, 1},
-    {4, false, 1}, {5, false, 1}, {6, false, 1}, {7, false, 1}
+  struct MetricDef {
+    int id;
+    bool higher_is_better;
+    int precision;
   };
+  std::vector<MetricDef> metrics = {{0, true, 1},  {1, false, 1}, {2, false, 1}, {3, false, 1},
+                                    {4, false, 1}, {5, false, 1}, {6, false, 1}, {7, false, 1}};
 
   auto get_metric = [](const Statistics& s, int id) -> double {
     switch (id) {
-      case 0: return s.success_rate;
-      case 1: return s.avg_local_traj_time_mean;
-      case 2: return s.avg_replanning_time_mean;
-      case 3: return s.avg_sfc_corridor_time_mean;
-      case 4: return s.flight_travel_time_mean;
-      case 5: return s.path_length_mean;
-      case 6: return s.jerk_integral_mean;
-      case 7: return std::max({s.vel_violation_rate, s.acc_violation_rate, s.jerk_violation_rate});
-      default: return 0.0;
+      case 0:
+        return s.success_rate;
+      case 1:
+        return s.avg_local_traj_time_mean;
+      case 2:
+        return s.avg_replanning_time_mean;
+      case 3:
+        return s.avg_sfc_corridor_time_mean;
+      case 4:
+        return s.flight_travel_time_mean;
+      case 5:
+        return s.path_length_mean;
+      case 6:
+        return s.jerk_integral_mean;
+      case 7:
+        return std::max({s.vel_violation_rate, s.acc_violation_rate, s.jerk_violation_rate});
+      default:
+        return 0.0;
     }
   };
 
@@ -1932,7 +1968,8 @@ static std::string generate_unknown_dynamic_batch_table(const std::vector<BatchR
       << "SANDO navigates using only pointcloud sensing (no ground truth obstacle trajectories).";
   std::string segment_label = use_p_label ? "$P$" : "$N$";
   if (has_heat_weight_col) {
-    oss << " We compare different heat map weights ($w$) and trajectory segment counts (" << segment_label << ").";
+    oss << " We compare different heat map weights ($w$) and trajectory segment counts ("
+        << segment_label << ").";
   }
   oss << " We highlight the \\best{best} and \\worst{worst} "
       << "value for each environment.}\n"
@@ -1964,10 +2001,10 @@ static std::string generate_unknown_dynamic_batch_table(const std::vector<BatchR
       << "      & \\multicolumn{3}{c}{\\textbf{Performance}}\n"
       << "      & \\multicolumn{1}{c}{\\textbf{Constr.\\ Viol.}}\n"
       << "      \\\\\n"
-      << "      \\cmidrule(lr){" << prefix_cols+1 << "-" << prefix_cols+1 << "}\n"
-      << "      \\cmidrule(lr){" << prefix_cols+2 << "-" << prefix_cols+4 << "}\n"
-      << "      \\cmidrule(lr){" << prefix_cols+5 << "-" << prefix_cols+7 << "}\n"
-      << "      \\cmidrule(lr){" << prefix_cols+8 << "-" << prefix_cols+8 << "}\n"
+      << "      \\cmidrule(lr){" << prefix_cols + 1 << "-" << prefix_cols + 1 << "}\n"
+      << "      \\cmidrule(lr){" << prefix_cols + 2 << "-" << prefix_cols + 4 << "}\n"
+      << "      \\cmidrule(lr){" << prefix_cols + 5 << "-" << prefix_cols + 7 << "}\n"
+      << "      \\cmidrule(lr){" << prefix_cols + 8 << "-" << prefix_cols + 8 << "}\n"
       << "      ";
   for (int i = 0; i < prefix_cols; i++) oss << "&";
   oss << "\n"
@@ -2034,7 +2071,8 @@ static std::string generate_unknown_dynamic_batch_table(const std::vector<BatchR
       // Data cells with best/worst highlighting
       for (size_t mi = 0; mi < metrics.size(); mi++) {
         double val = get_metric(r->stats, metrics[mi].id);
-        oss << " & " << format_with_best_worst(val, best_vals[mi], worst_vals[mi], metrics[mi].precision);
+        oss << " & "
+            << format_with_best_worst(val, best_vals[mi], worst_vals[mi], metrics[mi].precision);
       }
 
       oss << " \\\\\n";
@@ -2060,9 +2098,9 @@ static std::string generate_unknown_dynamic_batch_table(const std::vector<BatchR
 // ============================================================================
 
 struct TemporalAblationRow {
-  std::string case_name;   // Easy, Medium, Hard
-  std::string sfc_mode;    // "Worst-Case" or "SANDO2 (STSFC)"
-  int n_segments = 2;      // N value
+  std::string case_name;  // Easy, Medium, Hard
+  std::string sfc_mode;   // "Worst-Case" or "SANDO2 (STSFC)"
+  int n_segments = 2;     // N value
   Statistics stats;
 };
 
@@ -2074,24 +2112,21 @@ static std::string generate_temporal_ablation_table(const std::vector<TemporalAb
   // Metric extraction lambdas
   auto get_metrics = [](const TemporalAblationRow* r) -> std::vector<double> {
     const auto& s = r->stats;
-    return {
-      s.success_rate,
-      s.avg_local_traj_time_mean,
-      s.flight_travel_time_mean,
-      s.path_length_mean,
-      s.jerk_integral_mean,
-      s.has_min_distance ? s.min_distance_to_obstacles_mean : -1e18,
-      s.vel_violation_rate,
-      s.acc_violation_rate,
-      s.jerk_violation_rate
-    };
+    return {s.success_rate,
+            s.avg_local_traj_time_mean,
+            s.flight_travel_time_mean,
+            s.path_length_mean,
+            s.jerk_integral_mean,
+            s.has_min_distance ? s.min_distance_to_obstacles_mean : -1e18,
+            s.vel_violation_rate,
+            s.acc_violation_rate,
+            s.jerk_violation_rate};
   };
 
   // higher_is_better: success_rate (idx 0), min_dist (idx 5)
-  // lower_is_better: comp_time (1), travel_time (2), path_length (3), jerk (4), vel_viol (6), acc_viol (7), jerk_viol (8)
-  auto is_higher_better = [](int idx) {
-    return idx == 0 || idx == 5;
-  };
+  // lower_is_better: comp_time (1), travel_time (2), path_length (3), jerk (4), vel_viol (6),
+  // acc_viol (7), jerk_viol (8)
+  auto is_higher_better = [](int idx) { return idx == 0 || idx == 5; };
 
   // Build the table
   std::ostringstream oss;
@@ -2099,7 +2134,8 @@ static std::string generate_temporal_ablation_table(const std::vector<TemporalAb
 
   oss << "\\begin{table*}\n"
       << "  \\caption{Ablation study: temporal safe flight corridor (SFC) vs worst-case SFC. "
-      << "The temporal approach uses per-layer obstacle inflation $r = v_{\\max}^{\\mathrm{obs}} \\times t_n$, "
+      << "The temporal approach uses per-layer obstacle inflation $r = v_{\\max}^{\\mathrm{obs}} "
+         "\\times t_n$, "
       << "while the worst-case baseline inflates all obstacles by the maximum time horizon. "
       << "We highlight the \\best{better} and \\worst{worse} value for each case.}\n"
       << "  \\label{tab:temporal_sfc_ablation}\n"
@@ -2224,49 +2260,69 @@ struct Args {
   std::string table_type = "dynamic";
   Vec3 goal_pos = {105.0, 0.0, 2.0};
   std::string algo_name = "SANDO";
-  std::string single_config;   // process only this config subdir
-  std::string merge_table;     // path to existing .tex table to merge into
-  std::string data_dir2;       // second data directory (for temporal ablation)
+  std::string single_config;  // process only this config subdir
+  std::string merge_table;    // path to existing .tex table to merge into
+  std::string data_dir2;      // second data directory (for temporal ablation)
+  std::string latex_dir;      // output directory for LaTeX tables
 };
 
 static void print_usage() {
-  std::cout << "Usage: analyze_benchmark [options]\n"
-            << "  --data-dir DIR        Path to benchmark data directory (required)\n"
-            << "  --output-name NAME    Output filename prefix (default: benchmark_summary)\n"
-            << "  --latex-name NAME     LaTeX table filename (default: dynamic_benchmark.tex)\n"
-            << "  --config-name NAME    Configuration name (default: default)\n"
-            << "  --all-cases           Analyze all cases (easy, medium, hard)\n"
-            << "  --table-type TYPE     Table format: dynamic, static, unknown_dynamic, temporal_ablation (default: dynamic)\n"
-            << "  --goal-pos X Y Z      Goal position (default: 105.0 0.0 2.0)\n"
-            << "  --algo-name NAME      Algorithm name in LaTeX table (default: SANDO)\n"
-            << "  --single-config NAME  Process only this config subdir (e.g. inflate_unknown_voxels_heat_w_5_N_2)\n"
-            << "  --merge-table PATH    Merge new config into existing .tex table (recomputes best/worst)\n"
-            << "  --data-dir2 DIR       Second data directory (for temporal_ablation: STSFC data)\n"
-            << "  --recompute           Force recompute from bags (ignore cached stats_cache.json)\n";
+  std::cout
+      << "Usage: analyze_benchmark [options]\n"
+      << "  --data-dir DIR        Path to benchmark data directory (required)\n"
+      << "  --output-name NAME    Output filename prefix (default: benchmark_summary)\n"
+      << "  --latex-name NAME     LaTeX table filename (default: dynamic_benchmark.tex)\n"
+      << "  --config-name NAME    Configuration name (default: default)\n"
+      << "  --all-cases           Analyze all cases (easy, medium, hard)\n"
+      << "  --table-type TYPE     Table format: dynamic, static, unknown_dynamic, "
+         "temporal_ablation (default: dynamic)\n"
+      << "  --goal-pos X Y Z      Goal position (default: 105.0 0.0 2.0)\n"
+      << "  --algo-name NAME      Algorithm name in LaTeX table (default: SANDO)\n"
+      << "  --single-config NAME  Process only this config subdir (e.g. "
+         "inflate_unknown_voxels_heat_w_5_N_2)\n"
+      << "  --merge-table PATH    Merge new config into existing .tex table (recomputes "
+         "best/worst)\n"
+      << "  --data-dir2 DIR       Second data directory (for temporal_ablation: STSFC data)\n"
+      << "  --latex-dir DIR       Output directory for LaTeX tables (required)\n"
+      << "  --recompute           Force recompute from bags (ignore cached stats_cache.json)\n";
 }
 
 static Args parse_args(int argc, char** argv) {
   Args args;
   for (int i = 1; i < argc; i++) {
     std::string arg = argv[i];
-    if (arg == "--data-dir" && i + 1 < argc) { args.data_dir = argv[++i]; }
-    else if (arg == "--output-name" && i + 1 < argc) { args.output_name = argv[++i]; }
-    else if (arg == "--latex-name" && i + 1 < argc) { args.latex_name = argv[++i]; }
-    else if (arg == "--config-name" && i + 1 < argc) { args.config_name = argv[++i]; }
-    else if (arg == "--all-cases") { args.all_cases = true; }
-    else if (arg == "--table-type" && i + 1 < argc) { args.table_type = argv[++i]; }
-    else if (arg == "--algo-name" && i + 1 < argc) { args.algo_name = argv[++i]; }
-    else if (arg == "--single-config" && i + 1 < argc) { args.single_config = argv[++i]; }
-    else if (arg == "--merge-table" && i + 1 < argc) { args.merge_table = argv[++i]; }
-    else if (arg == "--data-dir2" && i + 1 < argc) { args.data_dir2 = argv[++i]; }
-    else if (arg == "--recompute") { g_recompute = true; }
-    else if (arg == "--goal-pos" && i + 3 < argc) {
+    if (arg == "--data-dir" && i + 1 < argc) {
+      args.data_dir = argv[++i];
+    } else if (arg == "--output-name" && i + 1 < argc) {
+      args.output_name = argv[++i];
+    } else if (arg == "--latex-name" && i + 1 < argc) {
+      args.latex_name = argv[++i];
+    } else if (arg == "--config-name" && i + 1 < argc) {
+      args.config_name = argv[++i];
+    } else if (arg == "--all-cases") {
+      args.all_cases = true;
+    } else if (arg == "--table-type" && i + 1 < argc) {
+      args.table_type = argv[++i];
+    } else if (arg == "--algo-name" && i + 1 < argc) {
+      args.algo_name = argv[++i];
+    } else if (arg == "--single-config" && i + 1 < argc) {
+      args.single_config = argv[++i];
+    } else if (arg == "--merge-table" && i + 1 < argc) {
+      args.merge_table = argv[++i];
+    } else if (arg == "--data-dir2" && i + 1 < argc) {
+      args.data_dir2 = argv[++i];
+    } else if (arg == "--latex-dir" && i + 1 < argc) {
+      args.latex_dir = argv[++i];
+    } else if (arg == "--recompute") {
+      g_recompute = true;
+    } else if (arg == "--goal-pos" && i + 3 < argc) {
       args.goal_pos.x = std::stod(argv[++i]);
       args.goal_pos.y = std::stod(argv[++i]);
       args.goal_pos.z = std::stod(argv[++i]);
-    }
-    else if (arg == "--help" || arg == "-h") { print_usage(); exit(0); }
-    else {
+    } else if (arg == "--help" || arg == "-h") {
+      print_usage();
+      exit(0);
+    } else {
       std::cerr << "Unknown argument: " << arg << "\n";
       print_usage();
       exit(1);
@@ -2275,6 +2331,12 @@ static Args parse_args(int argc, char** argv) {
 
   if (args.data_dir.empty()) {
     std::cerr << "ERROR: --data-dir is required\n";
+    print_usage();
+    exit(1);
+  }
+
+  if (args.latex_dir.empty()) {
+    std::cerr << "ERROR: --latex-dir is required\n";
     print_usage();
     exit(1);
   }
@@ -2292,7 +2354,7 @@ static Args parse_args(int argc, char** argv) {
 int main(int argc, char** argv) {
   auto args = parse_args(argc, argv);
 
-  fs::path latex_output = fs::path("/home/kkondo/paper_writing/SANDO_v3/tables") / args.latex_name;
+  fs::path latex_output = fs::path(args.latex_dir) / args.latex_name;
 
   if (args.all_cases) {
     fs::path base_dir(args.data_dir);
@@ -2312,7 +2374,8 @@ int main(int argc, char** argv) {
         std::regex config_re(R"((no_?)?inflate_unknown_voxels_heat_w_(\d+)(?:_N_(\d+))?)");
         std::smatch match;
         if (!std::regex_match(args.single_config, match, config_re)) {
-          std::cerr << "ERROR: --single-config name doesn't match expected pattern: " << args.single_config << "\n";
+          std::cerr << "ERROR: --single-config name doesn't match expected pattern: "
+                    << args.single_config << "\n";
           return 1;
         }
         UnknownDynamicConfig cfg;
@@ -2322,8 +2385,8 @@ int main(int argc, char** argv) {
         cfg.n_segments = match[3].matched ? std::stoi(match[3]) : 3;
 
         std::cout << sep << "\n";
-        std::cout << "SINGLE CONFIG MODE: " << cfg.dir_name
-                  << " (w=" << cfg.heat_weight << ", N=" << cfg.n_segments << ")\n";
+        std::cout << "SINGLE CONFIG MODE: " << cfg.dir_name << " (w=" << cfg.heat_weight
+                  << ", N=" << cfg.n_segments << ")\n";
         std::cout << "Merging into: " << args.merge_table << "\n";
         std::cout << sep << "\n\n";
 
@@ -2346,8 +2409,9 @@ int main(int argc, char** argv) {
             std::sort(matching.begin(), matching.end());
             fs::path case_dir = matching.back();
 
-            auto stats = analyze_single_case(case_dir, args.output_name, latex_output,
-                                              "unknown_dynamic", args.goal_pos, args.algo_name, true);
+            auto stats =
+                analyze_single_case(case_dir, args.output_name, latex_output, "unknown_dynamic",
+                                    args.goal_pos, args.algo_name, true);
 
             BatchRowData row;
             row.case_name = extract_case_name(case_dir);
@@ -2364,16 +2428,16 @@ int main(int argc, char** argv) {
         auto existing_rows = parse_unknown_dynamic_table(args.merge_table);
         std::cout << "  Found " << existing_rows.size() << " existing rows\n";
 
-        // Remove any existing rows with same (case_name, heat_weight, n_segments) to avoid duplicates
+        // Remove any existing rows with same (case_name, heat_weight, n_segments) to avoid
+        // duplicates
         for (auto& nr : new_rows) {
-          existing_rows.erase(
-            std::remove_if(existing_rows.begin(), existing_rows.end(),
-              [&](const BatchRowData& er) {
-                return er.case_name == nr.case_name &&
-                       er.heat_weight == nr.heat_weight &&
-                       er.n_segments == nr.n_segments;
-              }),
-            existing_rows.end());
+          existing_rows.erase(std::remove_if(existing_rows.begin(), existing_rows.end(),
+                                             [&](const BatchRowData& er) {
+                                               return er.case_name == nr.case_name &&
+                                                      er.heat_weight == nr.heat_weight &&
+                                                      er.n_segments == nr.n_segments;
+                                             }),
+                              existing_rows.end());
         }
 
         // Merge
@@ -2392,12 +2456,13 @@ int main(int argc, char** argv) {
           int oa = case_order(a.case_name), ob = case_order(b.case_name);
           if (oa != ob) return oa < ob;
           if (a.heat_weight != b.heat_weight) return a.heat_weight < b.heat_weight;
-          return a.n_segments < b.n_segments; // N=2 before N=3
+          return a.n_segments < b.n_segments;  // N=2 before N=3
         });
 
         std::cout << "  Merged total: " << all_rows.size() << " rows\n";
         for (auto& r : all_rows) {
-          std::cout << "    " << r.case_name << " w=" << r.heat_weight << " N=" << r.n_segments << "\n";
+          std::cout << "    " << r.case_name << " w=" << r.heat_weight << " N=" << r.n_segments
+                    << "\n";
         }
 
         // Generate merged table with recomputed best/worst highlighting
@@ -2432,7 +2497,8 @@ int main(int argc, char** argv) {
           std::string label = use_p_label ? "P" : "N";
           std::string sep(80, '=');
           std::cout << sep << "\n";
-          std::cout << "UNKNOWN DYNAMIC " << label << "-COMPARISON MODE - " << n_dirs.size() << " " << label << " values\n";
+          std::cout << "UNKNOWN DYNAMIC " << label << "-COMPARISON MODE - " << n_dirs.size() << " "
+                    << label << " values\n";
           std::cout << sep << "\n\n";
 
           for (auto& [n_val, n_dir] : n_dirs) {
@@ -2458,8 +2524,9 @@ int main(int argc, char** argv) {
                 std::sort(matching.begin(), matching.end());
                 fs::path case_dir = matching.back();
 
-                auto stats = analyze_single_case(case_dir, args.output_name, latex_output,
-                                                  "unknown_dynamic", args.goal_pos, args.algo_name, true);
+                auto stats =
+                    analyze_single_case(case_dir, args.output_name, latex_output, "unknown_dynamic",
+                                        args.goal_pos, args.algo_name, true);
 
                 BatchRowData row;
                 row.case_name = extract_case_name(case_dir);
@@ -2508,9 +2575,8 @@ int main(int argc, char** argv) {
         std::cout << sep << "\n\n";
 
         for (auto& cfg : ud_configs) {
-          std::cout << "  " << cfg.dir_name
-                    << " (w=" << cfg.heat_weight
-                    << ", N=" << cfg.n_segments << ")\n";
+          std::cout << "  " << cfg.dir_name << " (w=" << cfg.heat_weight << ", N=" << cfg.n_segments
+                    << ")\n";
         }
         std::cout << "\n";
 
@@ -2533,8 +2599,9 @@ int main(int argc, char** argv) {
               std::sort(matching.begin(), matching.end());
               fs::path case_dir = matching.back();
 
-              auto stats = analyze_single_case(case_dir, args.output_name, latex_output,
-                                                "unknown_dynamic", args.goal_pos, args.algo_name, true);
+              auto stats =
+                  analyze_single_case(case_dir, args.output_name, latex_output, "unknown_dynamic",
+                                      args.goal_pos, args.algo_name, true);
 
               BatchRowData row;
               row.case_name = extract_case_name(case_dir);
@@ -2571,9 +2638,7 @@ int main(int argc, char** argv) {
 
       // data_dir  = worst-case SFC data (dynamic_worst_case)
       // data_dir2 = STSFC data (dynamic)
-      std::vector<std::pair<fs::path, std::string>> source_dirs = {
-        {base_dir, "Worst-Case"}
-      };
+      std::vector<std::pair<fs::path, std::string>> source_dirs = {{base_dir, "Worst-Case"}};
       if (!args.data_dir2.empty()) {
         source_dirs.push_back({fs::path(args.data_dir2), "SANDO2 (STSFC)"});
       }
@@ -2621,8 +2686,8 @@ int main(int argc, char** argv) {
                 }
               }
 
-              auto stats = analyze_single_case(case_dir, args.output_name, latex_output,
-                                                "dynamic", args.goal_pos, args.algo_name, true);
+              auto stats = analyze_single_case(case_dir, args.output_name, latex_output, "dynamic",
+                                               args.goal_pos, args.algo_name, true);
 
               TemporalAblationRow row;
               row.case_name = extract_case_name(case_dir);
@@ -2641,8 +2706,8 @@ int main(int argc, char** argv) {
               continue;
             }
 
-            auto stats = analyze_single_case(case_dir, args.output_name, latex_output,
-                                              "dynamic", args.goal_pos, args.algo_name, true);
+            auto stats = analyze_single_case(case_dir, args.output_name, latex_output, "dynamic",
+                                             args.goal_pos, args.algo_name, true);
 
             TemporalAblationRow row;
             row.case_name = extract_case_name(case_dir);
@@ -2681,7 +2746,7 @@ int main(int argc, char** argv) {
       }
       if (!matching.empty()) {
         std::sort(matching.begin(), matching.end());
-        case_dirs.push_back(matching.back()); // Most recent
+        case_dirs.push_back(matching.back());  // Most recent
       }
     }
 
@@ -2689,7 +2754,7 @@ int main(int argc, char** argv) {
     if (args.table_type == "dynamic" && !args.merge_table.empty()) {
       std::string sep(80, '=');
       // Check for N_* subdirectories (multiple SANDO variants)
-      std::vector<std::pair<std::string, fs::path>> n_configs; // (label_suffix, dir)
+      std::vector<std::pair<std::string, fs::path>> n_configs;  // (label_suffix, dir)
       for (auto& entry : fs::directory_iterator(base_dir)) {
         if (!entry.is_directory()) continue;
         std::string name = entry.path().filename().string();
@@ -2706,7 +2771,7 @@ int main(int argc, char** argv) {
       if (!n_configs.empty()) {
         // Multiple SANDO variants (N_2, N_3, etc.)
         for (auto& [n_label, n_dir] : n_configs) {
-          std::string n_val = n_label.substr(2); // "2" from "N_2"
+          std::string n_val = n_label.substr(2);  // "2" from "N_2"
           std::string algo = "SANDO ($N$=" + n_val + ")";
 
           std::cout << "\n" << sep << "\n";
@@ -2725,7 +2790,7 @@ int main(int argc, char** argv) {
               std::sort(matching.begin(), matching.end());
               fs::path case_dir = matching.back();
               auto stats = analyze_single_case(case_dir, args.output_name, latex_output,
-                                                args.table_type, args.goal_pos, algo, true);
+                                               args.table_type, args.goal_pos, algo, true);
               std::string case_name = extract_case_name(case_dir);
               std::string row = generate_sando_row(stats, case_name, args.table_type, algo);
               sando_rows[case_name].push_back(row);
@@ -2737,7 +2802,7 @@ int main(int argc, char** argv) {
         // Single SANDO variant (flat structure)
         for (auto& case_dir : case_dirs) {
           auto stats = analyze_single_case(case_dir, args.output_name, latex_output,
-                                            args.table_type, args.goal_pos, args.algo_name, true);
+                                           args.table_type, args.goal_pos, args.algo_name, true);
           std::string case_name = extract_case_name(case_dir);
           std::string row = generate_sando_row(stats, case_name, args.table_type, args.algo_name);
           sando_rows[case_name].push_back(row);
@@ -2763,7 +2828,8 @@ int main(int argc, char** argv) {
     }
 
     if (case_dirs.empty()) {
-      std::cerr << "Error: No case directories (easy_*, medium_*, hard_*) found in " << base_dir << "\n";
+      std::cerr << "Error: No case directories (easy_*, medium_*, hard_*) found in " << base_dir
+                << "\n";
       return 1;
     }
 
@@ -2776,7 +2842,8 @@ int main(int argc, char** argv) {
     std::cout << "\n";
 
     for (auto& case_dir : case_dirs) {
-      analyze_single_case(case_dir, args.output_name, latex_output, args.table_type, args.goal_pos, args.algo_name);
+      analyze_single_case(case_dir, args.output_name, latex_output, args.table_type, args.goal_pos,
+                          args.algo_name);
     }
 
     std::cout << "\n" << sep << "\n";
@@ -2789,7 +2856,8 @@ int main(int argc, char** argv) {
       std::cerr << "ERROR: Directory does not exist: " << single_dir << "\n";
       return 1;
     }
-    analyze_single_case(single_dir, args.output_name, latex_output, args.table_type, args.goal_pos, args.algo_name);
+    analyze_single_case(single_dir, args.output_name, latex_output, args.table_type, args.goal_pos,
+                        args.algo_name);
   }
 
   return 0;

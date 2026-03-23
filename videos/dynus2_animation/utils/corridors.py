@@ -3,7 +3,9 @@
 from manim import *
 import numpy as np
 from .config import (
-    CORRIDOR_COLORS, CORRIDOR_FILL_OPACITY, CORRIDOR_STROKE_WIDTH,
+    CORRIDOR_COLORS,
+    CORRIDOR_FILL_OPACITY,
+    CORRIDOR_STROKE_WIDTH,
     TIME_LAYER_HEIGHT,
 )
 
@@ -66,7 +68,10 @@ def create_3d_corridor_slab(base_verts_2d, n_low, n_high, time_layer_color_index
     for i in range(n):
         j = (i + 1) % n
         side = Polygon(
-            bottom[i], bottom[j], top[j], top[i],
+            bottom[i],
+            bottom[j],
+            top[j],
+            top[i],
             color=color,
             fill_color=color,
             fill_opacity=CORRIDOR_FILL_OPACITY * 0.7,
@@ -87,7 +92,9 @@ def create_corridors_for_time_layer(corridors_dict, target_n):
     for (i, j), corr in corridors_dict.items():
         if corr["n_low"] == target_n:
             slab = create_3d_corridor_slab(
-                corr["base_verts"], corr["n_low"], corr["n_high"],
+                corr["base_verts"],
+                corr["n_low"],
+                corr["n_high"],
                 time_layer_color_index=target_n,
             )
             group.add(slab)
